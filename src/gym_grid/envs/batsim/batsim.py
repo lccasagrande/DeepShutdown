@@ -3,204 +3,50 @@ import logging
 import sys
 import os
 import json
+import zmq
 from xml.dom import minidom
 from enum import Enum
 import subprocess
-from batsim.batsim import BatsimScheduler, NetworkHandler
 from copy import deepcopy
 from procset import ProcSet
 from collections import defaultdict, deque
-
-
-class SchedulerManager(BatsimScheduler):
-    def get_job_info(self):
-        if len(self.jobs_waiting) == 0:
-            return None
-        else:
-            return self.jobs_waiting[0]
-
-    def get_resources_info(self):
-        return [ResourceState.to_value(s['state']) for _, s in self.bs.resources.items()]
-
-    def schedule_job(self, res):
-        def handle_void():
-            self.bs.resubmit_job(job)
-
-        def handle_allocation():
-            self._validate_allocation(job, res)
-            self.bs.start_job(job, res)
-            self.bs.set_resource_state(res, ResourceState.computing)
-            self.jobs_running[job.id] = res
-
-        assert self.bs.running_simulation, "Simulation is not running."
-        job = self._get_job()
-        assert job is not None, "Could not find job {}".format(id)
-
-        if len(res) == 0:
-            handle_void()
-        else:
-            handle_allocation()
-
-        if len(self.jobs_waiting) != 0:
-            return
-
-        self.bs._send_bat_events()
-        self.bs.wait_until_next_event()
-
-    def onJobSubmission(self, job):
-        self.bs.logger.info("[SchedulerManager] Job Submitted: {} - Jobs in Queue: {}".format(
-            job.id, " ".join(j.id for j in self.jobs_waiting)))
-        self.jobs_waiting.append(job)
-        self.bs._block_event = True
-
-    def onJobCompletion(self, job):
-        res = self.jobs_running.pop(job.id)
-        assert res is not None, "Could not find job's resource"
-        self.nb_jobs_completed += 1
-        self.bs.set_resource_state(res, ResourceState.idle)
-        # self.bs.acknowledge()
-        # self.bs.request_consumed_energy()
-
-    def onMachinePStateChanged(self, resources, state):
-        state_name = ResourceState.to_name(state)
-        for res in resources:
-            self.bs.resources[res]['state'] = state_name
-
-        self.bs.acknowledge()
-
-    def onSimulationBegins(self):
-        self.jobs_running = defaultdict(lambda: None)
-        self.jobs_finished = defaultdict(lambda: None)
-        self.jobs_waiting = deque()
-        self.nb_jobs_completed = 0
-        self.bs.acknowledge()
-
-    def onSimulationEnds(self):
-        self.bs.acknowledge()
-
-    def onDeadlock(self):
-        raise ValueError("Batsim is not responding (maybe deadlocked)")
-
-    def onReportEnergyConsumed(self, consumed_energy):
-        raise NotImplementedError()
-
-    def onAnswerProcessorTemperatureAll(self, proc_temperature_all):
-        raise NotImplementedError()
-
-    def onAnswerAirTemperatureAll(self, air_temperature_all):
-        raise NotImplementedError()
-
-    def onBeforeEvents(self):
-        pass
-
-    def onNoMoreEvents(self):
-        pass
-
-    def onAllJobsCompleted(self):
-        if self.bs.dynamic_job_submission_enabled:
-            self.bs.notify_submission_finished()
-            self.bs.dynamic_job_submission_enabled = False
-
-    def _get_job(self):
-        if len(self.jobs_waiting) == 0:
-            return None
-        else:
-            return self.jobs_waiting.popleft()
-
-    def _validate_allocation(self, job, res):
-        if job.requested_resources != len(res):
-            raise InsufficientResourcesError(
-                "Job requested {} resources while {} resources were selected.".format(job.requested_resources, len(res)))
-
-        if not self._check_resources_availability(res):
-            raise UnavailableResourcesError(
-                "Cannot allocate unavailable resources for job {}.".format(job.id))
-
-    def _check_resources_availability(self, res):
-        for r in res:
-            try:
-                resource = self.bs.resources[r]
-            except KeyError as e:
-                raise KeyError("Could not find resource: {}".format(e))
-            if not resource['state'] == ResourceState.idle.name:
-                return False
-
-        return True
-    # def onReportEnergyConsumed(self, consumed_energy):
-        # assert self.__last_job_finished != -1, "No job to report energy consumption"
-        # job_stats = self.jobs_finished[self.__last_job_finished]
-        # assert job_stats is not None, "No job to report energy consumption"
-        # job_stats[0] = consumed_energy
-
-
-class ResourceState(Enum):
-    sleeping = 0
-    idle = 1
-    computing = 2
-
-    @staticmethod
-    def to_value(name):
-        if name == ResourceState.sleeping.name:
-            return ResourceState.sleeping.value
-        elif name == ResourceState.idle.name:
-            return ResourceState.idle.value
-        elif name == ResourceState.computing.name:
-            return ResourceState.computing.value
-        else:
-            raise Exception("Unknown resource state name {}".format(name))
-
-    @staticmethod
-    def to_name(value):
-        if value == ResourceState.sleeping.value:
-            return ResourceState.sleeping.name
-        elif value == ResourceState.idle.value:
-            return ResourceState.idle.name
-        elif value == ResourceState.computing.value:
-            return ResourceState.computing.name
-        else:
-            raise Exception("Unknown resource state value {}".format(value))
 
 
 class BatsimHandler:
     WORKLOAD_JOB_SEPARATOR = "!"
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
-
     PLATFORM = "platform.xml"
     WORKLOAD = "workload.json"
+    CONFIG = "config.json"
+    SOCKET_ENDPOINT = "tcp://*:28000"
 
-    def __init__(self, socket_endpoint="tcp://*:28000", platform="platform.xml", workload="workload.json", verbose="information"):
+    def __init__(self, verbose="information"):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
 
-        self._platform = os.path.join(fullpath, platform)
-        self._workload = os.path.join(fullpath, workload)
-        self._config = os.path.join(fullpath, 'config.json')
+        self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
+        self._workload = os.path.join(fullpath, BatsimHandler.WORKLOAD)
+        self._config = os.path.join(fullpath, BatsimHandler.CONFIG)
         self._verbose = verbose
         self._simulator_process = None
-        FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        logging.basicConfig(format=FORMAT)
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.CRITICAL)
         self.running_simulation = False
-        self.network = NetworkHandler(socket_endpoint)
-        sys.setrecursionlimit(10000)
+        self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.nb_resources = self._count_resources(self._platform)
         self.nb_jobs = self._count_jobs(self._workload)
-        self.manager = SchedulerManager(None)
-        self.manager.bs = self
-        self.manager.onAfterBatsimInit()
+        self.protocol_manager = BatsimProtocolHandler()
         self._initialize_vars()
 
-    def _count_resources(self, platform):
-        return len(minidom.parse(platform).getElementsByTagName('host')) - 1
+    def get_job_info(self):
+        if len(self.jobs_waiting) == 0:
+            return None
+        job = self.jobs_waiting[0]
+        job.waiting_time = int(self.now()) - job.submit_time
+        return job
 
-    def _count_jobs(self, workload):
-        with open(workload, 'r') as f:
-            data = json.load(f)
-            nb_jobs = len(data['jobs'])
-        return nb_jobs
+    def get_resources_info(self):
+        return self.resource_manager.get_state()
 
     def close(self):
         if self._simulator_process is not None:
@@ -212,15 +58,72 @@ class BatsimHandler:
 
     def start(self):
         self._initialize_vars()
-        self._simulator_process = self._start_simulator(True)
+        self._simulator_process = self._start_simulator()
         self.network.bind()
         self.wait_until_next_event()
-
         if not self.running_simulation:
             raise ConnectionError(
                 "An error ocurred during simulator starting.")
 
-    def _start_simulator(self, dev=False):
+    def schedule_job(self, res):
+        def handle_reject():
+            self.protocol_manager.reject_job([job])
+            self.nb_jobs_rejected += 1
+
+        def handle_void():
+            self.protocol_manager.resubmit_job(job)
+            self.nb_jobs_resubmit += 1
+
+        def handle_allocation():
+            if job.requested_resources != len(res):
+                raise InsufficientResourcesError(
+                    "Job requested {} resources while {} resources were selected.".format(job.requested_resources, len(res)))
+
+            if not self.resource_manager.is_available(res):
+                raise UnavailableResourcesError(
+                    "Cannot allocate unavailable resources for job {}.".format(job.id))
+
+            self.protocol_manager.start_job(job, res)
+            self.protocol_manager.set_resource_state(
+                res, ResourceState.computing)
+            job.allocation = res
+            self.nb_jobs_scheduled += 1
+
+        assert self.running_simulation, "Simulation is not running."
+        job = self.jobs_waiting.popleft()
+        job.waiting_time = int(self.now()) - job.submit_time
+
+        if res == None:
+            handle_reject()
+        elif len(res) == 0:
+            handle_void()
+        else:
+            handle_allocation()
+
+        if len(self.jobs_waiting) == 0:
+            self._send_events()
+            self.wait_until_next_event()
+
+    def wait_until_next_event(self):
+        jobs_received = self.nb_jobs_received
+        self._read_events()
+        while self.nb_jobs_received == jobs_received and self.running_simulation and len(self.jobs_waiting) == 0:
+            self._read_events()
+
+    def now(self):
+        assert self.running_simulation, "Simulation not running."
+        return self.protocol_manager.now()
+
+    def _count_resources(self, platform):
+        return len(minidom.parse(platform).getElementsByTagName('host')) - 1
+
+    def _count_jobs(self, workload):
+        with open(workload, 'r') as f:
+            data = json.load(f)
+            nb_jobs = len(data['jobs'])
+        return nb_jobs
+
+    def _start_simulator(self, dev=True):
         if dev:
             path = "/home/d2/Projects/batsim/build/batsim"
         else:
@@ -230,22 +133,192 @@ class BatsimHandler:
         # return Popen(shlex.split(cmd))
         return subprocess.Popen("exec " + cmd, stdout=subprocess.PIPE, shell=True)
 
-    def time(self):
-        return self._current_time
+    def _initialize_vars(self):
+        self.nb_jobs_received = 0
+        self.nb_jobs_submitted = 0
+        self.nb_jobs_killed = 0
+        self.nb_jobs_rejected = 0
+        self.nb_jobs_scheduled = 0
+        self.nb_jobs_completed = 0
+        self.nb_jobs_successful = 0
+        self.nb_jobs_failed = 0
+        self.nb_jobs_timeout = 0
+        self.nb_jobs_resubmit = 0
+        self.energy_consumed = 0
+        self.proc_temp = 0
+        self.air_temp = 0
+        #self._ack = False
+        self._job_not_scheduled = False
+        #self._events_to_send = []
+        self.jobs = dict()
+        self.jobs_waiting = deque()
+
+    def _handle_all_jobs_completed(self):
+        if self.dynamic_job_submission_enabled:
+            self.protocol_manager.notify_submission_finished()
+            self.dynamic_job_submission_enabled = False
+
+    def _handle_resource_state_changed(self, resources, state):
+        self.resource_manager.set_state(resources, state)
+
+    def _handle_job_completed(self, job):
+        def update_job_stats(j):
+            if j.job_state == Job.State.COMPLETED_WALLTIME_REACHED:
+                self.nb_jobs_timeout += 1
+            elif j.job_state == Job.State.COMPLETED_FAILED:
+                self.nb_jobs_failed += 1
+            elif j.job_state == Job.State.COMPLETED_SUCCESSFULLY:
+                self.nb_jobs_successful += 1
+            elif j.job_state == Job.State.COMPLETED_KILLED:
+                self.nb_jobs_killed += 1
+            self.nb_jobs_completed += 1
+
+        self.nb_jobs_completed += 1
+        self.protocol_manager.set_resource_state(
+            job.allocation, ResourceState.idle)
+        update_job_stats(job)
+
+    def _handle_job_submitted(self, job):
+        job.job_state = Job.State.SUBMITTED
+
+        # don't override dynamic job
+        if job.id not in self.jobs:
+            self.jobs[job.id] = job
+
+        self.jobs_waiting.append(job)
+        self._job_not_scheduled = True
+        self.nb_jobs_received += 1
+
+    def _send_events(self):
+        if self._job_not_scheduled:
+            self._job_not_scheduled = False
+            return
+
+        msg = self.protocol_manager.flush()
+        if msg == None:
+            return
+
+        self.network.send(msg)
+        #self._events_to_send = []
+
+    def _read_events(self):
+        msg = None
+        while msg is None:
+            msg = self.network.recv(blocking=not self.running_simulation)
+            if msg is None:
+                raise ValueError("Batsim is not responding (maybe deadlocked)")
+
+        self.protocol_manager.update_time(msg["now"])
+
+        for event in msg["events"]:
+            event_type = event["type"]
+            event_data = event.get("data", {})
+            if event_type == "SIMULATION_BEGINS":
+                assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
+                assert event_data["nb_resources"] == self.nb_resources, "Batsim platform and Simulator platform does not match."
+                self.running_simulation = True
+                self.batconf = event_data["config"]
+                self.time_sharing = event_data["allow_time_sharing"]
+                self.dynamic_job_submission_enabled = self.batconf[
+                    "job_submission"]["from_scheduler"]["enabled"]
+                self.resource_manager = ResourceManager(
+                    {res["id"]: res for res in event_data["compute_resources"]})
+                self.profiles = event_data["profiles"]
+                self.workloads = event_data["workloads"]
+            elif event_type == "SIMULATION_ENDS":
+                assert self.running_simulation, "No simulation is currently running"
+                assert self.nb_jobs_received == self.nb_jobs_completed, "There are some jobs unfinished"
+                assert self.nb_jobs_received == (self.nb_jobs_resubmit+self.nb_jobs_scheduled)
+                self.running_simulation = False
+            elif event_type == "JOB_SUBMITTED":
+                json_dict = event_data["job"]
+                try:
+                    profile_dict = event_data["profile"]
+                except KeyError:
+                    profile_dict = {}
+                job = Job.from_json_dict(json_dict, profile_dict)
+
+                self._handle_job_submitted(job)
+            elif event_type == "JOB_COMPLETED":
+                job_id = event_data["job_id"]
+                j = self.jobs[job_id]
+                j.finish_time = event["timestamp"]
+
+                try:
+                    j.job_state = Job.State[event["data"]["job_state"]]
+                except KeyError:
+                    j.job_state = Job.State.UNKNOWN
+                j.return_code = event["data"]["return_code"]
+
+                self._handle_job_completed(j)
+            elif event_type == "RESOURCE_STATE_CHANGED":
+                res = list(map(int, event_data["resources"].split(" ")))
+                self._handle_resource_state_changed(
+                    res, int(event_data["state"]))
+            elif event_type == "ANSWER":
+                if "consumed_energy" in event_data:
+                    self.energy_consumed = event_data["consumed_energy"]
+                elif "processor_temperature_all" in event_data:
+                    self.proc_temp = event_data["processor_temperature_all"]
+                elif "air_temperature_all" in event_data:
+                    self.air_temp = event_data["air_temperature_all"]
+            else:
+                raise Exception("Unknown event type {}".format(event_type))
+
+        self.protocol_manager.acknowledge()
+
+        if self.nb_jobs_completed == self.nb_jobs:
+            self._handle_all_jobs_completed()
+
+        self._send_events()
+
+        return not self.running_simulation
+
+
+class BatsimProtocolHandler:
+    def __init__(self):
+        self.events = []
+        self.current_time = 0
+        self._ack = False
+
+    def flush(self):
+        if (len(self.events) == 0 and not self._ack):
+            return None
+
+        self._ack = False
+
+        if len(self.events) > 0:
+            self.events = sorted(
+                self.events, key=lambda event: event['timestamp'])
+
+        msg = {
+            "now": self.now(),
+            "events": self.events
+        }
+
+        self.events = []
+
+        return msg
+
+    def update_time(self, time):
+        self.current_time = time
+
+    def now(self):
+        return self.current_time
 
     def consume_time(self, t):
-        self._current_time += float(t)
-        return self._current_time
+        self.current_time += float(t)
+        return self.current_time
 
     def wake_me_up_at(self, time):
-        self._events_to_send.append(
-            {"timestamp": self.time(),
+        self.events.append(
+            {"timestamp": self.now(),
              "type": "CALL_ME_LATER",
              "data": {"timestamp": time}})
 
     def notify_submission_finished(self):
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "NOTIFY",
             "data": {
                     "type": "submission_finished",
@@ -253,8 +326,8 @@ class BatsimHandler:
         })
 
     def notify_submission_continue(self):
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "NOTIFY",
             "data": {
                     "type": "continue_submission",
@@ -262,8 +335,8 @@ class BatsimHandler:
         })
 
     def send_message_to_job(self, job, message):
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "TO_JOB_MSG",
             "data": {
                     "job_id": job.id,
@@ -271,38 +344,16 @@ class BatsimHandler:
             }
         })
 
-    def start_jobs_continuous(self, allocs):
-        """
-        allocs should have the following format:
-        [ (job, (first res, last res)), (job, (first res, last res)), ...]
-        """
-
-        if len(allocs) == 0:
-            return
-
-        for (job, (first_res, last_res)) in allocs:
-            self._events_to_send.append({
-                "timestamp": self.time(),
-                "type": "EXECUTE_JOB",
-                "data": {
-                        "job_id": job.id,
-                        "alloc": "{}-{}".format(first_res, last_res)
-                }
-            }
-            )
-            self.nb_jobs_scheduled += 1
-
     def start_job(self, job, res):
         """ args:res: is list of int (resources ids) """
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "EXECUTE_JOB",
             "data": {
                     "job_id": job.id,
                     "alloc": str(ProcSet(*res))
             }
         })
-        self.nb_jobs_scheduled += 1
 
     def execute_jobs(self, jobs, io_jobs=None):
         """ args:jobs: list of jobs to execute (job.allocation MUST be set) """
@@ -311,7 +362,7 @@ class BatsimHandler:
             assert job.allocation is not None
 
             message = {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "EXECUTE_JOB",
                 "data": {
                         "job_id": job.id,
@@ -321,26 +372,23 @@ class BatsimHandler:
             if io_jobs is not None and job.id in io_jobs:
                 message["data"]["additional_io_job"] = io_jobs[job.id]
 
-            self._events_to_send.append(message)
-            self.nb_jobs_scheduled += 1
+            self.events.append(message)
 
-    def reject_jobs(self, jobs):
+    def reject_job(self, job):
         """Reject the given jobs."""
-        assert len(jobs) > 0, "The list of jobs to reject is empty"
-        for job in jobs:
-            self._events_to_send.append({
-                "timestamp": self.time(),
-                "type": "REJECT_JOB",
-                "data": {
-                        "job_id": job.id,
-                }
-            })
-            self.nb_jobs_rejected += 1
+        assert job is not None, "The job to reject is empty"
+        self.events.append({
+            "timestamp": self.now(),
+            "type": "REJECT_JOB",
+            "data": {
+                    "job_id": job.id,
+            }
+        })
 
     def change_job_state(self, job, state):
         """Change the state of a job."""
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "CHANGE_JOB_STATE",
             "data": {
                     "job_id": job.id,
@@ -353,8 +401,8 @@ class BatsimHandler:
         assert len(jobs) > 0, "The list of jobs to kill is empty"
         for job in jobs:
             job.job_state = Job.State.IN_KILLING
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "KILL_JOB",
             "data": {
                     "job_ids": [job.id for job in jobs],
@@ -364,7 +412,7 @@ class BatsimHandler:
     def submit_profiles(self, workload_name, profiles):
         for profile_name, profile in profiles.items():
             msg = {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "SUBMIT_PROFILE",
                 "data": {
                     "workload_name": workload_name,
@@ -372,7 +420,7 @@ class BatsimHandler:
                     "profile": profile,
                 }
             }
-            self._events_to_send.append(msg)
+            self.events.append(msg)
 
     def submit_job(
             self,
@@ -388,10 +436,10 @@ class BatsimHandler:
             "id": id,
             "res": res,
             "walltime": walltime,
-            "subtime": self.time() if subtime is None else subtime,
+            "subtime": self.now() if subtime is None else subtime,
         }
         msg = {
-            "timestamp": self.time(),
+            "timestamp": self.now(),
             "type": "SUBMIT_JOB",
             "data": {
                 "job_id": id,
@@ -402,18 +450,13 @@ class BatsimHandler:
             assert isinstance(profile, dict)
             msg["data"]["profile"] = profile
 
-        self._events_to_send.append(msg)
-        self.nb_jobs_submitted += 1
-
-        # Create the job here
-        self.jobs[id] = Job.from_json_dict(job_dict, profile_dict=profile)
-        self.jobs[id].job_state = Job.State.SUBMITTED
+        self.events.append(msg)
 
         return id
 
     def set_resource_state(self, resources, state):
-        self._events_to_send.append({
-            "timestamp": self.time(),
+        self.events.append({
+            "timestamp": self.now(),
             "type": "SET_RESOURCE_STATE",
             "data": {
                 "resources": " ".join([str(r) for r in resources]),
@@ -421,19 +464,10 @@ class BatsimHandler:
             }
         })
 
-    def get_job(self, event):
-        json_dict = event["data"]["job"]
-        try:
-            profile_dict = event["data"]["profile"]
-        except KeyError:
-            profile_dict = {}
-        job = Job.from_json_dict(json_dict, profile_dict)
-        return job
-
     def request_consumed_energy(self):  # TODO CHANGE NAME
-        self._events_to_send.append(
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "QUERY",
                 "data": {
                     "requests": {"consumed_energy": {}}
@@ -442,9 +476,9 @@ class BatsimHandler:
         )
 
     def request_air_temperature_all(self):
-        self._events_to_send.append(
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "QUERY",
                 "data": {
                     "requests": {"air_temperature_all": {}}
@@ -453,9 +487,9 @@ class BatsimHandler:
         )
 
     def request_processor_temperature_all(self):
-        self._events_to_send.append(
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "QUERY",
                 "data": {
                     "requests": {"processor_temperature_all": {}}
@@ -464,9 +498,9 @@ class BatsimHandler:
         )
 
     def notify_resources_added(self, resources):
-        self._events_to_send.append(
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "RESOURCES_ADDED",
                 "data": {
                     "resources": resources
@@ -475,9 +509,9 @@ class BatsimHandler:
         )
 
     def notify_resources_removed(self, resources):
-        self._events_to_send.append(
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "RESOURCES_REMOVED",
                 "data": {
                     "resources": resources
@@ -489,12 +523,11 @@ class BatsimHandler:
         # Consume some time to be sure that the job was created before the
         # metadata is set
 
-        if self._events_to_send == None:
-            self._events_to_send = []
-        self.jobs[job_id].metadata = metadata
-        self._events_to_send.append(
+        if self.events == None:
+            self.events = []
+        self.events.append(
             {
-                "timestamp": self.time(),
+                "timestamp": self.now(),
                 "type": "SET_JOB_METADATA",
                 "data": {
                     "job_id": str(job_id),
@@ -510,7 +543,7 @@ class BatsimHandler:
         else:
             job_id = job_id[:-1] + str(int(job_id[-1]) + 1)
 
-        self.reject_jobs([job])
+        self.reject_job(job)
 
         self.consume_time(delay)
 
@@ -525,148 +558,29 @@ class BatsimHandler:
     def acknowledge(self):
         self._ack = True
 
-    def wait_until_next_event(self):
-        jobs_received = self.nb_jobs_received
-        self._read_bat_msg()
-        while self.nb_jobs_received == jobs_received and self.running_simulation and len(self.manager.jobs_waiting) == 0:
-            self._read_bat_msg()
 
-    def _initialize_vars(self):
-        self.nb_jobs_received = 0
-        self.nb_jobs_submitted = 0
-        self.nb_jobs_killed = 0
-        self.nb_jobs_rejected = 0
-        self.nb_jobs_scheduled = 0
-        self.nb_jobs_completed = 0
-        self.nb_jobs_successful = 0
-        self.nb_jobs_failed = 0
-        self.nb_jobs_timeout = 0
-        self._ack = False
-        self._block_event = False
-        self._events_to_send = []
-        self.jobs = dict()
+class ResourceManager:
+    def __init__(self, resources):
+        self.resources = resources
 
-    def _send_bat_events(self):
-        if (len(self._events_to_send) == 0 and not self._ack) or self._block_event:
-            self._block_event = False
-            return
+    def is_available(self, resources):
+        for r in resources:
+            try:
+                resource = self.resources[r]
+            except KeyError as e:
+                raise KeyError("Could not find resource: {}".format(e))
+            if not resource['state'] == ResourceState.idle.name:
+                return False
 
-        self._ack = False
+        return True
 
-        if len(self._events_to_send) > 0:
-            self._events_to_send = sorted(
-                self._events_to_send, key=lambda event: event['timestamp'])
+    def set_state(self, resources, state):
+        state_name = ResourceState.to_name(state)
+        for res in resources:
+            self.resources[res]['state'] = state_name
 
-        new_msg = {
-            "now": self._current_time,
-            "events": self._events_to_send
-        }
-        self.network.send(new_msg)
-        self.logger.info("Message Sent to Batsim: {}".format(new_msg))
-        self._events_to_send = []
-
-    def _read_bat_msg(self):
-        msg = None
-        while msg is None:
-            msg = self.network.recv(blocking=not self.running_simulation)
-            if msg is None:
-                self.manager.onDeadlock()
-                continue
-        self.logger.info("Message Received from Batsim: {}".format(msg))
-
-        self._current_time = msg["now"]
-
-        if "air_temperatures" in msg:
-            self.air_temperatures = msg["air_temperatures"]
-
-        self.manager.onBeforeEvents()
-
-        for event in msg["events"]:
-            event_type = event["type"]
-            event_data = event.get("data", {})
-            if event_type == "SIMULATION_BEGINS":
-                assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
-                assert event_data["nb_resources"] == self.nb_resources, "Batsim platform and Simulator platform does not match."
-                self.running_simulation = True
-                self.nb_compute_resources = event_data["nb_compute_resources"]
-                self.nb_storage_resources = event_data["nb_storage_resources"]
-                self.machines = {"compute": event_data["compute_resources"],
-                                 "storage": event_data["storage_resources"]}
-                self.batconf = event_data["config"]
-                self.time_sharing = event_data["allow_time_sharing"]
-                self.dynamic_job_submission_enabled = self.batconf[
-                    "job_submission"]["from_scheduler"]["enabled"]
-                self.resources = {
-                    res["id"]: res for res in event_data["compute_resources"]}
-                self.storage_resources = {
-                    res["id"]: res for res in event_data["storage_resources"]}
-                self.profiles = event_data["profiles"]
-                self.workloads = event_data["workloads"]
-                self.manager.onSimulationBegins()
-            elif event_type == "SIMULATION_ENDS":
-                assert self.running_simulation, "No simulation is currently running"
-                self.running_simulation = False
-                self.logger.info("All jobs have been submitted and completed!")
-                self.manager.onSimulationEnds()
-            elif event_type == "JOB_SUBMITTED":
-                # Received WORKLOAD_NAME!JOB_ID
-                job_id = event_data["job_id"]
-                job = self.get_job(event)
-                job.job_state = Job.State.SUBMITTED
-
-                # don't override dynamic job
-                if job_id not in self.jobs:
-                    self.jobs[job_id] = job
-
-                self.manager.onJobSubmission(job)
-                self.nb_jobs_received += 1
-            elif event_type == "JOB_COMPLETED":
-                job_id = event_data["job_id"]
-                j = self.jobs[job_id]
-                j.finish_time = event["timestamp"]
-
-                try:
-                    j.job_state = Job.State[event["data"]["job_state"]]
-                except KeyError:
-                    j.job_state = Job.State.UNKNOWN
-                j.return_code = event["data"]["return_code"]
-
-                self.manager.onJobCompletion(j)
-
-                if j.job_state == Job.State.COMPLETED_WALLTIME_REACHED:
-                    self.nb_jobs_timeout += 1
-                elif j.job_state == Job.State.COMPLETED_FAILED:
-                    self.nb_jobs_failed += 1
-                elif j.job_state == Job.State.COMPLETED_SUCCESSFULLY:
-                    self.nb_jobs_successful += 1
-                elif j.job_state == Job.State.COMPLETED_KILLED:
-                    self.nb_jobs_killed += 1
-                self.nb_jobs_completed += 1
-            elif event_type == "RESOURCE_STATE_CHANGED":
-                res = list(map(int, event_data["resources"].split(" ")))
-                self.manager.onMachinePStateChanged(
-                    res, int(event_data["state"]))
-            elif event_type == "ANSWER":
-                if "consumed_energy" in event_data:
-                    self.manager.onReportEnergyConsumed(
-                        event_data["consumed_energy"])
-                elif "processor_temperature_all" in event_data:
-                    self.manager.onAnswerProcessorTemperatureAll(
-                        event_data["processor_temperature_all"])
-                elif "air_temperature_all" in event_data:
-                    self.manager.onAnswerAirTemperatureAll(
-                        event_data["air_temperature_all"])
-            else:
-                raise Exception("Unknown event type {}".format(event_type))
-
-        self.manager.onNoMoreEvents()
-
-        if self.nb_jobs_completed == self.nb_jobs:
-            self.manager.onAllJobsCompleted()
-
-        self._send_bat_events()
-
-        return not self.running_simulation
+    def get_state(self):
+        return [ResourceState.to_value(s['state']) for _, s in self.resources.items()]
 
 
 class Job(object):
@@ -697,6 +611,7 @@ class Job(object):
         self.requested_resources = res
         self.profile = profile
         self.finish_time = None  # will be set on completion by batsim
+        self.waiting_time = None  # will be set by batsim
         self.job_state = Job.State.UNKNOWN
         self.return_code = None
         self.progress = None
@@ -732,6 +647,109 @@ class Job(object):
                    json_dict["profile"],
                    json_dict,
                    profile_dict)
+
+
+class ResourceState(Enum):
+    sleeping = 0
+    idle = 1
+    computing = 2
+
+    @staticmethod
+    def to_value(name):
+        if name == ResourceState.sleeping.name:
+            return ResourceState.sleeping.value
+        elif name == ResourceState.idle.name:
+            return ResourceState.idle.value
+        elif name == ResourceState.computing.name:
+            return ResourceState.computing.value
+        else:
+            raise Exception("Unknown resource state name {}".format(name))
+
+    @staticmethod
+    def to_name(value):
+        if value == ResourceState.sleeping.value:
+            return ResourceState.sleeping.name
+        elif value == ResourceState.idle.value:
+            return ResourceState.idle.name
+        elif value == ResourceState.computing.value:
+            return ResourceState.computing.name
+        else:
+            raise Exception("Unknown resource state value {}".format(value))
+
+
+class NetworkHandler:
+
+    def __init__(
+            self,
+            socket_endpoint,
+            verbose=0,
+            timeout=2000,
+            type=zmq.REP):
+        self.socket_endpoint = socket_endpoint
+        self.verbose = verbose
+        self.timeout = timeout
+        self.context = zmq.Context()
+        self.connection = None
+        self.type = type
+
+    def send(self, msg):
+        self.send_string(json.dumps(msg))
+
+    def send_string(self, msg):
+        assert self.connection, "Connection not open"
+        if self.verbose > 0:
+            print("[PYBATSIM]: SEND_MSG\n {}".format(msg))
+        self.connection.send_string(msg)
+
+    def recv(self, blocking=False):
+        msg = self.recv_string(blocking=blocking)
+        if msg is not None:
+            msg = json.loads(msg)
+        return msg
+
+    def recv_string(self, blocking=False):
+        assert self.connection, "Connection not open"
+        if blocking or self.timeout is None or self.timeout <= 0:
+            self.connection.RCVTIMEO = -1
+        else:
+            self.connection.RCVTIMEO = self.timeout
+        try:
+            msg = self.connection.recv_string()
+        except zmq.error.Again:
+            return None
+
+        if self.verbose > 0:
+            print('[PYBATSIM]: RECEIVED_MSG\n {}'.format(msg))
+
+        return msg
+
+    def bind(self):
+        assert not self.connection, "Connection already open"
+        self.connection = self.context.socket(self.type)
+
+        if self.verbose > 0:
+            print("[PYBATSIM]: binding to {addr}"
+                  .format(addr=self.socket_endpoint))
+        self.connection.bind(self.socket_endpoint)
+
+    def connect(self):
+        assert not self.connection, "Connection already open"
+        self.connection = self.context.socket(self.type)
+
+        if self.verbose > 0:
+            print("[PYBATSIM]: connecting to {addr}"
+                  .format(addr=self.socket_endpoint))
+        self.connection.connect(self.socket_endpoint)
+
+    def subscribe(self, pattern=b''):
+        self.type = zmq.SUB
+        self.connect()
+        self.connection.setsockopt(zmq.SUBSCRIBE, pattern)
+
+    def close(self):
+        if self.connection:
+            self.connection.close()
+            self.connection = None
 
 
 class InsufficientResourcesError(Exception):

@@ -7,7 +7,7 @@ try:
     from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
 except ImportError as e:
     raise error.DependencyNotInstalled(
-        "{}. (HINT: you need to install PYBATSIM (https://pypi.org/project/pybatsim/) and BATSIM (https://github.com/oar-team/batsim)".format(e))
+        "{}. (HINT: you need to install BATSIM (https://github.com/oar-team/batsim)".format(e))
 
 
 class GridEnv(gym.Env):
@@ -46,7 +46,7 @@ class GridEnv(gym.Env):
         res = [i for i, v in enumerate(action) if v == 1]
 
         try:
-            self.simulator.manager.schedule_job(res)
+            self.simulator.schedule_job(res)
             reward = 1
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -100
@@ -64,21 +64,15 @@ class GridEnv(gym.Env):
         # def one_hot(a, num_classes):
         #    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
 
-        res_info = self.simulator.manager.get_resources_info()
-        job = self.simulator.manager.get_job_info()
-        if job == None:
-            job = {'res': 0, 'requested_time': 0, 'waiting_time': 0}
-        else:
-            job = {
-                'res': job.requested_resources,
-                'requested_time': job.requested_time,
-                'waiting_time': int(self.simulator.time() - job.submit_time)
-            }
-
-        state = {
-            'resources': res_info,
-            'job': job
+        res_info = self.simulator.get_resources_info()
+        job = self.simulator.get_job_info()
+        job_info = {
+            'res': 0 if job is None else job.requested_resources,
+            'requested_time': 0 if job is None else job.requested_time,
+            'waiting_time': 0 if job is None else job.waiting_time
         }
+
+        state = {'resources': res_info, 'job': job_info}
 
         return state
 
