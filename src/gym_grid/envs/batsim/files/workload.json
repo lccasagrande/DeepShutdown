@@ -7,22 +7,15 @@
         "id": 0,
         "profile": "delay_ft.B.1",
         "res": 1,
-        "subtime": 0,
+        "subtime": 1,
         "walltime": 149
       },
       {
         "id": 1,
         "profile": "delay_ft.C.2",
         "res": 1,
-        "subtime": 1,
-        "walltime": 399
-      },
-      {
-        "id": 2,
-        "profile": "delay_lu.B.1",
-        "res": 1,
         "subtime": 2,
-        "walltime": 420
+        "walltime": 399
       }
     ],
     "nb_res": 32,
@@ -85,9 +78,9 @@
       },
       "delay_ft.C.2": {
         "command": "mpirun --mca btl self,sm,tcp -hostfile \\$OAR_NODEFILE --path $PATH ft.C.2",
-        "delay": 265.8,
+        "delay": 100.8,
         "np": 2,
-        "runtime": 265.8,
+        "runtime": 100.8,
         "type": "delay"
       },
       "delay_ft.C.32": {

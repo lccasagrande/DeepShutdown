@@ -4,7 +4,7 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 
 try:
-    from .batsim.batsim import BatsimHandler
+    from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
 except ImportError as e:
     raise error.DependencyNotInstalled(
         "{}. (HINT: you need to install PYBATSIM (https://pypi.org/project/pybatsim/) and BATSIM (https://github.com/oar-team/batsim)".format(e))
@@ -12,19 +12,16 @@ except ImportError as e:
 
 class GridEnv(gym.Env):
     MAX_WALLTIME = 7200
-    PLATFORM = "platform.xml"
-    WORKLOAD = "workload.json"
 
     def __init__(self):
-        self.simulator = BatsimHandler(
-            "tcp://*:28000", GridEnv.PLATFORM, GridEnv.WORKLOAD)
+        self.simulator = BatsimHandler()
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.seed()
 
     def step(self, action):
-        success = self._take_action(action)
-        reward = self._get_reward(success)
+        assert self.simulator.running_simulation, "Simulation is not running."
+        reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
 
@@ -46,12 +43,15 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _take_action(self, action):
-        res = []
-        for i, act in enumerate(action):
-            if act == 1:
-                res.append(i)
-        success = self.simulator.manager.schedule_job(res)
-        return success
+        res = [i for i, v in enumerate(action) if v == 1]
+
+        try:
+            self.simulator.manager.schedule_job(res)
+            reward = 1
+        except (InsufficientResourcesError, UnavailableResourcesError):
+            reward = -100
+
+        return reward
 
     def _get_reward(self, success):
         if self.simulator.running_simulation:
@@ -79,7 +79,7 @@ class GridEnv(gym.Env):
             'resources': res_info,
             'job': job
         }
-        
+
         return state
 
     def _get_action_space(self):

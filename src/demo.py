@@ -9,8 +9,7 @@ from collections import defaultdict, deque
 def q_learning(env, num_episodes, alpha, gamma=1.0):
     def print_progress(i_episode, num_episodes):
         # if i_episode % (num_episodes//10) == 0:
-        print("\rEpisode {}/{}".format(i_episode, num_episodes), end="")
-        sys.stdout.flush()
+        print("\rEpisode {}/{}\n".format(i_episode, num_episodes), end="")
 
     def epsilon_greedy(Q, state, nA, eps):
         if np.random.random() > eps:
@@ -37,20 +36,24 @@ def q_learning(env, num_episodes, alpha, gamma=1.0):
     for i in range(1, num_episodes + 1):
         print_progress(i, num_episodes)
         score = 0
-        action = [ [1,0,0,0,0], [0,1,0,0,0], [0,0,1,0,0], [0,0,0,1,0] ]
+        action = [[1, 0, 0], [1, 0, 0],  [0, 1, 0],  [0, 1, 0]]
         bb = 0
         state = env.reset()
         eps = 1.0 / i
         while True:
             # epsilon_greedy(Q, state, nA, eps)
-            next_state, reward, done, _ = env.step(action[bb])
+            if bb % 2 == 0:
+                act = []
+            else:
+                act = action[bb]
+            next_state, reward, done, _ = env.step(act)
             score += reward
 
-            #Q[state][action] += alpha * \
+            # Q[state][action] += alpha * \
             #    (reward + gamma * Q[next_state]
             #     [np.argmax(Q[next_state])] - Q[state][action])
             state = next_state
-            bb+=1
+            bb += 1
             if done:
                 tmp_scores.append(score)
                 break
@@ -64,7 +67,7 @@ def q_learning(env, num_episodes, alpha, gamma=1.0):
 def run():
     env = gym.make('grid-v0')
 
-    Q = q_learning(env, 44, 0.1)
+    Q = q_learning(env, 10, 0.1)
 
 
 if __name__ == "__main__":
