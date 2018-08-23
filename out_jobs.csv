@@ -1,3 +1,0 @@
-allocated_processors,consumed_energy,execution_time,finish_time,job_id,metadata,requested_number_of_processors,requested_time,starting_time,stretch,submission_time,success,turnaround_time,waiting_time,workload_name
-1,300.010500,88.510000,91.510105,0#2,"",1,149.000000,3.000105,1.022598,1.000000,1,90.510105,2.000105,1aff3f
-0,200.007500,100.800000,102.800075,1,"",1,399.000000,2.000075,1.000001,2.000000,1,100.800075,0.000075,1aff3f

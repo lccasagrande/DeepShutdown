@@ -1,22 +1,27 @@
 <?xml version='1.0'?>
 <!DOCTYPE platform SYSTEM "http://simgrid.gforge.inria.fr/simgrid/simgrid.dtd">
-<platform version="4">
+<platform version="4.1">
 <zone id="AS0"  routing="Full">
     <host id="master_host" speed="100Mf" pstate="0">
         <prop id="watt_per_state" value="100:100" />
         <prop id="watt_off" value="10" />
     </host>
-    <host id="Mercury" speed="0Mf, 100.0Mf, 100.0Mf" pstate="1" core="1">
+    <host id="Mercury" speed="0Mf, 150.0Mf, 150.0Mf" pstate="1" core="1">
         <prop id="watt_per_state" value="0:0, 100:100, 300:300" />
         <prop id="watt_off" value="10" />
     </host>
 
-    <host id="Venus" speed="0Mf, 100.0Mf, 100.0Mf" pstate="1" core="1">
+    <host id="Venus" speed="0Mf, 125.0Mf, 125.0Mf" pstate="1" core="1">
         <prop id="watt_per_state" value="0:0, 100:100, 300:300" />
         <prop id="watt_off" value="10" />
     </host>
 
     <host id="Venus2" speed="0Mf, 100.0Mf, 100.0Mf" pstate="1" core="1">
+        <prop id="watt_per_state" value="0:0, 100:100, 300:300" />
+        <prop id="watt_off" value="10" />
+    </host>
+
+    <host id="Venus3" speed="0Mf, 75.0Mf, 75.0Mf" pstate="1" core="1">
         <prop id="watt_per_state" value="0:0, 100:100, 300:300" />
         <prop id="watt_off" value="10" />
     </host>

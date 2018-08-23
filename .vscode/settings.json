@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/home/d2/anaconda3/envs/udacity-rl/bin/python"
+    "python.pythonPath": "/home/d2/anaconda3/envs/drl-grid/bin/python",
+    "git.ignoreLimitWarning": true
 }

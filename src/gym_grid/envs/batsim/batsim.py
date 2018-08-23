@@ -5,10 +5,9 @@ import os
 import json
 import zmq
 from xml.dom import minidom
-from enum import Enum
+from enum import Enum, unique
 import subprocess
 from copy import deepcopy
-from procset import ProcSet
 from collections import defaultdict, deque
 
 
@@ -20,12 +19,16 @@ class BatsimHandler:
     WORKLOAD = "workload.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
+    OUTPUT_DIR = "results"
 
-    def __init__(self, verbose="information"):
+    def __init__(self, output_freq, verbose="information"):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
+        if not os.path.exists(BatsimHandler.OUTPUT_DIR):
+            raise IOError("Dir %s does not exist" % BatsimHandler.OUTPUT_DIR)
 
+        self._output_freq = output_freq
         self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
         self._workload = os.path.join(fullpath, BatsimHandler.WORKLOAD)
         self._config = os.path.join(fullpath, BatsimHandler.CONFIG)
@@ -36,6 +39,7 @@ class BatsimHandler:
         self.nb_resources = self._count_resources(self._platform)
         self.nb_jobs = self._count_jobs(self._workload)
         self.protocol_manager = BatsimProtocolHandler()
+        self.nb_simulation = 0
         self._initialize_vars()
 
     def get_job_info(self):
@@ -58,6 +62,7 @@ class BatsimHandler:
 
     def start(self):
         self._initialize_vars()
+        self.nb_simulation += 1
         self._simulator_process = self._start_simulator()
         self.network.bind()
         self.wait_until_next_event()
@@ -65,40 +70,59 @@ class BatsimHandler:
             raise ConnectionError(
                 "An error ocurred during simulator starting.")
 
-    def schedule_job(self, res):
-        def handle_reject():
+    @property
+    def metrics(self):
+        assert not self.running_simulation, "Metrics can be calculated only after simulation finishes"
+        makespan = list(self.jobs.values())[-1].finish_time - list(self.jobs.values())[0].submit_time
+        min_exectime = makespan / len(self.jobs)
+        turnaround = 0
+        for _, job in self.jobs.items():
+            turnaround += job.finish_time - job.submit_time
+
+        return {'mean_exectime': min_exectime, 'turnaround': turnaround}
+
+    def _set_resource_state(self, resources, state):
+        self.protocol_manager.set_resource_state(resources, state)
+        self._handle_resource_state_changed(resources, state)
+
+    def schedule_job(self, resources):
+        def handle_reject(job):
+            job = self.jobs_waiting.popleft()
+            job.job_state = Job.State.REJECTED
             self.protocol_manager.reject_job([job])
             self.nb_jobs_rejected += 1
 
-        def handle_void():
+        def handle_void(job):
+            job = self.jobs_waiting.popleft()
+            del self.jobs[job.id]
             self.protocol_manager.resubmit_job(job)
             self.nb_jobs_resubmit += 1
 
-        def handle_allocation():
-            if job.requested_resources != len(res):
+        def handle_allocation(job):
+            if job.requested_resources != len(resources):
                 raise InsufficientResourcesError(
-                    "Job requested {} resources while {} resources were selected.".format(job.requested_resources, len(res)))
+                    "Job requested {} resources while {} resources were selected.".format(job.requested_resources, len(resources)))
 
-            if not self.resource_manager.is_available(res):
+            if not self.resource_manager.is_available(resources):
                 raise UnavailableResourcesError(
                     "Cannot allocate unavailable resources for job {}.".format(job.id))
-
-            self.protocol_manager.start_job(job, res)
-            self.protocol_manager.set_resource_state(
-                res, ResourceState.computing)
-            job.allocation = res
+                    
+            job = self.jobs_waiting.popleft()
+            self.protocol_manager.start_job(job, resources)
+            self._set_resource_state(resources, ResourceState.computing)
+            job.allocation = resources
             self.nb_jobs_scheduled += 1
 
         assert self.running_simulation, "Simulation is not running."
-        job = self.jobs_waiting.popleft()
+        job = self.jobs_waiting[0]
         job.waiting_time = int(self.now()) - job.submit_time
 
-        if res == None:
-            handle_reject()
-        elif len(res) == 0:
-            handle_void()
+        if resources == None:
+            handle_reject(job)
+        elif len(resources) == 0:
+            handle_void(job)
         else:
-            handle_allocation()
+            handle_allocation(job)
 
         if len(self.jobs_waiting) == 0:
             self._send_events()
@@ -124,13 +148,24 @@ class BatsimHandler:
         return nb_jobs
 
     def _start_simulator(self, dev=True):
+        if self.nb_simulation % self._output_freq == 0:
+            output_path = BatsimHandler.OUTPUT_DIR + \
+                "/" + str(self.nb_simulation)
+        else:
+            output_path = BatsimHandler.OUTPUT_DIR + "/tmp."
+
         if dev:
             path = "/home/d2/Projects/batsim/build/batsim"
         else:
             path = "batsim"
-        cmd = path + " -p %s -w %s -v %s -E --config-file %s" % (
-            self._platform, self._workload, self._verbose, self._config)
-        # return Popen(shlex.split(cmd))
+
+        cmd = "{} -p {} -w {} -v {} -E --config-file {} -e {}".format(path,
+                                                                      self._platform,
+                                                                      self._workload,
+                                                                      self._verbose,
+                                                                      self._config,
+                                                                      output_path)
+
         return subprocess.Popen("exec " + cmd, stdout=subprocess.PIPE, shell=True)
 
     def _initialize_vars(self):
@@ -173,7 +208,6 @@ class BatsimHandler:
                 self.nb_jobs_killed += 1
             self.nb_jobs_completed += 1
 
-        self.nb_jobs_completed += 1
         self.protocol_manager.set_resource_state(
             job.allocation, ResourceState.idle)
         update_job_stats(job)
@@ -227,8 +261,6 @@ class BatsimHandler:
                 self.workloads = event_data["workloads"]
             elif event_type == "SIMULATION_ENDS":
                 assert self.running_simulation, "No simulation is currently running"
-                assert self.nb_jobs_received == self.nb_jobs_completed, "There are some jobs unfinished"
-                assert self.nb_jobs_received == (self.nb_jobs_resubmit+self.nb_jobs_scheduled)
                 self.running_simulation = False
             elif event_type == "JOB_SUBMITTED":
                 json_dict = event_data["job"]
@@ -254,7 +286,7 @@ class BatsimHandler:
             elif event_type == "RESOURCE_STATE_CHANGED":
                 res = list(map(int, event_data["resources"].split(" ")))
                 self._handle_resource_state_changed(
-                    res, int(event_data["state"]))
+                    res, ResourceState.from_value(int(event_data["state"])))
             elif event_type == "ANSWER":
                 if "consumed_energy" in event_data:
                     self.energy_consumed = event_data["consumed_energy"]
@@ -351,7 +383,7 @@ class BatsimProtocolHandler:
             "type": "EXECUTE_JOB",
             "data": {
                     "job_id": job.id,
-                    "alloc": str(ProcSet(*res))
+                    "alloc": " ".join(str(r) for r in res)
             }
         })
 
@@ -562,6 +594,8 @@ class BatsimProtocolHandler:
 class ResourceManager:
     def __init__(self, resources):
         self.resources = resources
+        for _, resource in self.resources.items():
+            resource['state'] = ResourceState.from_name(resource['state']).name
 
     def is_available(self, resources):
         for r in resources:
@@ -575,12 +609,11 @@ class ResourceManager:
         return True
 
     def set_state(self, resources, state):
-        state_name = ResourceState.to_name(state)
         for res in resources:
-            self.resources[res]['state'] = state_name
+            self.resources[res]['state'] = state.name
 
     def get_state(self):
-        return [ResourceState.to_value(s['state']) for _, s in self.resources.items()]
+        return [s['state'] for _, s in self.resources.items()]
 
 
 class Job(object):
@@ -649,10 +682,33 @@ class Job(object):
                    profile_dict)
 
 
+@unique
 class ResourceState(Enum):
     sleeping = 0
     idle = 1
     computing = 2
+
+    @staticmethod
+    def from_name(name):
+        if name == ResourceState.sleeping.name:
+            return ResourceState.sleeping
+        elif name == ResourceState.idle.name:
+            return ResourceState.idle
+        elif name == ResourceState.computing.name:
+            return ResourceState.computing
+        else:
+            raise Exception("Unknown resource state name {}".format(name))
+
+    @staticmethod
+    def from_value(value):
+        if value == ResourceState.sleeping.value:
+            return ResourceState.sleeping
+        elif value == ResourceState.idle.value:
+            return ResourceState.idle
+        elif value == ResourceState.computing.value:
+            return ResourceState.computing
+        else:
+            raise Exception("Unknown resource state value {}".format(value))
 
     @staticmethod
     def to_value(name):

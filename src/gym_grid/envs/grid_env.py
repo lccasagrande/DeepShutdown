@@ -1,20 +1,16 @@
 import gym
-import numpy as np
+from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
-
-try:
-    from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
-except ImportError as e:
-    raise error.DependencyNotInstalled(
-        "{}. (HINT: you need to install BATSIM (https://github.com/oar-team/batsim)".format(e))
+from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
+import numpy as np
 
 
 class GridEnv(gym.Env):
     MAX_WALLTIME = 7200
 
     def __init__(self):
-        self.simulator = BatsimHandler()
+        self.simulator = BatsimHandler(output_freq=1, verbose='quiet')
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.seed()
@@ -24,6 +20,9 @@ class GridEnv(gym.Env):
         reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
+
+        if done:
+            reward = 1 / self.simulator.metrics['mean_exectime']
 
         return obs, reward, done, {}
 
@@ -43,13 +42,13 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _take_action(self, action):
-        res = [i for i, v in enumerate(action) if v == 1]
+        res = [] if action == 0 else [action - 1]
 
         try:
             self.simulator.schedule_job(res)
-            reward = 1
+            reward = 0
         except (InsufficientResourcesError, UnavailableResourcesError):
-            reward = -100
+            reward = -1
 
         return reward
 
@@ -61,9 +60,6 @@ class GridEnv(gym.Env):
         return 0
 
     def _get_state(self):
-        # def one_hot(a, num_classes):
-        #    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
-
         res_info = self.simulator.get_resources_info()
         job = self.simulator.get_job_info()
         job_info = {
@@ -77,7 +73,7 @@ class GridEnv(gym.Env):
         return state
 
     def _get_action_space(self):
-        return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.nb_resources)])
+        return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.nb_resources+1)])
 
     def _get_observation_space(self):
         space = spaces.Dict({
