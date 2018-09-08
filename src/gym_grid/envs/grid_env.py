@@ -10,7 +10,7 @@ class GridEnv(gym.Env):
     MAX_WALLTIME = 7200
 
     def __init__(self):
-        self.simulator = BatsimHandler(output_freq=1, verbose='quiet')
+        self.simulator = BatsimHandler(output_freq=1, verbose='information')
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.seed()
@@ -20,9 +20,6 @@ class GridEnv(gym.Env):
         reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
-
-        if done:
-            reward = 1 / self.simulator.metrics['mean_exectime']
 
         return obs, reward, done, {}
 
@@ -42,22 +39,19 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _take_action(self, action):
-        res = [] if action == 0 else [action - 1]
+        resources = []
+        if action[0] == 0:
+            for ind, act in enumerate(action):
+                if act == 1:
+                    resources.append(ind-1)
 
         try:
-            self.simulator.schedule_job(res)
+            self.simulator.schedule_job(resources)
             reward = 0
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -1
 
         return reward
-
-    def _get_reward(self, success):
-        if self.simulator.running_simulation:
-            if not success:
-                return -1
-
-        return 0
 
     def _get_state(self):
         res_info = self.simulator.get_resources_info()

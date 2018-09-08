@@ -5,32 +5,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 import utils
 from random import sample
+import time as t
 from collections import defaultdict, deque
 
 
 def select_random_valid_action(state):
     req_res = state['job']['res']
-    available_res = [i for i, res in enumerate(
-        state['resources']) if res == 'idle']
+    available_res = [i for i, res in enumerate(state['resources']) if res == 'idle']
+
+    if len(available_res) < req_res:
+        return [1] + [0 for i, _ in enumerate(state['resources'])]
+
     selected_resources = sample(available_res, req_res)
-    selected_resources = [
-        1 if i in selected_resources else 0 for i, _ in enumerate(state['resources'])]
-
-    n_possib_actions = len(available_res) + 1
-    sched_prob = len(available_res) / n_possib_actions
-    void_prob = 1 / n_possib_actions
-
-    possible_actions = [[], selected_resources]
-    return np.random.choice(possible_actions, size=1, p=[void_prob, sched_prob])[0]
+    return [0] + [1 if i in selected_resources else 0 for i, _ in enumerate(state['resources'])]
 
 
 def run(n_ep=1000, plot=True):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=100)
     avg_scores = deque(maxlen=(n_ep//2))
-
+    t_start = t.time()
     for i in range(1, n_ep + 1):
-        utils.print_progress(i, n_ep)
+        utils.print_progress(t_start, i, n_ep)
         score = 0
         state = env.reset()
         while True:

@@ -21,7 +21,7 @@ class BatsimHandler:
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
 
-    def __init__(self, output_freq, verbose="information"):
+    def __init__(self, output_freq, verbose):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -37,20 +37,18 @@ class BatsimHandler:
         self.running_simulation = False
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.nb_resources = self._count_resources(self._platform)
-        self.nb_jobs = self._count_jobs(self._workload)
         self.protocol_manager = BatsimProtocolHandler()
         self.nb_simulation = 0
         self._initialize_vars()
 
     def get_job_info(self):
-        if len(self.jobs_waiting) == 0:
-            return None
-        job = self.jobs_waiting[0]
-        job.waiting_time = int(self.now()) - job.submit_time
+        job = self.job_manager.lookup()
+        if job is not None:
+            job.waiting_time = int(self.now()) - job.submit_time
         return job
 
     def get_resources_info(self):
-        return self.resource_manager.get_state()
+        return self.resource_manager.get_state(output_values=True)
 
     def close(self):
         if self._simulator_process is not None:
@@ -70,162 +68,122 @@ class BatsimHandler:
             raise ConnectionError(
                 "An error ocurred during simulator starting.")
 
-    @property
-    def metrics(self):
-        assert not self.running_simulation, "Metrics can be calculated only after simulation finishes"
-        makespan = list(self.jobs.values())[-1].finish_time - list(self.jobs.values())[0].submit_time
-        min_exectime = makespan / len(self.jobs)
-        turnaround = 0
-        for _, job in self.jobs.items():
-            turnaround += job.finish_time - job.submit_time
-
-        return {'mean_exectime': min_exectime, 'turnaround': turnaround}
-
-    def _set_resource_state(self, resources, state):
-        self.protocol_manager.set_resource_state(resources, state)
-        self._handle_resource_state_changed(resources, state)
-
-    def schedule_job(self, resources):
-        def handle_reject(job):
-            job = self.jobs_waiting.popleft()
-            job.job_state = Job.State.REJECTED
-            self.protocol_manager.reject_job([job])
-            self.nb_jobs_rejected += 1
-
-        def handle_void(job):
-            job = self.jobs_waiting.popleft()
-            del self.jobs[job.id]
-            self.protocol_manager.resubmit_job(job)
-            self.nb_jobs_resubmit += 1
-
-        def handle_allocation(job):
-            if job.requested_resources != len(resources):
-                raise InsufficientResourcesError(
-                    "Job requested {} resources while {} resources were selected.".format(job.requested_resources, len(resources)))
-
-            if not self.resource_manager.is_available(resources):
-                raise UnavailableResourcesError(
-                    "Cannot allocate unavailable resources for job {}.".format(job.id))
-                    
-            job = self.jobs_waiting.popleft()
-            self.protocol_manager.start_job(job, resources)
-            self._set_resource_state(resources, ResourceState.computing)
-            job.allocation = resources
-            self.nb_jobs_scheduled += 1
-
+    def schedule_job(self, allocation):
         assert self.running_simulation, "Simulation is not running."
-        job = self.jobs_waiting[0]
-        job.waiting_time = int(self.now()) - job.submit_time
+        assert allocation is not None, "Allocation cannot be null."
 
-        if resources == None:
-            handle_reject(job)
-        elif len(resources) == 0:
-            handle_void(job)
+        job = self.get_job_info()
+        assert job is not None
+
+        if self.now() < 10:
+            allocation = []
+
+        if len(allocation) == 0:  # Handle VOID Action
+            self.job_manager.on_job_waiting()
+            self.protocol_manager.acknowledge()
         else:
-            handle_allocation(job)
+            self._validate_allocation(job.requested_resources, allocation)
+            self.job_manager.on_job_scheduling(allocation)
+            self.protocol_manager.start_job(job.id,  allocation)
+            self.resource_manager.set_state(
+                allocation, Resource.State.COMPUTING)
 
-        if len(self.jobs_waiting) == 0:
-            self._send_events()
-            self.wait_until_next_event()
+        if self.job_manager.has_jobs_in_queue():
+            return
+
+        if self.job_manager.has_jobs_waiting():
+            self.protocol_manager.wake_me_up_at(self.now() + 5)
+
+        self._send_events()
+        self.wait_until_next_event()
+        # Enqueue jobs if another type of event has ocurred first.
+        self.job_manager.enqueue_jobs_waiting()
 
     def wait_until_next_event(self):
-        jobs_received = self.nb_jobs_received
         self._read_events()
-        while self.nb_jobs_received == jobs_received and self.running_simulation and len(self.jobs_waiting) == 0:
+        while self.running_simulation and not self.job_manager.has_jobs_in_queue():
             self._read_events()
 
     def now(self):
         assert self.running_simulation, "Simulation not running."
         return self.protocol_manager.now()
 
+    def _validate_allocation(self, req_res, allocation):
+        if req_res != len(allocation):
+            raise InsufficientResourcesError(
+                "Job requested {} resources while {} resources were selected.".format(req_res, len(allocation)))
+
+        if not self.resource_manager.is_available(allocation):
+            raise UnavailableResourcesError(
+                "Cannot allocate unavailable resources.")
+
     def _count_resources(self, platform):
         return len(minidom.parse(platform).getElementsByTagName('host')) - 1
 
-    def _count_jobs(self, workload):
-        with open(workload, 'r') as f:
-            data = json.load(f)
-            nb_jobs = len(data['jobs'])
-        return nb_jobs
-
-    def _start_simulator(self, dev=True):
+    def _start_simulator(self):
         if self.nb_simulation % self._output_freq == 0:
             output_path = BatsimHandler.OUTPUT_DIR + \
                 "/" + str(self.nb_simulation)
         else:
             output_path = BatsimHandler.OUTPUT_DIR + "/tmp."
 
-        if dev:
-            path = "/home/d2/Projects/batsim/build/batsim"
-        else:
-            path = "batsim"
-
-        cmd = "{} -p {} -w {} -v {} -E --config-file {} -e {}".format(path,
-                                                                      self._platform,
-                                                                      self._workload,
-                                                                      self._verbose,
-                                                                      self._config,
-                                                                      output_path)
+        cmd = "batsim -p {} -w {} -v {} -E --config-file {} -e {}".format(self._platform,
+                                                                          self._workload,
+                                                                          self._verbose,
+                                                                          self._config,
+                                                                          output_path)
 
         return subprocess.Popen("exec " + cmd, stdout=subprocess.PIPE, shell=True)
 
     def _initialize_vars(self):
-        self.nb_jobs_received = 0
-        self.nb_jobs_submitted = 0
-        self.nb_jobs_killed = 0
-        self.nb_jobs_rejected = 0
-        self.nb_jobs_scheduled = 0
         self.nb_jobs_completed = 0
-        self.nb_jobs_successful = 0
-        self.nb_jobs_failed = 0
-        self.nb_jobs_timeout = 0
-        self.nb_jobs_resubmit = 0
+        self._wait_for_scheduler_action = False
         self.energy_consumed = 0
-        self.proc_temp = 0
-        self.air_temp = 0
-        #self._ack = False
-        self._job_not_scheduled = False
-        #self._events_to_send = []
-        self.jobs = dict()
-        self.jobs_waiting = deque()
+        self.job_manager = JobManager()
 
-    def _handle_all_jobs_completed(self):
-        if self.dynamic_job_submission_enabled:
-            self.protocol_manager.notify_submission_finished()
-            self.dynamic_job_submission_enabled = False
+    def _handle_resource_pstate_changed(self, data):
+        res_ids = list(map(int, data["resources"].split(" ")))
+        self.resource_manager.set_pstate(
+            res_ids, Resource.PowerState[int(data["state"])])
 
-    def _handle_resource_state_changed(self, resources, state):
-        self.resource_manager.set_state(resources, state)
+    def _handle_job_completed(self, timestamp, data):
+        self.nb_jobs_completed += 1
+        job = self.job_manager.on_job_completed(timestamp, data)
+        self.resource_manager.set_state(job.allocation, Resource.State.IDLE)
 
-    def _handle_job_completed(self, job):
-        def update_job_stats(j):
-            if j.job_state == Job.State.COMPLETED_WALLTIME_REACHED:
-                self.nb_jobs_timeout += 1
-            elif j.job_state == Job.State.COMPLETED_FAILED:
-                self.nb_jobs_failed += 1
-            elif j.job_state == Job.State.COMPLETED_SUCCESSFULLY:
-                self.nb_jobs_successful += 1
-            elif j.job_state == Job.State.COMPLETED_KILLED:
-                self.nb_jobs_killed += 1
-            self.nb_jobs_completed += 1
+    def _handle_job_submitted(self, data):
+        if data['job']['res'] > self.resource_manager.nb_res:
+            self.protocol_manager.reject_job(data['job_id'])
+        else:
+            self.job_manager.on_job_submitted(data['job'])
+            self._wait_for_scheduler_action = True
 
-        self.protocol_manager.set_resource_state(
-            job.allocation, ResourceState.idle)
-        update_job_stats(job)
+    def _handle_simulation_begins(self, data):
+        assert data["nb_resources"] == self.nb_resources, "Batsim platform and Simulator platform does not match."
 
-    def _handle_job_submitted(self, job):
-        job.job_state = Job.State.SUBMITTED
+        self.running_simulation = True
+        self.batconf = data["config"]
+        self.time_sharing = data["allow_time_sharing"]
+        self.dynamic_job_submission_enabled = self.batconf[
+            "job_submission"]["from_scheduler"]["enabled"]
+        self.resource_manager = ResourceManager.from_json(
+            data["compute_resources"])
+        self.profiles = data["profiles"]
+        self.workloads = data["workloads"]
 
-        # don't override dynamic job
-        if job.id not in self.jobs:
-            self.jobs[job.id] = job
+    def _handle_simulation_ends(self, data):
+        self.running_simulation = False
 
-        self.jobs_waiting.append(job)
-        self._job_not_scheduled = True
-        self.nb_jobs_received += 1
+    def _handle_requested_call(self):
+        if not self.job_manager.has_jobs_waiting():
+            return
+
+        self.job_manager.enqueue_jobs_waiting()
+        self._wait_for_scheduler_action = True
 
     def _send_events(self):
-        if self._job_not_scheduled:
-            self._job_not_scheduled = False
+        if self._wait_for_scheduler_action:
+            self._wait_for_scheduler_action = False
             return
 
         msg = self.protocol_manager.flush()
@@ -233,78 +191,66 @@ class BatsimHandler:
             return
 
         self.network.send(msg)
-        #self._events_to_send = []
 
-    def _read_events(self):
+    def _get_msg(self):
         msg = None
         while msg is None:
             msg = self.network.recv(blocking=not self.running_simulation)
             if msg is None:
                 raise ValueError("Batsim is not responding (maybe deadlocked)")
+        return BatsimMessage.from_json(msg)
 
-        self.protocol_manager.update_time(msg["now"])
+    def _read_events(self):
+        msg = self._get_msg()
+        self.protocol_manager.update_time(msg.now)
 
-        for event in msg["events"]:
-            event_type = event["type"]
-            event_data = event.get("data", {})
-            if event_type == "SIMULATION_BEGINS":
+        for event in msg.events:
+            if event.type == "SIMULATION_BEGINS":
                 assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
-                assert event_data["nb_resources"] == self.nb_resources, "Batsim platform and Simulator platform does not match."
-                self.running_simulation = True
-                self.batconf = event_data["config"]
-                self.time_sharing = event_data["allow_time_sharing"]
-                self.dynamic_job_submission_enabled = self.batconf[
-                    "job_submission"]["from_scheduler"]["enabled"]
-                self.resource_manager = ResourceManager(
-                    {res["id"]: res for res in event_data["compute_resources"]})
-                self.profiles = event_data["profiles"]
-                self.workloads = event_data["workloads"]
-            elif event_type == "SIMULATION_ENDS":
+                self._handle_simulation_begins(event.data)
+            elif event.type == "SIMULATION_ENDS":
                 assert self.running_simulation, "No simulation is currently running"
-                self.running_simulation = False
-            elif event_type == "JOB_SUBMITTED":
-                json_dict = event_data["job"]
-                try:
-                    profile_dict = event_data["profile"]
-                except KeyError:
-                    profile_dict = {}
-                job = Job.from_json_dict(json_dict, profile_dict)
-
-                self._handle_job_submitted(job)
-            elif event_type == "JOB_COMPLETED":
-                job_id = event_data["job_id"]
-                j = self.jobs[job_id]
-                j.finish_time = event["timestamp"]
-
-                try:
-                    j.job_state = Job.State[event["data"]["job_state"]]
-                except KeyError:
-                    j.job_state = Job.State.UNKNOWN
-                j.return_code = event["data"]["return_code"]
-
-                self._handle_job_completed(j)
-            elif event_type == "RESOURCE_STATE_CHANGED":
-                res = list(map(int, event_data["resources"].split(" ")))
-                self._handle_resource_state_changed(
-                    res, ResourceState.from_value(int(event_data["state"])))
-            elif event_type == "ANSWER":
-                if "consumed_energy" in event_data:
-                    self.energy_consumed = event_data["consumed_energy"]
-                elif "processor_temperature_all" in event_data:
-                    self.proc_temp = event_data["processor_temperature_all"]
-                elif "air_temperature_all" in event_data:
-                    self.air_temp = event_data["air_temperature_all"]
+                self._handle_simulation_ends(event.data)
+            elif event.type == "JOB_SUBMITTED":
+                self._handle_job_submitted(event.data)
+            elif event.type == "JOB_COMPLETED":
+                self._handle_job_completed(event.timestamp, event.data)
+            elif event.type == "RESOURCE_STATE_CHANGED":
+                self._handle_resource_pstate_changed(event.data)
+            elif event.type == "REQUESTED_CALL":
+                self._handle_requested_call()
+            elif event.type == "ANSWER":
+                if "consumed_energy" in event.data:
+                    self.energy_consumed = event.data["consumed_energy"]
+            elif event.type == "NOTIFY":
+                if event.data['type'] == 'no_more_static_job_to_submit':
+                    continue
+                else:
+                    raise Exception(
+                        "Unknown NOTIFY event type {}".format(event.type))
             else:
-                raise Exception("Unknown event type {}".format(event_type))
+                raise Exception("Unknown event type {}".format(event.type))
 
         self.protocol_manager.acknowledge()
-
-        if self.nb_jobs_completed == self.nb_jobs:
-            self._handle_all_jobs_completed()
-
         self._send_events()
 
-        return not self.running_simulation
+
+class BatsimEvent:
+    def __init__(self, timestamp, type, data):
+        self.timestamp = timestamp
+        self.type = type
+        self.data = data
+
+
+class BatsimMessage:
+    def __init__(self, now, events):
+        self.now = now
+        self.events = [BatsimEvent(
+            event['timestamp'], event['type'], event['data']) for event in events]
+
+    @staticmethod
+    def from_json(data):
+        return BatsimMessage(data['now'], data['events'])
 
 
 class BatsimProtocolHandler:
@@ -376,13 +322,13 @@ class BatsimProtocolHandler:
             }
         })
 
-    def start_job(self, job, res):
+    def start_job(self, job_id, res):
         """ args:res: is list of int (resources ids) """
         self.events.append({
             "timestamp": self.now(),
             "type": "EXECUTE_JOB",
             "data": {
-                    "job_id": job.id,
+                    "job_id": job_id,
                     "alloc": " ".join(str(r) for r in res)
             }
         })
@@ -406,25 +352,24 @@ class BatsimProtocolHandler:
 
             self.events.append(message)
 
-    def reject_job(self, job):
+    def reject_job(self, job_id):
         """Reject the given jobs."""
-        assert job is not None, "The job to reject is empty"
         self.events.append({
             "timestamp": self.now(),
             "type": "REJECT_JOB",
             "data": {
-                    "job_id": job.id,
+                    "job_id": job_id,
             }
         })
 
-    def change_job_state(self, job, state):
+    def change_state(self, job, state):
         """Change the state of a job."""
         self.events.append({
             "timestamp": self.now(),
-            "type": "CHANGE_JOB_STATE",
+            "type": "CHANGE_state",
             "data": {
                     "job_id": job.id,
-                    "job_state": state.name,
+                    "state": state.name,
             }
         })
 
@@ -432,7 +377,7 @@ class BatsimProtocolHandler:
         """Kill the given jobs."""
         assert len(jobs) > 0, "The list of jobs to kill is empty"
         for job in jobs:
-            job.job_state = Job.State.IN_KILLING
+            job.state = Job.State.IN_KILLING
         self.events.append({
             "timestamp": self.now(),
             "type": "KILL_JOB",
@@ -486,7 +431,7 @@ class BatsimProtocolHandler:
 
         return id
 
-    def set_resource_state(self, resources, state):
+    def set_resource_pstate(self, resources, state):
         self.events.append({
             "timestamp": self.now(),
             "type": "SET_RESOURCE_STATE",
@@ -575,7 +520,7 @@ class BatsimProtocolHandler:
         else:
             job_id = job_id[:-1] + str(int(job_id[-1]) + 1)
 
-        self.reject_job(job)
+        self.reject_job(job.id)
 
         self.consume_time(delay)
 
@@ -591,29 +536,158 @@ class BatsimProtocolHandler:
         self._ack = True
 
 
+class Resource:
+    class State(Enum):
+        SLEEPING = 'sleeping'
+        IDLE = 'idle'
+        COMPUTING = 'computing'
+
+        @staticmethod
+        def convert(str):
+            if str == Resource.State.SLEEPING.value:
+                return Resource.State.SLEEPING
+            elif str == Resource.State.IDLE.value:
+                return Resource.State.IDLE
+            elif str == Resource.State.COMPUTING.value:
+                return Resource.State.COMPUTING
+            else:
+                raise KeyError("Unknown resource state")
+
+    class PowerState(Enum):
+        SHUT_DOWN = 0
+        NORMAL = 1
+
+    def __init__(self, id, state, pstate, name):
+        assert isinstance(state, Resource.State)
+        assert isinstance(pstate, Resource.PowerState)
+        self.state = state
+        self.pstate = pstate
+        self.name = name
+        self.id = id
+
+    @property
+    def is_available(self):
+        return True if self.state == Resource.State.IDLE else False
+
+    def set_state(self, state):
+        assert isinstance(state, Resource.State)
+        self.state = state
+
+    def set_pstate(self, pstate):
+        assert isinstance(pstate, Resource.PowerState)
+        self.pstate = pstate
+
+
 class ResourceManager:
     def __init__(self, resources):
+        assert isinstance(resources, dict)
         self.resources = resources
-        for _, resource in self.resources.items():
-            resource['state'] = ResourceState.from_name(resource['state']).name
 
-    def is_available(self, resources):
-        for r in resources:
+    @staticmethod
+    def from_json(data):
+        resources = {}
+        for res in data:
+            resources[res['id']] = Resource(res['id'],
+                                            Resource.State[res['state'].upper()],
+                                            Resource.PowerState.NORMAL,
+                                            res['name'])
+
+        return ResourceManager(resources)
+
+    @property
+    def nb_res(self):
+        return len(self.resources)
+
+    def is_available(self, res_ids):
+        for id in res_ids:
             try:
-                resource = self.resources[r]
-            except KeyError as e:
-                raise KeyError("Could not find resource: {}".format(e))
-            if not resource['state'] == ResourceState.idle.name:
+                resource = self.resources[id]
+            except KeyError:
+                raise KeyError("Could not find resource: {}".format(id))
+            if not resource.is_available:
                 return False
 
         return True
 
-    def set_state(self, resources, state):
-        for res in resources:
-            self.resources[res]['state'] = state.name
+    def set_state(self, res_ids, state):
+        for id in res_ids:
+            try:
+                self.resources[id].set_state(state)
+            except KeyError:
+                raise KeyError("Could not find resource: {}".format(id))
 
-    def get_state(self):
-        return [s['state'] for _, s in self.resources.items()]
+    def get_state(self, output_values=False):
+        if output_values:
+            return [res.state.value for _, res in self.resources.items()]
+
+        return [res.state for _, res in self.resources.items()]
+
+    def set_pstate(self, res_ids, pstate):
+        for id in res_ids:
+            try:
+                self.resources[id].set_pstate(pstate)
+            except KeyError:
+                raise KeyError("Could not find resource: {}".format(id))
+
+    def get_pstate(self):
+        return [res.pstate for _, res in self.resources.items()]
+
+
+class JobManager():
+    def __init__(self):
+        self.jobs_queue = deque()
+        self.jobs_waiting = []
+        self.jobs_finished = dict()
+        self.jobs_running = dict()
+        self.jobs_running = dict()
+
+    def on_job_waiting(self):
+        job = self.jobs_queue.popleft()
+        self.jobs_waiting.append(job)
+
+    def lookup(self):
+        if self.has_jobs_in_queue():
+            return self.jobs_queue[0]
+        return None
+
+    def enqueue_jobs_waiting(self):
+        while self.has_jobs_waiting():
+            job = self.jobs_waiting.pop()
+            self.jobs_queue.append(job)
+
+    def on_job_scheduling(self, allocation):
+        job = self.jobs_queue.popleft()
+        job.allocation = allocation
+        job.state = Job.State.RUNNING
+        self.jobs_running[job.id] = job
+
+    def has_jobs_in_queue(self):
+        return len(self.jobs_queue) > 0
+
+    def has_jobs_waiting(self):
+        return len(self.jobs_waiting) > 0
+
+    def on_job_completed(self, timestamp, data):
+        job = self.jobs_running.pop(data['job_id'])
+        job.finish_time = timestamp
+        job.waiting_time = round(data["job_waiting_time"], 4)
+        job.turnaround_time = round(data["job_turnaround_time"], 4)
+        job.runtime = round(data["job_runtime"], 4)
+        job.consumed_energy = round(data["job_consumed_energy"], 4)
+        job.return_code = round(data["return_code"], 4)
+
+        try:
+            job.state = Job.State[data["job_state"]]
+        except KeyError:
+            job.state = Job.State.UNKNOWN
+
+        self.jobs_finished[job.id] = job
+        return job
+
+    def on_job_submitted(self, data):
+        job = Job.from_json(data)
+        job.state = Job.State.SUBMITTED
+        self.jobs_queue.append(job)
 
 
 class Job(object):
@@ -643,9 +717,12 @@ class Job(object):
         self.requested_time = walltime
         self.requested_resources = res
         self.profile = profile
-        self.finish_time = None  # will be set on completion by batsim
-        self.waiting_time = None  # will be set by batsim
-        self.job_state = Job.State.UNKNOWN
+        self.finish_time = -1  # will be set on completion by batsim
+        self.waiting_time = -1  # will be set on completion by batsim
+        self.turnaround_time = -1  # will be set on completion by batsim
+        self.runtime = -1  # will be set on completion by batsim
+        self.consumed_energy = -1  # will be set on completion by batsim
+        self.state = Job.State.UNKNOWN
         self.return_code = None
         self.progress = None
         self.json_dict = json_dict
@@ -659,7 +736,7 @@ class Job(object):
                 "state:{5} ret:{6} alloc:{7}>\n").format(
                 self.id, self.submit_time, self.requested_resources,
                 self.requested_time, self.profile,
-                self.job_state,
+                self.state,
                 self.return_code, self.allocation))
 
     @property
@@ -667,12 +744,7 @@ class Job(object):
         return self.id.split(BatsimHandler.WORKLOAD_JOB_SEPARATOR)[0]
 
     @staticmethod
-    def from_json_string(json_str):
-        json_dict = json.loads(json_str)
-        return Job.from_json_dict(json_dict)
-
-    @staticmethod
-    def from_json_dict(json_dict, profile_dict=None):
+    def from_json(json_dict, profile_dict=None):
         return Job(json_dict["id"],
                    json_dict["subtime"],
                    json_dict.get("walltime", -1),
@@ -680,57 +752,6 @@ class Job(object):
                    json_dict["profile"],
                    json_dict,
                    profile_dict)
-
-
-@unique
-class ResourceState(Enum):
-    sleeping = 0
-    idle = 1
-    computing = 2
-
-    @staticmethod
-    def from_name(name):
-        if name == ResourceState.sleeping.name:
-            return ResourceState.sleeping
-        elif name == ResourceState.idle.name:
-            return ResourceState.idle
-        elif name == ResourceState.computing.name:
-            return ResourceState.computing
-        else:
-            raise Exception("Unknown resource state name {}".format(name))
-
-    @staticmethod
-    def from_value(value):
-        if value == ResourceState.sleeping.value:
-            return ResourceState.sleeping
-        elif value == ResourceState.idle.value:
-            return ResourceState.idle
-        elif value == ResourceState.computing.value:
-            return ResourceState.computing
-        else:
-            raise Exception("Unknown resource state value {}".format(value))
-
-    @staticmethod
-    def to_value(name):
-        if name == ResourceState.sleeping.name:
-            return ResourceState.sleeping.value
-        elif name == ResourceState.idle.name:
-            return ResourceState.idle.value
-        elif name == ResourceState.computing.name:
-            return ResourceState.computing.value
-        else:
-            raise Exception("Unknown resource state name {}".format(name))
-
-    @staticmethod
-    def to_name(value):
-        if value == ResourceState.sleeping.value:
-            return ResourceState.sleeping.name
-        elif value == ResourceState.idle.value:
-            return ResourceState.idle.name
-        elif value == ResourceState.computing.value:
-            return ResourceState.computing.name
-        else:
-            raise Exception("Unknown resource state value {}".format(value))
 
 
 class NetworkHandler:
