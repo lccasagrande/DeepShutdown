@@ -42,10 +42,7 @@ class BatsimHandler:
         self._initialize_vars()
 
     def get_job_info(self):
-        job = self.job_manager.lookup()
-        if job is not None:
-            job.waiting_time = int(self.now()) - job.submit_time
-        return job
+        return self.job_manager.lookup()
 
     def get_resources_info(self):
         return self.resource_manager.get_state(output_values=True)
@@ -75,8 +72,8 @@ class BatsimHandler:
         job = self.get_job_info()
         assert job is not None
 
-        if self.now() < 10:
-            allocation = []
+        #if self.now() < 10:
+        #    allocation = []
 
         if len(allocation) == 0:  # Handle VOID Action
             self.job_manager.on_job_waiting()
@@ -91,13 +88,14 @@ class BatsimHandler:
         if self.job_manager.has_jobs_in_queue():
             return
 
-        if self.job_manager.has_jobs_waiting():
+        if self.job_manager.has_jobs_waiting() and not self._alarm_is_set:
             self.protocol_manager.wake_me_up_at(self.now() + 5)
+            self._alarm_is_set = True 
 
         self._send_events()
         self.wait_until_next_event()
         # Enqueue jobs if another type of event has ocurred first.
-        self.job_manager.enqueue_jobs_waiting()
+        self.job_manager.enqueue_jobs_waiting(self.now())
 
     def wait_until_next_event(self):
         self._read_events()
@@ -138,6 +136,7 @@ class BatsimHandler:
     def _initialize_vars(self):
         self.nb_jobs_completed = 0
         self._wait_for_scheduler_action = False
+        self._alarm_is_set = False
         self.energy_consumed = 0
         self.job_manager = JobManager()
 
@@ -175,10 +174,12 @@ class BatsimHandler:
         self.running_simulation = False
 
     def _handle_requested_call(self):
+        self._alarm_is_set = False
+
         if not self.job_manager.has_jobs_waiting():
             return
 
-        self.job_manager.enqueue_jobs_waiting()
+        self.job_manager.enqueue_jobs_waiting(self.now())
         self._wait_for_scheduler_action = True
 
     def _send_events(self):
@@ -636,9 +637,8 @@ class ResourceManager:
 class JobManager():
     def __init__(self):
         self.jobs_queue = deque()
-        self.jobs_waiting = []
+        self.jobs_waiting = deque()
         self.jobs_finished = dict()
-        self.jobs_running = dict()
         self.jobs_running = dict()
 
     def on_job_waiting(self):
@@ -650,9 +650,10 @@ class JobManager():
             return self.jobs_queue[0]
         return None
 
-    def enqueue_jobs_waiting(self):
+    def enqueue_jobs_waiting(self, time):
         while self.has_jobs_waiting():
-            job = self.jobs_waiting.pop()
+            job = self.jobs_waiting.popleft()
+            job.waiting_time = time - job.submit_time
             self.jobs_queue.append(job)
 
     def on_job_scheduling(self, allocation):
