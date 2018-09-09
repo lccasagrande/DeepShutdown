@@ -72,9 +72,6 @@ class BatsimHandler:
         job = self.get_job_info()
         assert job is not None
 
-        #if self.now() < 10:
-        #    allocation = []
-
         if len(allocation) == 0:  # Handle VOID Action
             self.job_manager.on_job_waiting()
             self.protocol_manager.acknowledge()
@@ -95,7 +92,8 @@ class BatsimHandler:
         self._send_events()
         self.wait_until_next_event()
         # Enqueue jobs if another type of event has ocurred first.
-        self.job_manager.enqueue_jobs_waiting(self.now())
+        if self.running_simulation:
+            self.job_manager.enqueue_jobs_waiting(self.now())
 
     def wait_until_next_event(self):
         self._read_events()

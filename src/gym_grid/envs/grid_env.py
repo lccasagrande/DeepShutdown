@@ -10,7 +10,7 @@ class GridEnv(gym.Env):
     MAX_WALLTIME = 7200
 
     def __init__(self):
-        self.simulator = BatsimHandler(output_freq=1, verbose='information')
+        self.simulator = BatsimHandler(output_freq=1, verbose='quiet')
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.seed()
