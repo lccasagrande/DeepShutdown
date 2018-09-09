@@ -67,15 +67,15 @@ class GridEnv(gym.Env):
         return state
 
     def _get_action_space(self):
-        return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.nb_resources+1)])
+        return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.resource_manager.nb_resources+1)])
 
     def _get_observation_space(self):
         space = spaces.Dict({
-            'resources': spaces.MultiDiscrete(range(self.simulator.nb_resources)),
+            'resources': spaces.MultiDiscrete(range(self.simulator.resource_manager.nb_resources)),
             'job': spaces.Dict({
-                'res': spaces.Discrete(self.simulator.nb_resources),
-                'wall_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=()),
-                'waiting_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=())
+                'res': spaces.Discrete(self.simulator.resource_manager.nb_resources),
+                'wall_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=(), dtype=int),
+                'waiting_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=(), dtype=int)
             })
         })
 
