@@ -16,7 +16,7 @@ class BatsimHandler:
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
     PLATFORM = "platform.xml"
-    WORKLOAD = "workload.json"
+    WORKLOAD = "nantes1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
@@ -36,9 +36,9 @@ class BatsimHandler:
         self._simulator_process = None
         self.running_simulation = False
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
-        self.nb_resources = self._count_resources(self._platform)
         self.protocol_manager = BatsimProtocolHandler()
         self.nb_simulation = 0
+        self.resource_manager = ResourceManager.from_xml(self._platform)
         self._initialize_vars()
 
     def get_job_info(self):
@@ -86,8 +86,8 @@ class BatsimHandler:
             return
 
         if self.job_manager.has_jobs_waiting() and not self._alarm_is_set:
-            self.protocol_manager.wake_me_up_at(self.now() + 5)
-            self._alarm_is_set = True 
+            self.protocol_manager.wake_me_up_at(self.now() + 60)
+            self._alarm_is_set = True
 
         self._send_events()
         self.wait_until_next_event()
@@ -112,9 +112,6 @@ class BatsimHandler:
         if not self.resource_manager.is_available(allocation):
             raise UnavailableResourcesError(
                 "Cannot allocate unavailable resources.")
-
-    def _count_resources(self, platform):
-        return len(minidom.parse(platform).getElementsByTagName('host')) - 1
 
     def _start_simulator(self):
         if self.nb_simulation % self._output_freq == 0:
@@ -156,15 +153,11 @@ class BatsimHandler:
             self._wait_for_scheduler_action = True
 
     def _handle_simulation_begins(self, data):
-        assert data["nb_resources"] == self.nb_resources, "Batsim platform and Simulator platform does not match."
-
         self.running_simulation = True
         self.batconf = data["config"]
         self.time_sharing = data["allow_time_sharing"]
         self.dynamic_job_submission_enabled = self.batconf[
             "job_submission"]["from_scheduler"]["enabled"]
-        self.resource_manager = ResourceManager.from_json(
-            data["compute_resources"])
         self.profiles = data["profiles"]
         self.workloads = data["workloads"]
 
@@ -535,34 +528,31 @@ class BatsimProtocolHandler:
         self._ack = True
 
 
+class ResourcePower:
+    def __init__(self, idle, comp):
+        self.idle = idle
+        self.comp = comp
+
+
 class Resource:
     class State(Enum):
         SLEEPING = 'sleeping'
         IDLE = 'idle'
         COMPUTING = 'computing'
 
-        @staticmethod
-        def convert(str):
-            if str == Resource.State.SLEEPING.value:
-                return Resource.State.SLEEPING
-            elif str == Resource.State.IDLE.value:
-                return Resource.State.IDLE
-            elif str == Resource.State.COMPUTING.value:
-                return Resource.State.COMPUTING
-            else:
-                raise KeyError("Unknown resource state")
-
     class PowerState(Enum):
         SHUT_DOWN = 0
         NORMAL = 1
 
-    def __init__(self, id, state, pstate, name):
+    def __init__(self, id, state, pstate, name, speed, watt_per_state):
         assert isinstance(state, Resource.State)
         assert isinstance(pstate, Resource.PowerState)
         self.state = state
         self.pstate = pstate
         self.name = name
         self.id = id
+        self.speed = speed
+        self.watt_per_state = watt_per_state
 
     @property
     def is_available(self):
@@ -580,18 +570,67 @@ class Resource:
 class ResourceManager:
     def __init__(self, resources):
         assert isinstance(resources, dict)
+        self.nb_resources = len(resources)
         self.resources = resources
 
+        best_host = max(resources.items(), key=(
+            lambda item: item[1].speed))[1]
+        self.max_speed = best_host.speed
+        self.max_watts = best_host.watt_per_state[Resource.PowerState.NORMAL].comp
+
+        worst_host = min(resources.items(), key=(
+            lambda item: item[1].speed))[1]
+        self.min_speed = worst_host.speed
+        self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
+
     @staticmethod
-    def from_json(data):
+    def from_xml(platform_fn):
+        platform = minidom.parse(platform_fn)
+        hosts = platform.getElementsByTagName('host')
         resources = {}
-        for res in data:
-            resources[res['id']] = Resource(res['id'],
-                                            Resource.State[res['state'].upper()],
-                                            Resource.PowerState.NORMAL,
-                                            res['name'])
+        id = 0
+        hosts.sort(key=lambda x: x.attributes['id'].value)
+        for host in hosts:
+            name = host.getAttribute('id')
+            if name == 'master_host':
+                continue
+
+            speed = host.getAttribute('speed').split(
+                ',')[Resource.PowerState.NORMAL.value]
+            assert "Mf" in speed, "Speed is not in Mega Flops"
+
+            speed = float(speed.replace("Mf","")) * 1000000
+            watt_per_state = host.getElementsByTagName('prop')[0]
+            watt_per_state = watt_per_state.getAttribute('value')
+
+            power_state = {}
+            for state, watts in enumerate(watt_per_state.split(",")):
+                state_watt = watts.split(":")
+                power_state[Resource.PowerState(state)] = ResourcePower(
+                    float(state_watt[0]), float(state_watt[1]))
+
+            resources[id] = Resource(id,
+                                     Resource.State.IDLE,
+                                     Resource.PowerState.NORMAL,
+                                     name,
+                                     speed,
+                                     power_state)
+            id += 1
 
         return ResourceManager(resources)
+
+    # @staticmethod
+    # def from_json(data):
+    #    resources = {}
+    #    for res in data:
+    #        resources[res['id']] = Resource(res['id'],
+    #                                        Resource.State[res['state'].upper()],
+    #                                        Resource.PowerState.NORMAL,
+    #                                        res['name'],
+    #                                        res['speed'],
+    #                                        res['properties']['watt_per_state'])
+#
+    #    return ResourceManager(resources)
 
     @property
     def nb_res(self):

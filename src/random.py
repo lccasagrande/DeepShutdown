@@ -20,7 +20,7 @@ def select_random_valid_action(state):
     return [0] + [1 if i in selected_resources else 0 for i, _ in enumerate(state['resources'])]
 
 
-def run(n_ep=1000, plot=True):
+def run(n_ep=1, plot=True):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=100)
     avg_scores = deque(maxlen=(n_ep//2))
