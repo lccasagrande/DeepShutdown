@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 from collections import defaultdict, deque
 from keras.models import Sequential
 from keras.layers import Dense, Activation
+from keras.callbacks import TensorBoard
 from keras.optimizers import Adam
 from sklearn.preprocessing import LabelBinarizer, MinMaxScaler
 import utils
+import time as t
 
 
 class Memory:
@@ -34,6 +36,7 @@ class DQNAgent:
         self.input_shape = input_shape
         self.output_shape = output_shape
         self.memory = Memory(mem_len)
+        self.temp_memory = {}
         self.gamma = gamma
         self.lr = lr
         self.epsilon = 1
@@ -85,11 +88,43 @@ class DQNAgent:
                 cummrewards[i][actions[i]] = rewards[i] + \
                     self.gamma * (np.amax(targets[i]))
 
-        self.model.fit(input_states, cummrewards,
-                       batch_size=bath_size, epochs=1, verbose=0)
+        callbacks = self.get_callbacks()
 
+        self.model.fit(input_states,
+                       cummrewards,
+                       batch_size=bath_size,
+                       epochs=1,
+                       verbose=0,
+                       callbacks=callbacks)
+
+    def get_callbacks(self):
+        tensor = TensorBoard(log_dir='./log',
+                             histogram_freq=0,
+                             write_graph=True,
+                             write_images=True)
+
+        return [tensor]
     def update_target_model(self):
         self.target_model.set_weights(self.model.get_weights())
+
+    def store_in_temp(self, job_id, state, action, next_state, done):
+        self.temp_memory[job_id] = {
+            'state': state,
+            'action': action,
+            'next_state': next_state,
+            'done': done
+        }
+
+    def update_temp_memory(self, jobs_finished):
+        jobs = jobs_finished.keys() & self.temp_memory.keys()
+        if len(jobs) == 0:
+            return
+
+        for job_id in jobs:
+            mem = self.temp_memory.pop(job_id)
+            reward = -1 + 1 / jobs_finished[job_id].consumed_energy
+            self.store(mem['state'], mem['action'], reward,
+                       mem['next_state'], mem['done'])
 
     def store(self, state, action, reward, next_state, done):
         memory = (state, action, reward, next_state, done)
@@ -112,18 +147,13 @@ class DQNAgent:
         return np.argmax(act_values[0])
 
 
-def MaxMinScale(value, mi, ma):
-    return (value - mi) / (ma - mi)
-
-
-def prep_input(enc, state):
+def prep_input(encoder, scaler, state):
     res_state = state['resources']
-    res_state = np.array(enc.transform(res_state)).ravel()
-    job_res = MaxMinScale(state['job']['res'], 0, len(state['resources']))
-    job_wall = MaxMinScale(state['job']['requested_time'], 0, 7200)
-    job_wait = MaxMinScale(state['job']['waiting_time'], 0, 7200)
-    res_state = np.append(
-        res_state, [job_res, job_wall, job_wait]).reshape(1, -1)
+    res_state = np.array(encoder.transform(res_state)).ravel()
+    #job_res = MaxMinScale(state['job']['res'], 0, len(state['resources']))
+    job_wall = scaler.transform(state['job']['requested_time'])[0][0]
+    job_wait = scaler.transform(state['job']['waiting_time'])[0][0]
+    res_state = np.append(res_state, [job_wall, job_wait]).reshape(1, -1)
     return res_state
 
 
@@ -131,30 +161,39 @@ def run(n_ep=1000, plot=True):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=100)
     avg_scores = deque(maxlen=(n_ep//2))
-    encoder = LabelBinarizer(neg_label=0, pos_label=1)
-    encoder.fit(['sleeping', 'idle', 'computing'])
+    resource_states = ['sleeping', 'idle', 'computing']
+    encoder = LabelBinarizer(neg_label=-1, pos_label=1)
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    encoder.fit(resource_states)
+    scaler.fit([[0], [env.max_time]])
 
     nb_resources = env.observation_space.spaces['resources'].shape[0]
-    resource_space = 3
-    job_space = 3
+    job_space = 2
     max_score = [0, 0]
-    input_space = nb_resources * resource_space + job_space
+    input_space = nb_resources * len(resource_states) + job_space
     action_space = len(env.action_space.spaces)
+    agent = DQNAgent(input_space, action_space, 1000000)
 
-    agent = DQNAgent(input_space, action_space, 500)
+    t_start = t.time()
     # Iterate the game
     for i in range(1, n_ep + 1):
-        utils.print_progress(i, n_ep)
+        utils.print_progress(t_start, i, n_ep)
         score = 0
         state = env.reset()
-        state = prep_input(encoder, state)
+        state = prep_input(encoder, scaler, state)
         while True:
             action = agent.get_action(state)
 
-            next_state, reward, done, _ = env.step(action)
-            next_state = prep_input(encoder, next_state)
+            next_state, reward, done, info = env.step(action)
+            next_state = prep_input(encoder, scaler, next_state)
 
-            agent.store(state, action, reward, next_state, done)
+            if reward == -1:
+                agent.store(state, action, reward, next_state, done)
+            else:
+                agent.store_in_temp(
+                    info['job_id'], state, action, next_state, done)
+                agent.update_temp_memory(info['jobs_finished'])
+
             agent.train(32)
             state = next_state
             score += reward

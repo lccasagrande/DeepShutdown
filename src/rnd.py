@@ -1,9 +1,9 @@
+import utils
 import gym
-import gym_grid.envs.grid_env as g
+from gym_grid.envs.grid_env import GridEnv
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import utils
 from random import sample
 import time as t
 from collections import defaultdict, deque
@@ -11,7 +11,8 @@ from collections import defaultdict, deque
 
 def select_random_valid_action(state):
     req_res = state['job']['res']
-    available_res = [i for i, res in enumerate(state['resources']) if res == 'idle']
+    available_res = [i for i, res in enumerate(
+        state['resources']) if res == 'idle']
 
     if len(available_res) < req_res:
         return [1] + [0 for i, _ in enumerate(state['resources'])]
