@@ -13,18 +13,28 @@ class GridEnv(gym.Env):
         self.simulator = BatsimHandler(output_freq=5)
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
+        self.nb_invalid_action = 0
         self.seed()
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-
+        print(self._get_stats())
         reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
 
         return obs, reward, done, {}
 
+    def _get_stats(self):
+        stats = "\rJobs Submitted: {} - Jobs Completed: {} | Jobs Running: {} - Jobs In Queue: {}".format(
+            self.simulator.nb_jobs_submitted,
+            self.simulator.nb_jobs_completed,
+            self.simulator.nb_jobs_running,
+            self.simulator.nb_jobs_in_queue)
+        return stats
+
     def reset(self):
+        self.nb_invalid_action = 0
         self.simulator.close()
         self.simulator.start()
         return self._get_state()
@@ -50,6 +60,7 @@ class GridEnv(gym.Env):
             self.simulator.schedule_job(resources)
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -1
+            self.nb_invalid_action += 1
 
         return reward
 

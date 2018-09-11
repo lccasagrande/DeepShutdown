@@ -45,6 +45,14 @@ class BatsimHandler:
         self._initialize_vars()
 
     @property
+    def nb_jobs_in_queue(self):
+        return len(self.sched_manager.jobs_queue)
+
+    @property
+    def nb_jobs_running(self):
+        return len(self.sched_manager.jobs_running)
+
+    @property
     def nb_resources(self):
         return self.resource_manager.nb_resources
 
@@ -134,6 +142,7 @@ class BatsimHandler:
 
     def _initialize_vars(self):
         self.nb_jobs_completed = 0
+        self.nb_jobs_submitted = 0
         self._alarm_is_set = False
         self.energy_consumed = 0
         self.sched_manager.reset()
@@ -159,6 +168,7 @@ class BatsimHandler:
             self.protocol_manager.reject_job(data['job_id'])
         else:
             self.sched_manager.on_job_submitted(data['job'])
+            self.nb_jobs_submitted +=1
 
     def _handle_simulation_begins(self, data):
         self.running_simulation = True
@@ -176,10 +186,6 @@ class BatsimHandler:
 
     def _handle_requested_call(self):
         self._alarm_is_set = False
-
-        # if not self.sched_manager.has_jobs_waiting():
-        #    return
-
         self.sched_manager.enqueue_jobs_waiting(self.now())
 
     def _handle_batsim_events(self, event):
