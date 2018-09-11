@@ -40,7 +40,7 @@ class BatsimHandler:
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.protocol_manager = BatsimProtocolHandler()
-        self.sched_manager = SchedulerManager(51,
+        self.sched_manager = SchedulerManager(10,
                                               self.resource_manager.nb_resources)
         self._initialize_vars()
 
@@ -168,7 +168,7 @@ class BatsimHandler:
             self.protocol_manager.reject_job(data['job_id'])
         else:
             self.sched_manager.on_job_submitted(data['job'])
-            self.nb_jobs_submitted +=1
+            self.nb_jobs_submitted += 1
 
     def _handle_simulation_begins(self, data):
         self.running_simulation = True
@@ -736,9 +736,8 @@ class SchedulerManager():
     def allocate_first_job(self, resources):
         job = self.jobs_queue.popleft()  # assert self.has_jobs_in_queue()
         try:
-            if job.requested_resources != len(resources):
-                raise InsufficientResourcesError(
-                    "The job requested more resources than it was allocated.")
+            assert job.requested_resources == len(
+                resources), "The job requested more resources than it was allocated."
 
             for res in resources:
                 success = False
@@ -749,9 +748,7 @@ class SchedulerManager():
                         success = True
                         break
 
-                if not success:
-                    raise UnavailableResourcesError(
-                        "There is no space available on the resource selected.")
+                assert success, "There is no space available on the resource selected."
 
             job.allocation = resources
         except:

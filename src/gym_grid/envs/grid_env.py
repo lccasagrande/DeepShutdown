@@ -50,19 +50,11 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _take_action(self, action):
-        if action == 0:
-            resources = []
-        else:
-            resources = [action-1]
+        resources = [] if action == 0 else [action-1]
 
-        reward = 0
-        try:
-            self.simulator.schedule_job(resources)
-        except (InsufficientResourcesError, UnavailableResourcesError):
-            reward = -1
-            self.nb_invalid_action += 1
+        self.simulator.schedule_job(resources)
 
-        return reward
+        return 0
 
     def _get_state(self):
         simulator_state = self.simulator.current_state

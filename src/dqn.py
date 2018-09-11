@@ -141,11 +141,13 @@ class DQNAgent:
             self.total_steps, self.epsilon_decay_steps-1)]
 
     def get_action(self, state):
-        if np.random.rand() <= self.epsilon:
-            return random.choice(range(self.output_shape))
+        valid_actions = np.asarray([1] + [1 if np.any(state[i] == 0)  else 0 for i in range(self.output_shape-1)])
 
-        act_values = self.predict(state)
-        return np.argmax(act_values[0])
+        if np.random.rand() <= self.epsilon:
+            return random.choice(np.flatnonzero(valid_actions))
+
+        valid_actions = self.predict(state)[0] * valid_actions
+        return np.argmax(valid_actions)
 
 
 def prep_input(encoder, scaler, state):
