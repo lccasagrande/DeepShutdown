@@ -40,7 +40,7 @@ class BatsimHandler:
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.protocol_manager = BatsimProtocolHandler()
-        self.sched_manager = SchedulerManager(5,
+        self.sched_manager = SchedulerManager(51,
                                               self.resource_manager.nb_resources)
         self._initialize_vars()
 
