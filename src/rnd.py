@@ -9,41 +9,29 @@ import time as t
 from collections import defaultdict, deque
 
 
-def select_random_valid_action(state):
-    req_res = state['job']['res']
-    available_res = [i for i, res in enumerate(
-        state['resources']) if res == 'idle']
-
-    if len(available_res) < req_res:
-        return [1] + [0 for i, _ in enumerate(state['resources'])]
-
-    selected_resources = sample(available_res, req_res)
-    return [0] + [1 if i in selected_resources else 0 for i, _ in enumerate(state['resources'])]
-
-
-def run(n_ep=1, plot=True):
+def run(n_ep=10, out_freq=2, plot=True):
     env = gym.make('grid-v0')
-    episodic_scores = deque(maxlen=100)
-    avg_scores = deque(maxlen=(n_ep//2))
+    episodic_scores = deque(maxlen=out_freq)
+    avg_scores = deque(maxlen=n_ep)
     t_start = t.time()
     for i in range(1, n_ep + 1):
         utils.print_progress(t_start, i, n_ep)
+        env.reset()
         score = 0
-        state = env.reset()
         while True:
-            act = select_random_valid_action(state)
-            next_state, reward, done, _ = env.step(act)
+            act = env.action_space.sample()
+            _, reward, done, _ = env.step(act)
             score += reward
-            state = next_state
             if done:
                 episodic_scores.append(score)
                 break
-        if (i % 2 == 0):
+        if i % out_freq == 0:
             avg_scores.append(np.mean(episodic_scores))
 
     if plot:
-        utils.plot_graph(avg_scores, n_ep)
+        utils.plot_reward(avg_scores, n_ep, title='Random Policy')
 
+    print(('Best Average Reward over %d Episodes: ' % out_freq), np.max(avg_scores))
 
 if __name__ == "__main__":
     run()

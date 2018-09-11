@@ -11,6 +11,20 @@ import sys
 import time as t
 
 
+def plot_reward(avg_scores, n_ep, title):
+    x, y = np.linspace(0, n_ep, len(avg_scores),
+                       endpoint=False), np.asarray(avg_scores)
+
+    trace = go.Scatter(x=x, y=y)
+    layout = go.Layout(
+        title=title,
+        xaxis={'title': 'Episode'},
+        yaxis={'title': 'Avg Reward'},
+    )
+    fig = go.Figure(data=[trace], layout=layout)
+    plot(fig)
+
+
 def print_progress(t_start, i_episode, num_episodes):
     runtime_per_ep = round(((t.time() - t_start) / i_episode), 2)
     total_runtime = round(runtime_per_ep * (num_episodes - i_episode), 2)
@@ -119,7 +133,7 @@ def plot_job_stats(data, title, total, metrics, output_fn, colors=None):
 
 
 #data = merge_results("results", ['random', 'easy_bf_fast'])
-#metrics = ['makespan', 'consumed_joules', 'mean_waiting_time',
+# metrics = ['makespan', 'consumed_joules', 'mean_waiting_time',
 #           'mean_slowdown', 'mean_turnaround_time', 'scheduling_time']
 #plot_results(data, metrics, output_fn='test.html', main_title="Test")
 #data['nb_jobs_rejected'] = data['nb_jobs'] - data['nb_jobs_finished']
