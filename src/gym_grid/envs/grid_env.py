@@ -18,20 +18,11 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        print(self._get_stats())
         reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
 
         return obs, reward, done, {}
-
-    def _get_stats(self):
-        stats = "\rJobs Submitted: {} - Jobs Completed: {} | Jobs Running: {} - Jobs In Queue: {}".format(
-            self.simulator.nb_jobs_submitted,
-            self.simulator.nb_jobs_completed,
-            self.simulator.nb_jobs_running,
-            self.simulator.nb_jobs_in_queue)
-        return stats
 
     def reset(self):
         self.nb_invalid_action = 0
@@ -40,7 +31,13 @@ class GridEnv(gym.Env):
         return self._get_state()
 
     def render(self):
-        raise NotImplementedError()
+        stats = "\rJobs Submitted: {:7} Completed: {:7} | Running: {:5} In Queue: {:5}".format(
+            self.simulator.nb_jobs_submitted,
+            self.simulator.nb_jobs_completed,
+            self.simulator.nb_jobs_running,
+            self.simulator.nb_jobs_in_queue)
+
+        print(stats, end="", flush=True)
 
     def close(self):
         self.simulator.close()
@@ -58,12 +55,12 @@ class GridEnv(gym.Env):
 
     def _get_state(self):
         simulator_state = self.simulator.current_state
-        state = np.zeros(shape=simulator_state.shape, dtype=np.int16)
+        state = np.zeros(shape=simulator_state.shape, dtype=np.float)
         for row in range(simulator_state.shape[0]):
             for col in range(simulator_state.shape[1]):
                 job = simulator_state[row][col]
                 if job != None:
-                    state[row][col] = job.requested_time
+                    state[row][col] = job.remaining_time
 
         return state
 

@@ -50,7 +50,7 @@ class BatsimHandler:
 
     @property
     def nb_jobs_running(self):
-        return len(self.sched_manager.jobs_running)
+        return len(self.sched_manager.get_jobs_running())
 
     @property
     def nb_resources(self):
@@ -85,7 +85,6 @@ class BatsimHandler:
                 "An error ocurred during simulator starting.")
 
     def now(self):
-        assert self.running_simulation, "Simulation not running."
         return self.protocol_manager.now()
 
     def schedule_job(self, resources):
@@ -98,7 +97,7 @@ class BatsimHandler:
             self.sched_manager.allocate_first_job(resources)
 
         # All jobs in the queue has to be scheduled or delayed
-        if self.sched_manager.is_ready():
+        if self.sched_manager.has_work():
             return
 
         if self.sched_manager.has_jobs_waiting() and not self._alarm_is_set:
@@ -115,7 +114,7 @@ class BatsimHandler:
 
     def _wait_state_change(self):
         self._update_state()
-        while self.running_simulation and not self.sched_manager.is_ready():
+        while self.running_simulation and not self.sched_manager.has_work():
             self._update_state()
 
     def _start_jobs(self, jobs):
@@ -123,7 +122,7 @@ class BatsimHandler:
             self.protocol_manager.start_job(job.id,  job.allocation)
             self.resource_manager.set_state(
                 job.allocation, Resource.State.COMPUTING)
-            self.sched_manager.on_job_scheduled(job)
+            self.sched_manager.on_job_scheduled(job, self.now())
 
     def _start_simulator(self):
         if self.nb_simulation % self._output_freq == 0:
@@ -242,6 +241,8 @@ class BatsimHandler:
             self._send_events()
 
         self._read_events()
+
+        self.sched_manager.update_jobs_progress(self.now())
 
         # Remember to always ack
         if self.running_simulation:
@@ -698,7 +699,12 @@ class SchedulerManager():
         self.gantt_shape = (nb_resources, space)
         self.reset()
 
-    def is_ready(self):
+    def get_jobs_running(self):
+        jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
+        jobs_running = [job for job in jobs if job.state == Job.State.RUNNING]
+        return jobs_running
+
+    def has_work(self):
         ready = self.has_free_space() and self.has_jobs_in_queue()
         return ready
 
@@ -707,34 +713,26 @@ class SchedulerManager():
         self.jobs_queue = deque()
         self.jobs_waiting = deque()
         self.jobs_finished = dict()
-        self.jobs_running = dict()
 
     def get_gantt(self, with_queue=True):
         if not with_queue:
             return self.gantt
 
-        nb_jobs_in_queue = min(self.gantt_shape[1], len(self.jobs_queue))
         jobs_in_queue = np.empty(shape=self.gantt_shape[1], dtype=object)
-        for i in range(nb_jobs_in_queue):
+        for i in range(min(self.gantt_shape[1], len(self.jobs_queue))):
             jobs_in_queue[i] = self.jobs_queue[i]
 
-        gantt = np.append(self.gantt, [jobs_in_queue], axis=0)
-        return gantt
+        return np.append(self.gantt, [jobs_in_queue], axis=0)
 
-    def _remove_from_gantt(self, job):
-        for res in range(self.gantt_shape[0]):
-            res_job = self.gantt[res][0]
-            if (res_job == None) or (res_job.id != job.id):
-                continue
-
-            for space in range(1, self.gantt_shape[1]):
-                self.gantt[res][space-1] = self.gantt[res][space]
-
-            self.gantt[res][-1] = None
-            break
+    def update_jobs_progress(self, time):
+        jobs = self.gantt[:, 0]
+        for job in jobs[jobs != None]:
+            if job.state == Job.State.RUNNING:
+                job.update_remaining_time(time)
 
     def allocate_first_job(self, resources):
-        job = self.jobs_queue.popleft()  # assert self.has_jobs_in_queue()
+        assert self.has_jobs_in_queue()
+        job = self.jobs_queue.popleft()
         try:
             assert job.requested_resources == len(
                 resources), "The job requested more resources than it was allocated."
@@ -760,24 +758,13 @@ class SchedulerManager():
         self.jobs_waiting.append(job)
 
     def get_jobs_to_schedule(self):
-        jobs_to_schedule = []
-        for job in self.gantt[:, 0]:
-            if job == None:
-                continue
-
-            if job.id not in self.jobs_running:
-                jobs_to_schedule.append(job)
-
-        return jobs_to_schedule
-
-    def on_job_scheduled(self, job):
-        job.state = Job.State.RUNNING
-        self.jobs_running[job.id] = job
+        jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
+        return [job for job in jobs if job.state != Job.State.RUNNING]
 
     def enqueue_jobs_waiting(self, time):
         while self.has_jobs_waiting():
             job = self.jobs_waiting.popleft()
-            job.waiting_time = time - job.submit_time
+            job.set_waiting_time(time - job.submit_time)
             self.jobs_queue.append(job)
 
     def has_free_space(self):
@@ -789,9 +776,13 @@ class SchedulerManager():
     def has_jobs_waiting(self):
         return len(self.jobs_waiting) > 0
 
+    def on_job_scheduled(self, job, time):
+        job.state = Job.State.RUNNING
+        job.set_start_time(time)
+        job.set_waiting_time(job.start_time - job.submit_time)
+
     def on_job_completed(self, timestamp, data):
-        job = self.jobs_running.pop(data['job_id'])
-        self._remove_from_gantt(job)
+        job = self._remove_from_gantt(data['job_id'])
         self._update_job_stats(job, timestamp, data)
         self.jobs_finished[job.id] = job
         return job
@@ -799,16 +790,32 @@ class SchedulerManager():
     def on_job_submitted(self, data):
         job = Job.from_json(data)
         job.state = Job.State.SUBMITTED
-        job.waiting_time = 0
+        job.set_waiting_time(0)
         self.jobs_queue.append(job)
 
+    def _remove_from_gantt(self, job_id):
+        for res in range(self.gantt_shape[0]):
+            res_job = self.gantt[res][0]
+            if (res_job == None) or (res_job.id != job_id):
+                continue
+
+            job = res_job
+            for space in range(1, self.gantt_shape[1]):
+                self.gantt[res][space-1] = self.gantt[res][space]
+
+            self.gantt[res][-1] = None
+            break
+        assert job is not None
+        return job
+
     def _update_job_stats(self, job, timestamp, data):
-        job.finish_time = timestamp
-        job.waiting_time = round(data["job_waiting_time"], 4)
-        job.turnaround_time = round(data["job_turnaround_time"], 4)
-        job.runtime = round(data["job_runtime"], 4)
-        job.consumed_energy = round(data["job_consumed_energy"], 4)
-        job.return_code = round(data["return_code"], 4)
+        job.set_finish_time(timestamp)
+        job.set_waiting_time(data["job_waiting_time"])
+        job.set_turnaround_time(data["job_turnaround_time"])
+        job.set_runtime(data["job_runtime"])
+        job.set_consumed_energy(data["job_consumed_energy"])
+        job.remaining_time = 0
+        job.return_code = data["return_code"]
 
         try:
             job.state = Job.State[data["job_state"]]
@@ -843,27 +850,41 @@ class Job(object):
         self.requested_time = walltime
         self.requested_resources = res
         self.profile = profile
+        self.start_time = -1  # will be set on scheduling by batsim
         self.finish_time = -1  # will be set on completion by batsim
         self.waiting_time = -1  # will be set on completion by batsim
         self.turnaround_time = -1  # will be set on completion by batsim
         self.runtime = -1  # will be set on completion by batsim
         self.consumed_energy = -1  # will be set on completion by batsim
+        self.remaining_time = self.requested_time  # will be updated by batsim
         self.state = Job.State.UNKNOWN
         self.return_code = None
-        self.progress = None
         self.json_dict = json_dict
         self.profile_dict = profile_dict
         self.allocation = None
         self.metadata = None
 
-    def __repr__(self):
-        return(
-            ("<Job {0}; sub:{1} res:{2} reqtime:{3} prof:{4} "
-                "state:{5} ret:{6} alloc:{7}>\n").format(
-                self.id, self.submit_time, self.requested_resources,
-                self.requested_time, self.profile,
-                self.state,
-                self.return_code, self.allocation))
+    def set_start_time(self, t):
+        self.start_time = t
+
+    def set_waiting_time(self, t):
+        self.waiting_time = t
+
+    def set_finish_time(self, t):
+        self.finish_time = t
+
+    def set_turnaround_time(self, t):
+        self.turnaround_time = t
+
+    def set_runtime(self, t):
+        self.runtime = t
+
+    def set_consumed_energy(self, t):
+        self.consumed_energy = t
+
+    def update_remaining_time(self, t):
+        exec_time = (t - self.start_time)
+        self.remaining_time =  float(self.requested_time) - exec_time
 
     @property
     def workload(self):

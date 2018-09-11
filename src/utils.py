@@ -22,29 +22,16 @@ def plot_reward(avg_scores, n_ep, title):
         yaxis={'title': 'Avg Reward'},
     )
     fig = go.Figure(data=[trace], layout=layout)
-    plot(fig)
+    plot(fig, filename='img/'+title+'.html')
 
 
-def print_progress(t_start, i_episode, num_episodes):
-    runtime_per_ep = round(((t.time() - t_start) / i_episode), 2)
-    total_runtime = round(runtime_per_ep * (num_episodes - i_episode), 2)
-    print("\rEpisode {}/{}: in {}s/epi ({} s)".format(i_episode,
-                                                        num_episodes,
-                                                        runtime_per_ep,
-                                                        total_runtime), end="")
+def print_progress(t_start, ep, num_episodes):
+    total_time = t.time() - t_start
+    avg_ep_time = round(total_time / ep, 2)
+    rem_time = round(avg_ep_time * (num_episodes - ep), 2)
+    print("\nEpisode {}/{}: (Avg:{} s - Remaining: {} s)".format(ep,
+                                                                 num_episodes, avg_ep_time, rem_time), flush=True)
     sys.stdout.flush()
-
-
-def plot_graph(avg_scores, num_episodes):
-    # plot performance
-    plt.plot(np.linspace(0, num_episodes, len(avg_scores),
-                         endpoint=False), np.asarray(avg_scores))
-    plt.xlabel('Episode Number')
-    plt.ylabel('Average Reward (Over Next %d Episodes)' % len(avg_scores))
-    plt.show()
-    # print best 100-episode performance
-    print('Best Average Reward over {} Episodes: {}'.format(
-        len(avg_scores), np.max(avg_scores)))
 
 
 def merge_results(path, scheds, output_fn=None):
