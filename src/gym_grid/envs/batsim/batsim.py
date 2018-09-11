@@ -9,6 +9,7 @@ from enum import Enum, unique
 import subprocess
 from copy import deepcopy
 from collections import defaultdict, deque
+import numpy as np
 
 
 class BatsimHandler:
@@ -21,7 +22,7 @@ class BatsimHandler:
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
 
-    def __init__(self, output_freq, verbose):
+    def __init__(self, output_freq, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -35,83 +36,86 @@ class BatsimHandler:
         self._verbose = verbose
         self._simulator_process = None
         self.running_simulation = False
-        self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
-        self.protocol_manager = BatsimProtocolHandler()
         self.nb_simulation = 0
         self.resource_manager = ResourceManager.from_xml(self._platform)
+        self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
+        self.protocol_manager = BatsimProtocolHandler()
+        self.sched_manager = SchedulerManager(5,
+                                              self.resource_manager.nb_resources)
         self._initialize_vars()
 
-    def get_job_info(self):
-        return self.job_manager.lookup()
+    @property
+    def nb_resources(self):
+        return self.resource_manager.nb_resources
 
-    def get_resources_info(self):
-        return self.resource_manager.get_state(output_values=True)
+    @property
+    def current_state(self):
+        return self.sched_manager.get_gantt(with_queue=True)
+
+    @property
+    def state_shape(self):
+        gantt_space = self.sched_manager.gantt_shape
+        # Add job queue space along with resources queue
+        return (gantt_space[0]+1, gantt_space[1])
 
     def close(self):
+        self.network.close()
+        self.running_simulation = False
         if self._simulator_process is not None:
             self._simulator_process.kill()
             self._simulator_process.wait()
             self._simulator_process = None
-        self.network.close()
-        self.running_simulation = False
 
     def start(self):
         self._initialize_vars()
         self.nb_simulation += 1
         self._simulator_process = self._start_simulator()
         self.network.bind()
-        self.wait_until_next_event()
+        self._wait_state_change()
         if not self.running_simulation:
             raise ConnectionError(
                 "An error ocurred during simulator starting.")
-
-    def schedule_job(self, allocation):
-        assert self.running_simulation, "Simulation is not running."
-        assert allocation is not None, "Allocation cannot be null."
-
-        job = self.get_job_info()
-        assert job is not None
-
-        if len(allocation) == 0:  # Handle VOID Action
-            self.job_manager.on_job_waiting()
-            self.protocol_manager.acknowledge()
-        else:
-            self._validate_allocation(job.requested_resources, allocation)
-            self.job_manager.on_job_scheduling(allocation)
-            self.protocol_manager.start_job(job.id,  allocation)
-            self.resource_manager.set_state(
-                allocation, Resource.State.COMPUTING)
-
-        if self.job_manager.has_jobs_in_queue():
-            return
-
-        if self.job_manager.has_jobs_waiting() and not self._alarm_is_set:
-            self.protocol_manager.wake_me_up_at(self.now() + 60)
-            self._alarm_is_set = True
-
-        self._send_events()
-        self.wait_until_next_event()
-        # Enqueue jobs if another type of event has ocurred first.
-        if self.running_simulation:
-            self.job_manager.enqueue_jobs_waiting(self.now())
-
-    def wait_until_next_event(self):
-        self._read_events()
-        while self.running_simulation and not self.job_manager.has_jobs_in_queue():
-            self._read_events()
 
     def now(self):
         assert self.running_simulation, "Simulation not running."
         return self.protocol_manager.now()
 
-    def _validate_allocation(self, req_res, allocation):
-        if req_res != len(allocation):
-            raise InsufficientResourcesError(
-                "Job requested {} resources while {} resources were selected.".format(req_res, len(allocation)))
+    def schedule_job(self, resources):
+        assert self.running_simulation, "Simulation is not running."
+        assert resources is not None, "Allocation cannot be null."
 
-        if not self.resource_manager.is_available(allocation):
-            raise UnavailableResourcesError(
-                "Cannot allocate unavailable resources.")
+        if len(resources) == 0:  # Handle VOID Action
+            self.sched_manager.delay_first_job()
+        else:
+            self.sched_manager.allocate_first_job(resources)
+
+        # All jobs in the queue has to be scheduled or delayed
+        if self.sched_manager.is_ready():
+            return
+
+        if self.sched_manager.has_jobs_waiting() and not self._alarm_is_set:
+            self.protocol_manager.wake_me_up_at(self.now() + 10)
+            self._alarm_is_set = True
+
+        self._schedule_gantt_jobs()
+
+        self._wait_state_change()
+
+        # Enqueue jobs if another type of event has ocurred first.
+        if self.running_simulation:
+            self.sched_manager.enqueue_jobs_waiting(self.now())
+
+    def _wait_state_change(self):
+        self._update_state()
+        while self.running_simulation and not self.sched_manager.is_ready():
+            self._update_state()
+
+    def _start_jobs(self, jobs):
+        for job in jobs:
+            self.protocol_manager.start_job(job.id,  job.allocation)
+            self.resource_manager.set_state(
+                job.allocation, Resource.State.COMPUTING)
+            self.sched_manager.on_job_scheduled(job)
 
     def _start_simulator(self):
         if self.nb_simulation % self._output_freq == 0:
@@ -130,10 +134,14 @@ class BatsimHandler:
 
     def _initialize_vars(self):
         self.nb_jobs_completed = 0
-        self._wait_for_scheduler_action = False
         self._alarm_is_set = False
         self.energy_consumed = 0
-        self.job_manager = JobManager()
+        self.sched_manager.reset()
+
+    def _schedule_gantt_jobs(self):
+        jobs_to_sched = self.sched_manager.get_jobs_to_schedule()
+        if len(jobs_to_sched) != 0:
+            self._start_jobs(jobs_to_sched)
 
     def _handle_resource_pstate_changed(self, data):
         res_ids = list(map(int, data["resources"].split(" ")))
@@ -142,15 +150,15 @@ class BatsimHandler:
 
     def _handle_job_completed(self, timestamp, data):
         self.nb_jobs_completed += 1
-        job = self.job_manager.on_job_completed(timestamp, data)
+        job = self.sched_manager.on_job_completed(timestamp, data)
         self.resource_manager.set_state(job.allocation, Resource.State.IDLE)
+        self._schedule_gantt_jobs()
 
     def _handle_job_submitted(self, data):
         if data['job']['res'] > self.resource_manager.nb_res:
             self.protocol_manager.reject_job(data['job_id'])
         else:
-            self.job_manager.on_job_submitted(data['job'])
-            self._wait_for_scheduler_action = True
+            self.sched_manager.on_job_submitted(data['job'])
 
     def _handle_simulation_begins(self, data):
         self.running_simulation = True
@@ -162,69 +170,76 @@ class BatsimHandler:
         self.workloads = data["workloads"]
 
     def _handle_simulation_ends(self, data):
+        self.protocol_manager.acknowledge()
+        self._send_events()
         self.running_simulation = False
 
     def _handle_requested_call(self):
         self._alarm_is_set = False
 
-        if not self.job_manager.has_jobs_waiting():
-            return
+        # if not self.sched_manager.has_jobs_waiting():
+        #    return
 
-        self.job_manager.enqueue_jobs_waiting(self.now())
-        self._wait_for_scheduler_action = True
+        self.sched_manager.enqueue_jobs_waiting(self.now())
+
+    def _handle_batsim_events(self, event):
+        if event.type == "SIMULATION_BEGINS":
+            assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
+            self._handle_simulation_begins(event.data)
+        elif event.type == "SIMULATION_ENDS":
+            assert self.running_simulation, "No simulation is currently running"
+            self._handle_simulation_ends(event.data)
+        elif event.type == "JOB_SUBMITTED":
+            self._handle_job_submitted(event.data)
+        elif event.type == "JOB_COMPLETED":
+            self._handle_job_completed(event.timestamp, event.data)
+        elif event.type == "RESOURCE_STATE_CHANGED":
+            self._handle_resource_pstate_changed(event.data)
+        elif event.type == "REQUESTED_CALL":
+            self._handle_requested_call()
+        elif event.type == "ANSWER":
+            if "consumed_energy" in event.data:
+                self.energy_consumed = event.data["consumed_energy"]
+        elif event.type == "NOTIFY":
+            if event.data['type'] == 'no_more_static_job_to_submit':
+                return
+            else:
+                raise Exception(
+                    "Unknown NOTIFY event type {}".format(event.type))
+        else:
+            raise Exception("Unknown event type {}".format(event.type))
 
     def _send_events(self):
-        if self._wait_for_scheduler_action:
-            self._wait_for_scheduler_action = False
-            return
-
         msg = self.protocol_manager.flush()
-        if msg == None:
-            return
-
+        assert msg is not None, "Cannot send a message if no event ocurred."
         self.network.send(msg)
 
-    def _get_msg(self):
-        msg = None
-        while msg is None:
-            msg = self.network.recv(blocking=not self.running_simulation)
-            if msg is None:
-                raise ValueError("Batsim is not responding (maybe deadlocked)")
-        return BatsimMessage.from_json(msg)
-
     def _read_events(self):
-        msg = self._get_msg()
+        def get_msg():
+            msg = None
+            while msg is None:
+                msg = self.network.recv(blocking=not self.running_simulation)
+                if msg is None:
+                    raise ValueError(
+                        "Batsim is not responding (maybe deadlocked)")
+            return BatsimMessage.from_json(msg)
+
+        msg = get_msg()
+
         self.protocol_manager.update_time(msg.now)
 
         for event in msg.events:
-            if event.type == "SIMULATION_BEGINS":
-                assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
-                self._handle_simulation_begins(event.data)
-            elif event.type == "SIMULATION_ENDS":
-                assert self.running_simulation, "No simulation is currently running"
-                self._handle_simulation_ends(event.data)
-            elif event.type == "JOB_SUBMITTED":
-                self._handle_job_submitted(event.data)
-            elif event.type == "JOB_COMPLETED":
-                self._handle_job_completed(event.timestamp, event.data)
-            elif event.type == "RESOURCE_STATE_CHANGED":
-                self._handle_resource_pstate_changed(event.data)
-            elif event.type == "REQUESTED_CALL":
-                self._handle_requested_call()
-            elif event.type == "ANSWER":
-                if "consumed_energy" in event.data:
-                    self.energy_consumed = event.data["consumed_energy"]
-            elif event.type == "NOTIFY":
-                if event.data['type'] == 'no_more_static_job_to_submit':
-                    continue
-                else:
-                    raise Exception(
-                        "Unknown NOTIFY event type {}".format(event.type))
-            else:
-                raise Exception("Unknown event type {}".format(event.type))
+            self._handle_batsim_events(event)
 
-        self.protocol_manager.acknowledge()
-        self._send_events()
+    def _update_state(self):
+        if self.protocol_manager.has_events():
+            self._send_events()
+
+        self._read_events()
+
+        # Remember to always ack
+        if self.running_simulation:
+            self.protocol_manager.acknowledge()
 
 
 class BatsimEvent:
@@ -252,7 +267,7 @@ class BatsimProtocolHandler:
         self._ack = False
 
     def flush(self):
-        if (len(self.events) == 0 and not self._ack):
+        if not self.has_events():
             return None
 
         self._ack = False
@@ -269,6 +284,9 @@ class BatsimProtocolHandler:
         self.events = []
 
         return msg
+
+    def has_events(self):
+        return len(self.events) > 0 or self._ack
 
     def update_time(self, time):
         self.current_time = time
@@ -599,7 +617,7 @@ class ResourceManager:
                 ',')[Resource.PowerState.NORMAL.value]
             assert "Mf" in speed, "Speed is not in Mega Flops"
 
-            speed = float(speed.replace("Mf","")) * 1000000
+            speed = float(speed.replace("Mf", "")) * 1000000
             watt_per_state = host.getElementsByTagName('prop')[0]
             watt_per_state = watt_per_state.getAttribute('value')
 
@@ -629,8 +647,6 @@ class ResourceManager:
     #                                        res['name'],
     #                                        res['speed'],
     #                                        res['properties']['watt_per_state'])
-#
-    #    return ResourceManager(resources)
 
     @property
     def nb_res(self):
@@ -671,21 +687,89 @@ class ResourceManager:
         return [res.pstate for _, res in self.resources.items()]
 
 
-class JobManager():
-    def __init__(self):
+class SchedulerManager():
+    def __init__(self, space, nb_resources):
+        self.gantt_shape = (nb_resources, space)
+        self.reset()
+
+    def is_ready(self):
+        ready = self.has_free_space() and self.has_jobs_in_queue()
+        return ready
+
+    def reset(self):
+        self.gantt = np.empty(shape=self.gantt_shape, dtype=object)
         self.jobs_queue = deque()
         self.jobs_waiting = deque()
         self.jobs_finished = dict()
         self.jobs_running = dict()
 
-    def on_job_waiting(self):
+    def get_gantt(self, with_queue=True):
+        if not with_queue:
+            return self.gantt
+
+        nb_jobs_in_queue = min(self.gantt_shape[1], len(self.jobs_queue))
+        jobs_in_queue = np.empty(shape=self.gantt_shape[1], dtype=object)
+        for i in range(nb_jobs_in_queue):
+            jobs_in_queue[i] = self.jobs_queue[i]
+
+        gantt = np.append(self.gantt, [jobs_in_queue], axis=0)
+        return gantt
+
+    def _remove_from_gantt(self, job):
+        for res in range(self.gantt_shape[0]):
+            res_job = self.gantt[res][0]
+            if (res_job == None) or (res_job.id != job.id):
+                continue
+
+            for space in range(1, self.gantt_shape[1]):
+                self.gantt[res][space-1] = self.gantt[res][space]
+
+            self.gantt[res][-1] = None
+            break
+
+    def allocate_first_job(self, resources):
+        job = self.jobs_queue.popleft()  # assert self.has_jobs_in_queue()
+        try:
+            if job.requested_resources != len(resources):
+                raise InsufficientResourcesError(
+                    "The job requested more resources than it was allocated.")
+
+            for res in resources:
+                success = False
+                resource_spaces = self.gantt[res]
+                for i in range(self.gantt_shape[1]):
+                    if resource_spaces[i] == None:
+                        resource_spaces[i] = job
+                        success = True
+                        break
+
+                if not success:
+                    raise UnavailableResourcesError(
+                        "There is no space available on the resource selected.")
+
+            job.allocation = resources
+        except:
+            self.jobs_queue.appendleft(job)
+            raise
+
+    def delay_first_job(self):
         job = self.jobs_queue.popleft()
         self.jobs_waiting.append(job)
 
-    def lookup(self):
-        if self.has_jobs_in_queue():
-            return self.jobs_queue[0]
-        return None
+    def get_jobs_to_schedule(self):
+        jobs_to_schedule = []
+        for job in self.gantt[:, 0]:
+            if job == None:
+                continue
+
+            if job.id not in self.jobs_running:
+                jobs_to_schedule.append(job)
+
+        return jobs_to_schedule
+
+    def on_job_scheduled(self, job):
+        job.state = Job.State.RUNNING
+        self.jobs_running[job.id] = job
 
     def enqueue_jobs_waiting(self, time):
         while self.has_jobs_waiting():
@@ -693,11 +777,8 @@ class JobManager():
             job.waiting_time = time - job.submit_time
             self.jobs_queue.append(job)
 
-    def on_job_scheduling(self, allocation):
-        job = self.jobs_queue.popleft()
-        job.allocation = allocation
-        job.state = Job.State.RUNNING
-        self.jobs_running[job.id] = job
+    def has_free_space(self):
+        return np.any(self.gantt == None)
 
     def has_jobs_in_queue(self):
         return len(self.jobs_queue) > 0
@@ -707,6 +788,18 @@ class JobManager():
 
     def on_job_completed(self, timestamp, data):
         job = self.jobs_running.pop(data['job_id'])
+        self._remove_from_gantt(job)
+        self._update_job_stats(job, timestamp, data)
+        self.jobs_finished[job.id] = job
+        return job
+
+    def on_job_submitted(self, data):
+        job = Job.from_json(data)
+        job.state = Job.State.SUBMITTED
+        job.waiting_time = 0
+        self.jobs_queue.append(job)
+
+    def _update_job_stats(self, job, timestamp, data):
         job.finish_time = timestamp
         job.waiting_time = round(data["job_waiting_time"], 4)
         job.turnaround_time = round(data["job_turnaround_time"], 4)
@@ -718,14 +811,6 @@ class JobManager():
             job.state = Job.State[data["job_state"]]
         except KeyError:
             job.state = Job.State.UNKNOWN
-
-        self.jobs_finished[job.id] = job
-        return job
-
-    def on_job_submitted(self, data):
-        job = Job.from_json(data)
-        job.state = Job.State.SUBMITTED
-        self.jobs_queue.append(job)
 
 
 class Job(object):
@@ -812,8 +897,6 @@ class NetworkHandler:
 
     def send_string(self, msg):
         assert self.connection, "Connection not open"
-        if self.verbose > 0:
-            print("[PYBATSIM]: SEND_MSG\n {}".format(msg))
         self.connection.send_string(msg)
 
     def recv(self, blocking=False):
@@ -833,27 +916,17 @@ class NetworkHandler:
         except zmq.error.Again:
             return None
 
-        if self.verbose > 0:
-            print('[PYBATSIM]: RECEIVED_MSG\n {}'.format(msg))
-
         return msg
 
     def bind(self):
         assert not self.connection, "Connection already open"
         self.connection = self.context.socket(self.type)
 
-        if self.verbose > 0:
-            print("[PYBATSIM]: binding to {addr}"
-                  .format(addr=self.socket_endpoint))
         self.connection.bind(self.socket_endpoint)
 
     def connect(self):
         assert not self.connection, "Connection already open"
         self.connection = self.context.socket(self.type)
-
-        if self.verbose > 0:
-            print("[PYBATSIM]: connecting to {addr}"
-                  .format(addr=self.socket_endpoint))
         self.connection.connect(self.socket_endpoint)
 
     def subscribe(self, pattern=b''):

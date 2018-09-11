@@ -10,13 +10,14 @@ class GridEnv(gym.Env):
     MAX_WALLTIME = 7200
 
     def __init__(self):
-        self.simulator = BatsimHandler(output_freq=1, verbose='quiet')
+        self.simulator = BatsimHandler(output_freq=5)
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.seed()
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
+
         reward = self._take_action(action)
         obs = self._get_state()
         done = not self.simulator.running_simulation
@@ -39,44 +40,42 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _take_action(self, action):
-        resources = []
-        if action[0] == 0:
-            for ind, act in enumerate(action):
-                if act == 1:
-                    resources.append(ind-1)
+        if action == 0:
+            resources = []
+        else:
+            resources = [action-1]
 
+        reward = 0
         try:
             self.simulator.schedule_job(resources)
-            reward = 0
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -1
 
         return reward
 
     def _get_state(self):
-        res_info = self.simulator.get_resources_info()
-        job = self.simulator.get_job_info()
-        job_info = {
-            'res': 0 if job is None else job.requested_resources,
-            'requested_time': 0 if job is None else job.requested_time,
-            'waiting_time': 0 if job is None else job.waiting_time
-        }
-
-        state = {'resources': res_info, 'job': job_info}
+        simulator_state = self.simulator.current_state
+        state = np.zeros(shape=simulator_state.shape, dtype=np.int16)
+        for row in range(simulator_state.shape[0]):
+            for col in range(simulator_state.shape[1]):
+                job = simulator_state[row][col]
+                if job != None:
+                    state[row][col] = job.requested_time
 
         return state
 
     def _get_action_space(self):
-        return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.resource_manager.nb_resources+1)])
+        # return spaces.Tuple([spaces.Discrete(2) for _ in range(self.simulator.nb_resources+1)])
+        return spaces.Discrete(self.simulator.nb_resources+1)
+
+    @property
+    def max_time(self):
+        return GridEnv.MAX_WALLTIME
 
     def _get_observation_space(self):
-        space = spaces.Dict({
-            'resources': spaces.MultiDiscrete(range(self.simulator.resource_manager.nb_resources)),
-            'job': spaces.Dict({
-                'res': spaces.Discrete(self.simulator.resource_manager.nb_resources),
-                'wall_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=(), dtype=int),
-                'waiting_time': spaces.Box(low=0, high=GridEnv.MAX_WALLTIME, shape=(), dtype=int)
-            })
-        })
+        obs_space = spaces.Box(low=0,
+                               high=self.max_time,
+                               shape=self.simulator.state_shape,
+                               dtype=np.int16)
 
-        return space
+        return obs_space
