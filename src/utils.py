@@ -28,7 +28,7 @@ def plot_reward(avg_scores, n_ep, title):
 def print_progress(t_start, i_episode, num_episodes):
     runtime_per_ep = round(((t.time() - t_start) / i_episode), 2)
     total_runtime = round(runtime_per_ep * (num_episodes - i_episode), 2)
-    print("\rEpisode {}/{}: in {}s/epi ({} s)\n".format(i_episode,
+    print("\rEpisode {}/{}: in {}s/epi ({} s)".format(i_episode,
                                                         num_episodes,
                                                         runtime_per_ep,
                                                         total_runtime), end="")
