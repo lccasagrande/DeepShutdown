@@ -7,7 +7,7 @@ import numpy as np
 
 
 class GridEnv(gym.Env):
-    MAX_WALLTIME = 7200
+    MAX_WALLTIME = 576000
 
     def __init__(self):
         self.simulator = BatsimHandler(output_freq=1)
@@ -19,10 +19,9 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        reward = self._take_action(action)
+        self._take_action(action)
         done = not self.simulator.running_simulation
-        self._update_state()
-
+        reward = self._get_reward()
 
         return self.state, reward, done, {}
 
@@ -49,19 +48,27 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+    def _get_reward(self):
+        self._update_state()
+        nb_max_jobs = self.state.shape[0] * self.state.shape[1]
+        reward = -1 * (self.nb_unfinished_jobs / nb_max_jobs)
+        return reward
+
     def _take_action(self, action):
         resources = [] if action == 0 else [action-1]
-
         self.simulator.schedule_job(resources)
 
-        return -1
-
     def _update_state(self):
+        self.nb_unfinished_jobs = 0
         simulator_state = self.simulator.current_state
         for row in range(simulator_state.shape[0]):
             for col in range(simulator_state.shape[1]):
                 job = simulator_state[row][col]
-                self.state[row][col] = 0 if job is None else job.remaining_time
+                if job is None:
+                    self.state[row][col] = 0  
+                else:
+                    self.state[row][col] = job.remaining_time
+                    self.nb_unfinished_jobs += 1
 
     def _get_action_space(self):
         return spaces.Discrete(self.simulator.nb_resources+1)

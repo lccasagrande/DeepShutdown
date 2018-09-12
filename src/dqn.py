@@ -16,11 +16,14 @@ from keras.optimizers import Adam
 from sklearn.preprocessing import LabelBinarizer, MinMaxScaler
 import utils
 import time as t
+import pandas as pd
 
 
 class LRTensorBoard(TensorBoard):
-    def __init__(self, log_dir):  # add other arguments to __init__ if you need
-        super().__init__(log_dir=log_dir)
+    # add other arguments to __init__ if you need
+    def __init__(self, log_dir, write_graph=False, write_grads=False, write_images=False):
+        super().__init__(log_dir=log_dir, write_graph=write_graph,
+                         write_grads=write_grads, write_images=write_images)
 
     def on_epoch_end(self, epoch, logs=None):
         logs.update({'learning_rate': K.eval(self.model.optimizer.lr)})
@@ -44,20 +47,21 @@ class Memory:
 
 
 class DQNAgent:
-    def __init__(self, input_shape, output_shape, mem_len, log_dir, lr=0.00001, gamma=0.99):
-        self.input_shape = (input_shape[0], input_shape[1], 1) # add channel dim
+    def __init__(self, input_shape, output_shape, mem_len, log_dir, lr=0.00025, gamma=0.99):
+        # add channel dim
+        self.input_shape = (input_shape[0], input_shape[1], 1)
         self.output_shape = output_shape
         self.log_dir = log_dir
         self.memory = Memory(mem_len)
-        self.min_memory_to_train = 1000
+        self.min_memory_to_train = 50000
         self.gamma = gamma
         self.lr = lr
         self.epsilon = 1
         self.min_epsilon = 0.1
-        self.epsilon_decay_steps = 500
+        self.epsilon_decay_steps = 400000
         self.total_steps = 0
         self.target_model_update_count = 0
-        self.target_model_update_freq = 10
+        self.target_model_update_freq = 5000
         self.callbacks = self._get_callbacks()
         self.epsilons = np.linspace(
             self.epsilon, self.min_epsilon, self.epsilon_decay_steps)
@@ -67,24 +71,25 @@ class DQNAgent:
 
     def _build_model(self):
         model = Sequential()
-
-        model.add(Convolution2D(64, (3, 3), activation='relu',
-                                input_shape=self.input_shape))
-        model.add(Convolution2D(64, (3, 3), activation='relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2), data_format='channels_last'))
-        model.add(Dropout(0.25))
+        model.add(Convolution2D(32, (8, 8), strides=(4, 4), input_shape=self.input_shape))
+        model.add(Activation('relu'))
+        model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
+        model.add(Activation('relu'))
+        model.add(Convolution2D(64, (2, 2), strides=(1, 1)))
+        model.add(Activation('relu'))
         model.add(Flatten())
-        model.add(Dense(128, activation='relu'))
-        model.add(Dropout(0.5))
-        model.add(Dense(self.output_shape, activation='linear'))
-
+        model.add(Dense(512))
+        model.add(Activation('relu'))
+        model.add(Dense(self.output_shape))
+        model.add(Activation('linear'))
         model.compile(loss=mean_squared_error,
                       optimizer=Adam(lr=self.lr),
-                      metrics=[metrics.mean_absolute_error, metrics.mean_absolute_percentage_error])
+                      metrics=[metrics.mean_absolute_error])
         return model
 
     def predict(self, state):
-        x = state.reshape(1, self.input_shape[0], self.input_shape[1], self.input_shape[2])
+        x = state.reshape(
+            1, self.input_shape[0], self.input_shape[1], self.input_shape[2])
         return self.model.predict(x)
 
     def train(self, bath_size):
@@ -93,8 +98,10 @@ class DQNAgent:
             return
 
         samples = self.memory.remember(bath_size)
-        input_states = np.zeros((bath_size, self.input_shape[0], self.input_shape[1], self.input_shape[2]))
-        target_states = np.zeros((bath_size, self.input_shape[0], self.input_shape[1], self.input_shape[2]))
+        input_states = np.zeros(
+            (bath_size, self.input_shape[0], self.input_shape[1], self.input_shape[2]))
+        target_states = np.zeros(
+            (bath_size, self.input_shape[0], self.input_shape[1], self.input_shape[2]))
         actions, rewards, dones = [], [], []
 
         for i, (s, a, r, n_s, done) in enumerate(samples):
@@ -122,7 +129,7 @@ class DQNAgent:
                        callbacks=self.callbacks)
 
     def _get_callbacks(self):
-        tensor = TensorBoard(log_dir=self.log_dir,write_graph=False)
+        tensor = LRTensorBoard(log_dir=self.log_dir)
         return [tensor]
 
     def update_target_model(self):
@@ -141,75 +148,80 @@ class DQNAgent:
             self.total_steps, self.epsilon_decay_steps-1)]
 
     def get_action(self, state):
-        valid_actions = np.asarray([1] + [1 if np.any(state[i] == 0)  else 0 for i in range(self.output_shape-1)])
+        valid_actions = [0] + [(i+1) for i in range(self.output_shape-1) if np.any(state[i] == 0)]
 
-        if np.random.rand() <= self.epsilon:
-            return random.choice(np.flatnonzero(valid_actions))
+        if np.random.uniform() < self.epsilon:
+            return random.choice(valid_actions)
 
-        valid_actions = self.predict(state)[0] * valid_actions
+        pred = self.predict(self.input_shape)[0]
+        pred = np.take(pred, valid_actions)
         return np.argmax(valid_actions)
 
 
-def prep_input(encoder, scaler, state):
-    res_state = state['resources']
-    res_state = np.array(encoder.transform(res_state)).ravel()
-    job_wall = scaler.transform(state['job']['requested_time'])[0][0]
-    job_wait = scaler.transform(state['job']['waiting_time'])[0][0]
-    return res_state
-
-
-def run(n_ep=10, out_freq=2, plot=True):
+def run(output_dir, n_ep=60, out_freq=2, plot=True):
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
+    np.random.seed(123)
+    env.seed(123)
+
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaler.fit([[0], [env.max_time]])
+    action_history = []
 
     # Create agent
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler.fit([[0], [env.max_time]])
     agent = DQNAgent(input_shape=env.observation_space.shape,
                      output_shape=env.action_space.n,
                      mem_len=1000000,
                      log_dir='log/cnn1')
 
     t_start = t.time()
-    # Iterate the game
     for i in range(1, n_ep + 1):
         utils.print_progress(t_start, i, n_ep)
         score = 0
-
-        # Init
-        state = env.reset()
-        state = scaler.transform(state)
+        epi_actions = np.zeros(env.action_space.n)
+        state = scaler.transform(env.reset())
         while True:
+            # Choose action
             action = agent.get_action(state)
-
+            epi_actions[action] += 1
             next_state, reward, done, _ = env.step(action)
             next_state = scaler.transform(next_state)
 
             # Record experience
             agent.store(state, action, reward, next_state, done)
-
-            # Train
             agent.train(32)
+
+            # Update State and Score
             state = next_state
             score += reward
-
+            env.render()
             if done:
-                print("episode: {}/{}, score: {}, epsilon: {}, memory: {}, max score: {} at {}"
-                      .format(i, n_ep, score, agent.epsilon, agent.memory.len, max_score[0], max_score[1]))
                 episodic_scores.append(score)
+                action_history.append(epi_actions)
+                print(
+                    "\nScore: {:7} - Max Score: {:7} - Epsilon: {:7} - Memory: {:7}"
+                        .format(score, max(episodic_scores), agent.epsilon, agent.memory.len))
                 break
 
         if (i % out_freq == 0):
             avg_scores.append(np.mean(episodic_scores))
 
+    pd.DataFrame(action_history,
+                 columns=range(0, env.action_space.n),
+                 dtype=np.int).to_csv(output_dir+"actions_hist.csv")
+
     if plot:
-        utils.plot_reward(avg_scores, n_ep, title='DQN CNN Policy')
+        utils.plot_reward(avg_scores,
+                          n_ep,
+                          title='DQN CNN Policy',
+                          output_dir=output_dir)
 
     print(('Best Average Reward over %d Episodes: ' %
            out_freq), np.max(avg_scores))
 
 
 if __name__ == "__main__":
-    run()
+    output_dir = 'results/dqn/'
+    run(output_dir)
