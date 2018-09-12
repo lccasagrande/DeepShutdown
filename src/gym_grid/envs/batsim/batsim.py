@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import zmq
+import time
 from xml.dom import minidom
 from enum import Enum, unique
 import subprocess
@@ -70,6 +71,7 @@ class BatsimHandler:
         self.network.close()
         self.running_simulation = False
         if self._simulator_process is not None:
+            time.sleep(2) # wait simulator finish
             self._simulator_process.kill()
             self._simulator_process.wait()
             self._simulator_process = None

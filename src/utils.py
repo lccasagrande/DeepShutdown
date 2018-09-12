@@ -9,11 +9,19 @@ import math
 import plotly.tools as tools
 import sys
 import time as t
+import csv
 
 
-def plot_reward(avg_scores, n_ep, title):
+def dict_to_csv(data, fn):
+    dt = pd.DataFrame(data)
+    dt.to_csv(fn)
+
+
+def plot_reward(avg_scores, n_ep, title, output_dir):
     x, y = np.linspace(0, n_ep, len(avg_scores),
                        endpoint=False), np.asarray(avg_scores)
+
+    dict_to_csv({'ep': list(x), 'avg_reward': list(y)}, output_dir+'rewards.csv')
 
     trace = go.Scatter(x=x, y=y)
     layout = go.Layout(
@@ -22,7 +30,7 @@ def plot_reward(avg_scores, n_ep, title):
         yaxis={'title': 'Avg Reward'},
     )
     fig = go.Figure(data=[trace], layout=layout)
-    plot(fig, filename='img/'+title+'.html')
+    plot(fig, filename=output_dir+'rewards.html')
 
 
 def print_progress(t_start, ep, num_episodes):
