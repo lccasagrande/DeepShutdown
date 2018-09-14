@@ -19,10 +19,13 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        self._take_action(action)
+        try:
+            self._take_action(action)
+        except UnavailableResourcesError:
+            pass
+
         done = not self.simulator.running_simulation
         reward = self._get_reward()
-
         return self.state, reward, done, {}
 
     def reset(self):
@@ -32,8 +35,8 @@ class GridEnv(gym.Env):
             shape=self.simulator.current_state.shape, dtype=np.float)
         return self.state
 
-    def render(self):
-        stats = "\rJobs Submitted: {:7} Completed: {:7} | Running: {:7} In Queue: {:7}".format(
+    def render(self, mode='human'):
+        stats = "\nSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}\n".format(
             self.simulator.nb_jobs_submitted,
             self.simulator.nb_jobs_completed,
             self.simulator.nb_jobs_running,
@@ -65,7 +68,7 @@ class GridEnv(gym.Env):
             for col in range(simulator_state.shape[1]):
                 job = simulator_state[row][col]
                 if job is None:
-                    self.state[row][col] = 0  
+                    self.state[row][col] = 0
                 else:
                     self.state[row][col] = job.remaining_time
                     self.nb_unfinished_jobs += 1

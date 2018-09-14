@@ -5,15 +5,13 @@ import sys
 import csv
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from random import choice
 import time as t
 from collections import defaultdict, deque
 
 
-def sample_valid_action(state):
-    valid_actions = [0] + [(i+1)
-                           for i in range(len(state)-1) if np.any(state[i] == 0)]
+def sample_valid_action(env, state):
+    valid_actions = [0] + [(i+1) for i in range(env.action_space.n-1) if np.any(state[i] == 0)]
     return choice(valid_actions)
 
 
@@ -29,7 +27,7 @@ def run(output_dir, n_ep=10, out_freq=2, plot=True):
         utils.print_progress(t_start, i, n_ep)
         state = env.reset()
         while True:
-            act = sample_valid_action(state)
+            act = sample_valid_action(env, state)
             epi_actions[act] += 1
             state, reward, done, _ = env.step(act)
             score += reward

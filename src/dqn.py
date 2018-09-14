@@ -4,7 +4,6 @@ import sys
 import random
 from random import randrange, sample
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import defaultdict, deque
 from keras import metrics
 from keras import backend as K
@@ -47,7 +46,7 @@ class Memory:
 
 
 class DQNAgent:
-    def __init__(self, input_shape, output_shape, mem_len, log_dir, lr=0.00025, gamma=0.99):
+    def __init__(self, input_shape, output_shape, mem_len, log_dir, lr=0.00001, gamma=0.99):
         # add channel dim
         self.input_shape = (input_shape[0], input_shape[1], 1)
         self.output_shape = output_shape
@@ -58,10 +57,10 @@ class DQNAgent:
         self.lr = lr
         self.epsilon = 1
         self.min_epsilon = 0.1
-        self.epsilon_decay_steps = 400000
+        self.epsilon_decay_steps = 200000
         self.total_steps = 0
         self.target_model_update_count = 0
-        self.target_model_update_freq = 5000
+        self.target_model_update_freq = 10000
         self.callbacks = self._get_callbacks()
         self.epsilons = np.linspace(
             self.epsilon, self.min_epsilon, self.epsilon_decay_steps)
@@ -78,7 +77,7 @@ class DQNAgent:
         model.add(Convolution2D(64, (2, 2), strides=(1, 1)))
         model.add(Activation('relu'))
         model.add(Flatten())
-        model.add(Dense(512))
+        model.add(Dense(256))
         model.add(Activation('relu'))
         model.add(Dense(self.output_shape))
         model.add(Activation('linear'))
@@ -150,15 +149,15 @@ class DQNAgent:
     def get_action(self, state):
         valid_actions = [0] + [(i+1) for i in range(self.output_shape-1) if np.any(state[i] == 0)]
 
-        if np.random.uniform() < self.epsilon:
-            return random.choice(valid_actions)
+        if np.random.uniform() >= self.epsilon:
+            pred = self.predict(state)[0]
+            act = np.amax(np.take(pred, valid_actions))
+            valid_actions = np.where(pred == act)[0]
 
-        pred = self.predict(self.input_shape)[0]
-        pred = np.take(pred, valid_actions)
-        return np.argmax(valid_actions)
+        return random.choice(valid_actions)
 
 
-def run(output_dir, n_ep=60, out_freq=2, plot=True):
+def run(output_dir, n_ep=30, out_freq=2, plot=True):
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
     np.random.seed(123)

@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import random
-import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 from matplotlib.colors import XKCD_COLORS as allcolors
 from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot

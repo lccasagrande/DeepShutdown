@@ -20,10 +20,15 @@ setup(name='drl_grid',
       version='0.0.1',
       install_requires=[
           'gym',
-          'matplotlib',
           'numpy<=1.14.5',
           'pandas',
           'zmq',
+          'plotly',
+          'matplotlib',
+          'keras-rl',
+          'pyglet',
+          'image',
           'keras',
+          'sklearn',
           'tensorflow-gpu'
       ])

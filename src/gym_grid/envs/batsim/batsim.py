@@ -21,7 +21,7 @@ class BatsimHandler:
     WORKLOAD = "nantes1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
-    OUTPUT_DIR = "results"
+    OUTPUT_DIR = "results/dqn"
 
     def __init__(self, output_freq, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
@@ -41,7 +41,7 @@ class BatsimHandler:
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.protocol_manager = BatsimProtocolHandler()
-        self.sched_manager = SchedulerManager(10,
+        self.sched_manager = SchedulerManager(30,
                                               self.resource_manager.nb_resources)
         self._initialize_vars()
 
@@ -71,7 +71,7 @@ class BatsimHandler:
         self.network.close()
         self.running_simulation = False
         if self._simulator_process is not None:
-            time.sleep(2) # wait simulator finish
+            time.sleep(1) # wait simulator finish
             self._simulator_process.kill()
             self._simulator_process.wait()
             self._simulator_process = None
@@ -748,8 +748,8 @@ class SchedulerManager():
                         success = True
                         break
 
-                assert success, "There is no space available on the resource selected."
-
+                if not success:
+                    raise UnavailableResourcesError("There is no space available on the resource selected.")
             job.allocation = resources
         except:
             self.jobs_queue.appendleft(job)
