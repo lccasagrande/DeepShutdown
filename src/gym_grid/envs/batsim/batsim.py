@@ -823,6 +823,7 @@ class SchedulerManager():
         self.jobs_queue.append(job)
 
     def _remove_from_gantt(self, job_id):
+        job = None
         for res in range(self.gantt_shape[0]):
             res_job = self.gantt[res][0]
             if (res_job == None) or (res_job.id != job_id):
@@ -936,7 +937,7 @@ class NetworkHandler:
             self,
             socket_endpoint,
             verbose=0,
-            timeout=2000,
+            timeout=10000,
             type=zmq.REP):
         self.socket_endpoint = socket_endpoint
         self.verbose = verbose
