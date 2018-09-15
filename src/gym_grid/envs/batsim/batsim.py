@@ -96,7 +96,8 @@ class BatsimHandler:
         if len(resources) == 0:  # Handle VOID Action
             self.last_job_wait = self.sched_manager.delay_first_job(self.now())
         else:
-            self.last_job_wait = self.sched_manager.allocate_first_job(resources, self.now())
+            self.last_job_wait = self.sched_manager.allocate_first_job(
+                resources, self.now())
 
         # All jobs in the queue has to be scheduled or delayed
         if self.sched_manager.has_work():
@@ -179,7 +180,7 @@ class BatsimHandler:
         self._schedule_gantt_jobs()
 
     def _handle_job_submitted(self, data):
-        if data['job']['res'] > self.resource_manager.nb_res:
+        if data['job']['res'] > self.resource_manager.nb_resources:
             self.protocol_manager.reject_job(data['job_id'])
         else:
             self.sched_manager.on_job_submitted(data['job'])
@@ -582,10 +583,11 @@ class BatsimProtocolHandler:
         self._ack = True
 
 
-class ResourcePower:
-    def __init__(self, idle, comp):
-        self.idle = idle
-        self.comp = comp
+class ResourceHardware:
+    def __init__(self, speed, watt_idle, watt_comp):
+        self.speed = speed
+        self.watt_idle = watt_idle
+        self.watt_comp = watt_comp
 
 
 class Resource:
@@ -598,15 +600,33 @@ class Resource:
         SHUT_DOWN = 0
         NORMAL = 1
 
-    def __init__(self, id, state, pstate, name, speed, watt_per_state):
+    def __init__(self, id, state, pstate, name, hw):
         assert isinstance(state, Resource.State)
         assert isinstance(pstate, Resource.PowerState)
+        assert isinstance(hw, dict)
         self.state = state
         self.pstate = pstate
         self.name = name
         self.id = id
-        self.speed = speed
-        self.watt_per_state = watt_per_state
+        self.hw = hw
+
+    @staticmethod
+    def from_xml(id, data):
+        name = data.getAttribute('id')
+        host_speed = data.getAttribute('speed').split(',')
+        host_watts = data.getElementsByTagName(
+            'prop')[0].getAttribute('value').split(',')
+        assert "Mf" in host_speed[-1], "Speed is not in Mega Flops"
+
+        hw = {}
+        for i, speed in enumerate(host_speed):
+            (idle, comp) = host_watts[i].split(":")
+            hw[Resource.PowerState(i)] = {
+                'speed': float(speed.replace("Mf", "")) * 1000000,
+                'watt_idle': float(idle),
+                'watt_comp': float(comp)
+            }
+        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, hw)
 
     @property
     def is_available(self):
@@ -620,6 +640,11 @@ class Resource:
         assert isinstance(pstate, Resource.PowerState)
         self.pstate = pstate
 
+    def get_hw(self):
+        hw = self.hw[self.pstate]
+        return hw['speed'], hw['watt_idle'], hw ['watt_comp']
+
+
 
 class ResourceManager:
     def __init__(self, resources):
@@ -627,66 +652,29 @@ class ResourceManager:
         self.nb_resources = len(resources)
         self.resources = resources
 
-        best_host = max(resources.items(), key=(
-            lambda item: item[1].speed))[1]
-        self.max_speed = best_host.speed
-        self.max_watts = best_host.watt_per_state[Resource.PowerState.NORMAL].comp
-
-        worst_host = min(resources.items(), key=(
-            lambda item: item[1].speed))[1]
-        self.min_speed = worst_host.speed
-        self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
+        # best_host = max(resources.items(), key=(
+        #    lambda item: item[1].speed))[1]
+        #self.max_speed = best_host.speed
+        #self.max_watts = best_host.watt_per_state[Resource.PowerState.NORMAL].comp
+#
+        # worst_host = min(resources.items(), key=(
+        #    lambda item: item[1].speed))[1]
+        #self.min_speed = worst_host.speed
+        #self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
 
     @staticmethod
     def from_xml(platform_fn):
         platform = minidom.parse(platform_fn)
         hosts = platform.getElementsByTagName('host')
+        hosts.sort(key=lambda x: x.attributes['id'].value)
         resources = {}
         id = 0
-        hosts.sort(key=lambda x: x.attributes['id'].value)
         for host in hosts:
-            name = host.getAttribute('id')
-            if name == 'master_host':
-                continue
-
-            speed = host.getAttribute('speed').split(
-                ',')[Resource.PowerState.NORMAL.value]
-            assert "Mf" in speed, "Speed is not in Mega Flops"
-
-            speed = float(speed.replace("Mf", "")) * 1000000
-            watt_per_state = host.getElementsByTagName('prop')[0]
-            watt_per_state = watt_per_state.getAttribute('value')
-
-            power_state = {}
-            for state, watts in enumerate(watt_per_state.split(",")):
-                state_watt = watts.split(":")
-                power_state[Resource.PowerState(state)] = ResourcePower(
-                    float(state_watt[0]), float(state_watt[1]))
-
-            resources[id] = Resource(id,
-                                     Resource.State.IDLE,
-                                     Resource.PowerState.NORMAL,
-                                     name,
-                                     speed,
-                                     power_state)
-            id += 1
+            if host.getAttribute('id') != 'master_host':
+                resources[id] = Resource.from_xml(id, host)
+                id += 1
 
         return ResourceManager(resources)
-
-    # @staticmethod
-    # def from_json(data):
-    #    resources = {}
-    #    for res in data:
-    #        resources[res['id']] = Resource(res['id'],
-    #                                        Resource.State[res['state'].upper()],
-    #                                        Resource.PowerState.NORMAL,
-    #                                        res['name'],
-    #                                        res['speed'],
-    #                                        res['properties']['watt_per_state'])
-
-    @property
-    def nb_res(self):
-        return len(self.resources)
 
     def is_available(self, res_ids):
         for id in res_ids:
