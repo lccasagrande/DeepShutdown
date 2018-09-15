@@ -23,14 +23,16 @@ from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 INPUT_SHAPE = (31, 31, 1)
 WINDOW_LENGTH = 4
 
+
 class CustomEpsGreedyQPolicy(Policy):
     """Implement the epsilon greedy policy with valid actions only
-    
+
     Eps Greedy policy either:
-    
+
     - takes a random action with probability epsilon
     - takes current best action with prob (1 - epsilon)
     """
+
     def __init__(self, eps=.1):
         super(CustomEpsGreedyQPolicy, self).__init__()
         self.eps = eps
@@ -46,7 +48,8 @@ class CustomEpsGreedyQPolicy(Policy):
             Selection action
         """
         assert q_values.ndim == 1
-        valid_actions = [0] + [(i+1) for i in range(q_values.shape[0]-1) if np.any(state[0][i] == 0)]
+        valid_actions = [
+            0] + [(i+1) for i in range(q_values.shape[0]-1) if np.any(state[0][i] == 0)]
 
         if np.random.uniform() >= self.eps:
             act = np.amax(np.take(q_values, valid_actions))
@@ -64,18 +67,26 @@ class CustomEpsGreedyQPolicy(Policy):
         config['eps'] = self.eps
         return config
 
+
 class GridProcessor(Processor):
-    def __init__(self, max_time, input_shape):
+    def __init__(self, max_time, max_speed, max_watt, input_shape):
         super().__init__()
         self.scaler = MinMaxScaler(feature_range=(0, 1))
+        self.cpu_scaler = MinMaxScaler(feature_range=(0, 1))
+        self.energy_scaler = MinMaxScaler(feature_range=(0, 1))
         self.scaler.fit([[0], [max_time]])
+        self.cpu_scaler.fit([[0], [max_speed]])
+        self.energy_scaler.fit([[0], [max_watt]])
         self.input_shape = input_shape
 
     def process_state_batch(self, batch):
         return np.asarray([v[0] for v in batch])
 
     def process_observation(self, observation):
-        obs = self.scaler.transform(observation)
+        obs = self.scaler.transform(observation[:,3:])
+        cpu = self.cpu_scaler.transform(observation[:,0].reshape(-1, 1))
+        energy = self.energy_scaler.transform(observation[:,1:3])
+        obs = np.concatenate((cpu, energy, obs), axis=1)
         obs = obs.reshape(self.input_shape)
         assert obs.ndim == 3  # (height, width, channel)
         return obs
@@ -84,7 +95,8 @@ class GridProcessor(Processor):
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(32, (8, 8), strides=(4, 4), data_format="channels_last"))
+    model.add(Convolution2D(32, (8, 8), strides=(
+        4, 4), data_format="channels_last"))
     model.add(Activation('relu'))
     model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
     model.add(Activation('relu'))
@@ -111,8 +123,9 @@ if __name__ == "__main__":
 
     # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
     # even the metrics!
-    memory = SequentialMemory(limit=1000000, window_length=1)
-    processor = GridProcessor(env.max_time, input_shape)
+    memory = SequentialMemory(limit=100000, window_length=1)
+    processor = GridProcessor(
+        env.max_time, env.max_speed, env.max_watt, input_shape)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
@@ -135,10 +148,12 @@ if __name__ == "__main__":
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
-    callbacks = [ModelIntervalCheckpoint('weights/dqn_1_weights_{step}.h5f', interval=250000)]
+    callbacks = [ModelIntervalCheckpoint(
+        'weights/dqn_1_weights_{step}.h5f', interval=250000)]
     callbacks += [FileLogger('log/dqn_1_log.json', interval=100)]
     callbacks += [TensorBoard(log_dir='log/dqn')]
-    dqn.fit(env, callbacks=callbacks, nb_steps=1750000, log_interval=10000, visualize=False)
+    dqn.fit(env, callbacks=callbacks, nb_steps=1750000,
+            log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/dqn_1_weights.h5f', overwrite=True)
@@ -151,5 +166,3 @@ if __name__ == "__main__":
     #        weights_filename = args.weights
     #    dqn.load_weights(weights_filename)
     #    dqn.test(env, nb_episodes=10, visualize=True)
-
-
