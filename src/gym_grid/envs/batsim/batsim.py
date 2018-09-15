@@ -94,9 +94,9 @@ class BatsimHandler:
         assert resources is not None, "Allocation cannot be null."
 
         if len(resources) == 0:  # Handle VOID Action
-            self.last_job_wait_time = self.sched_manager.delay_first_job(self.now())
+            self.sched_manager.delay_first_job(self.now())
         else:
-            self.last_job_wait_time = self.sched_manager.allocate_first_job(resources, self.now())
+            self.sched_manager.allocate_first_job(resources, self.now())
 
         # All jobs in the queue has to be scheduled or delayed
         if self.sched_manager.has_work():
@@ -142,7 +142,6 @@ class BatsimHandler:
         return subprocess.Popen("exec " + cmd, stdout=subprocess.PIPE, shell=True)
 
     def _initialize_vars(self):
-        self.last_job_wait_time = 0
         self.nb_jobs_completed = 0
         self.nb_jobs_submitted = 0
         self.scheduling_time = 0
@@ -762,7 +761,6 @@ class SchedulerManager():
     def allocate_first_job(self, resources, time):
         assert self.has_jobs_in_queue()
         job = self.jobs_queue.popleft()
-        job.set_waiting_time(time - job.submit_time)
         try:
             assert job.requested_resources == len(
                 resources), "The job requested more resources than it was allocated."
@@ -784,13 +782,9 @@ class SchedulerManager():
             self.jobs_queue.appendleft(job)
             raise
 
-        return job.waiting_time
-
     def delay_first_job(self, time):
         job = self.jobs_queue.popleft()
-        job.set_waiting_time(time - job.submit_time)
         self.jobs_waiting.append(job)
-        return job.waiting_time
 
     def get_jobs_to_schedule(self):
         jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
