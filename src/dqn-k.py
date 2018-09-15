@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
     # even the metrics!
-    memory = SequentialMemory(limit=30000, window_length=1)
+    memory = SequentialMemory(limit=1000000, window_length=1)
     processor = GridProcessor(env.max_time, input_shape)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
     policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=100000)
+                                  nb_steps=1000000)
 
     # The trade-off between exploration and exploitation is difficult and an on-going research topic.
     # If you want, you can experiment with the parameters or use a different policy. Another popular one
@@ -131,12 +131,12 @@ if __name__ == "__main__":
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, memory=memory,
                    processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
                    train_interval=4, delta_clip=1.)
-    dqn.compile(Adam(lr=.00001), metrics=['mae'])
+    dqn.compile(Adam(lr=.0001), metrics=['mae'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
     callbacks = [ModelIntervalCheckpoint('weights/dqn_1_weights_{step}.h5f', interval=250000)]
-    callbacks += [FileLogger('log/dqn_1_log.json', interval=10)]
+    callbacks += [FileLogger('log/dqn_1_log.json', interval=100)]
     callbacks += [TensorBoard(log_dir='log/dqn')]
     dqn.fit(env, callbacks=callbacks, nb_steps=1750000, log_interval=10000, visualize=False)
 

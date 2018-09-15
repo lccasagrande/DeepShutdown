@@ -1,9 +1,3 @@
-{
-    "job_submission": {
-      "forward_profiles": false,
-      "from_scheduler": {
-        "enabled": false,
-        "acknowledge": true
-      }
-    }
-  }
+version https://git-lfs.github.com/spec/v1
+oid sha256:355414f6515464f553de1780b59efdbf7cbae4d2988a3d38f7071b08064d9ca7
+size 156

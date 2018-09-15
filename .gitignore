@@ -1,6 +1,6 @@
 # VS Code
 .vscode
-results
+results/*
 log
 weights
 img

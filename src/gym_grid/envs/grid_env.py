@@ -25,6 +25,7 @@ class GridEnv(gym.Env):
             pass
 
         done = not self.simulator.running_simulation
+        self._update_state()
         reward = self._get_reward()
         return self.state, reward, done, {}
 
@@ -52,10 +53,7 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _get_reward(self):
-        self._update_state()
-        nb_max_jobs = self.state.shape[0] * self.state.shape[1]
-        reward = -1 * (self.nb_unfinished_jobs / nb_max_jobs)
-        return reward
+        return -1 * self.simulator.last_job_wait_time
 
     def _take_action(self, action):
         resources = [] if action == 0 else [action-1]
