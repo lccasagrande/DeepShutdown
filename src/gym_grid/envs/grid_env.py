@@ -53,8 +53,7 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _get_reward(self):
-        load = 1 - ((self.simulator.nb_resources - self.simulator.nb_jobs_running) / self.simulator.nb_resources)
-        return load
+        return -1 * self.simulator.last_job_wait
 
     def _take_action(self, action):
         resources = [] if action == 0 else [action-1]
