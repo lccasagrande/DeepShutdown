@@ -71,7 +71,7 @@ class BatsimHandler:
         self.network.close()
         self.running_simulation = False
         if self._simulator_process is not None:
-            time.sleep(1) # wait simulator finish
+            time.sleep(1)  # wait simulator finish
             self._simulator_process.kill()
             self._simulator_process.wait()
             self._simulator_process = None
@@ -144,6 +144,20 @@ class BatsimHandler:
     def _initialize_vars(self):
         self.nb_jobs_completed = 0
         self.nb_jobs_submitted = 0
+        self.scheduling_time = 0
+        self.nb_jobs = 0
+        self.nb_jobs_finished = 0
+        self.nb_jobs_success = 0
+        self.nb_jobs_killed = 0
+        self.success_rate = 0
+        self.makespan = 0
+        self.mean_waiting_time = 0
+        self.mean_turnaround_time = 0
+        self.mean_slowdown = 0
+        self.max_waiting_time = 0
+        self.max_turnaround_time = 0
+        self.max_slowdown = 0
+        self.consumed_joules = 0
         self._alarm_is_set = False
         self.energy_consumed = 0
         self.sched_manager.reset()
@@ -184,6 +198,20 @@ class BatsimHandler:
         self.protocol_manager.acknowledge()
         self._send_events()
         self.running_simulation = False
+        self.scheduling_time = float(data["scheduling_time"])
+        self.nb_jobs = int(data["nb_jobs"])
+        self.nb_jobs_finished = int(data["nb_jobs_finished"])
+        self.nb_jobs_success = int(data["nb_jobs_success"])
+        self.nb_jobs_killed = int(data["nb_jobs_killed"])
+        self.success_rate = float(data["success_rate"])
+        self.makespan = float(data["makespan"])
+        self.mean_waiting_time = float(data["mean_waiting_time"])
+        self.mean_turnaround_time = float(data["mean_turnaround_time"])
+        self.mean_slowdown = float(data["mean_slowdown"])
+        self.max_waiting_time = float(data["max_waiting_time"])
+        self.max_turnaround_time = float(data["max_turnaround_time"])
+        self.max_slowdown = float(data["max_slowdown"])
+        self.energy_consumed = float(data["consumed_joules"])
 
     def _handle_requested_call(self):
         self._alarm_is_set = False
@@ -205,8 +233,7 @@ class BatsimHandler:
         elif event.type == "REQUESTED_CALL":
             self._handle_requested_call()
         elif event.type == "ANSWER":
-            if "consumed_energy" in event.data:
-                self.energy_consumed = event.data["consumed_energy"]
+            return
         elif event.type == "NOTIFY":
             if event.data['type'] == 'no_more_static_job_to_submit':
                 return
@@ -749,7 +776,8 @@ class SchedulerManager():
                         break
 
                 if not success:
-                    raise UnavailableResourcesError("There is no space available on the resource selected.")
+                    raise UnavailableResourcesError(
+                        "There is no space available on the resource selected.")
             job.allocation = resources
         except:
             self.jobs_queue.appendleft(job)
@@ -886,7 +914,7 @@ class Job(object):
 
     def update_remaining_time(self, t):
         exec_time = (t - self.start_time)
-        self.remaining_time =  float(self.requested_time) - exec_time
+        self.remaining_time = float(self.requested_time) - exec_time
 
     @property
     def workload(self):
