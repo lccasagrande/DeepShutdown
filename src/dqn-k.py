@@ -23,6 +23,27 @@ from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 INPUT_SHAPE = (31, 31, 1)
 WINDOW_LENGTH = 4
 
+
+class CustomGreedyQPolicy(Policy):
+    """Implement the greedy policy
+
+    Greedy policy returns the current best action according to q_values
+    """
+    def select_action(self, q_values, state):
+        """Return the selected action
+
+        # Arguments
+            q_values (np.ndarray): List of the estimations of Q for each action
+
+        # Returns
+            Selection action
+        """
+        assert q_values.ndim == 1
+        valid_actions = [0] + [(i+1) for i in range(q_values.shape[0]-1) if np.any(state[0][i] == 0)]
+        act = np.amax(np.take(q_values, valid_actions))
+        valid_actions = np.where(q_values == act)[0]
+        return random.choice(valid_actions)
+
 class CustomEpsGreedyQPolicy(Policy):
     """Implement the epsilon greedy policy with valid actions only
     
@@ -122,13 +143,15 @@ if __name__ == "__main__":
     policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(), attr='eps', value_max=1., value_min=.1, value_test=.05,
                                   nb_steps=1000000)
 
+    test_policy = CustomGreedyQPolicy()
+
     # The trade-off between exploration and exploitation is difficult and an on-going research topic.
     # If you want, you can experiment with the parameters or use a different policy. Another popular one
     # is Boltzmann-style exploration:
     # policy = BoltzmannQPolicy(tau=1.)
     # Feel free to give it a try!
 
-    dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, memory=memory,
+    dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, memory=memory, test_policy=test_policy,
                    processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
                    train_interval=4, delta_clip=1.)
     dqn.compile(Adam(lr=.0001), metrics=['mae'])
@@ -139,17 +162,15 @@ if __name__ == "__main__":
     callbacks += [FileLogger('log/dqn_1_log.json', interval=100)]
     callbacks += [TensorBoard(log_dir='log/dqn')]
     dqn.fit(env, callbacks=callbacks, nb_steps=1750000, log_interval=10000, visualize=False)
-
+#
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/dqn_1_weights.h5f', overwrite=True)
 
-    # Finally, evaluate our algorithm for 10 episodes.
-    dqn.test(env, nb_episodes=10, visualize=False)
-    # elif args.mode == 'test':
-    #    weights_filename = 'dqn_{}_weights.h5f'.format(args.env_name)
-    #    if args.weights:
-    #        weights_filename = args.weights
-    #    dqn.load_weights(weights_filename)
-    #    dqn.test(env, nb_episodes=10, visualize=True)
+    ## Finally, evaluate our algorithm for 10 episodes.
+    dqn.test(env, nb_episodes=2, visualize=False)
+
+    #weights_filename = 'results/{}.h5f'.format("dqn_1_weights")
+    #dqn.load_weights(weights_filename)
+    #dqn.test(env, nb_episodes=1, visualize=True)
 
 
