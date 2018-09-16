@@ -51,6 +51,9 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _get_reward(self):
+        if self.simulator.last_job_wait <= 1:
+            return 1
+            
         return 1 / self.simulator.last_job_wait
 
     def _take_action(self, action):
