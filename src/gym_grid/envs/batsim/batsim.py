@@ -5,6 +5,7 @@ import os
 import json
 import zmq
 import time
+import pandas as pd
 from xml.dom import minidom
 from enum import Enum, unique
 import subprocess
@@ -18,10 +19,10 @@ class BatsimHandler:
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
     PLATFORM = "platform.xml"
-    WORKLOAD = "nancy_1.json"
+    WORKLOAD = "nantes_1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
-    OUTPUT_DIR = "results/dqn"
+    OUTPUT_DIR = "results"
 
     def __init__(self, output_freq, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
@@ -96,7 +97,8 @@ class BatsimHandler:
         if len(resources) == 0:  # Handle VOID Action
             self.last_job_wait = self.sched_manager.delay_first_job(self.now())
         else:
-            self.last_job_wait = self.sched_manager.allocate_first_job(resources, self.now())
+            self.last_job_wait = self.sched_manager.allocate_first_job(
+                resources, self.now())
 
         # All jobs in the queue has to be scheduled or delayed
         if self.sched_manager.has_work():
@@ -158,6 +160,7 @@ class BatsimHandler:
         self.max_waiting_time = 0
         self.max_turnaround_time = 0
         self.max_slowdown = 0
+        self.simulation_metrics = {}
         self._alarm_is_set = False
         self.energy_consumed = 0
         self.sched_manager.reset()
@@ -198,20 +201,37 @@ class BatsimHandler:
         self.protocol_manager.acknowledge()
         self._send_events()
         self.running_simulation = False
-        self.scheduling_time = float(data["scheduling_time"])
-        self.nb_jobs = int(data["nb_jobs"])
-        self.nb_jobs_finished = int(data["nb_jobs_finished"])
-        self.nb_jobs_success = int(data["nb_jobs_success"])
-        self.nb_jobs_killed = int(data["nb_jobs_killed"])
-        self.success_rate = float(data["success_rate"])
-        self.makespan = float(data["makespan"])
-        self.mean_waiting_time = float(data["mean_waiting_time"])
-        self.mean_turnaround_time = float(data["mean_turnaround_time"])
-        self.mean_slowdown = float(data["mean_slowdown"])
-        self.max_waiting_time = float(data["max_waiting_time"])
-        self.max_turnaround_time = float(data["max_turnaround_time"])
-        self.max_slowdown = float(data["max_slowdown"])
-        self.energy_consumed = float(data["consumed_joules"])
+        self.simulation_metrics["scheduling_time"] = float(
+            data["scheduling_time"])
+        self.simulation_metrics["nb_jobs"] = int(data["nb_jobs"])
+        self.simulation_metrics["nb_jobs_finished"] = int(
+            data["nb_jobs_finished"])
+        self.simulation_metrics["nb_jobs_success"] = int(
+            data["nb_jobs_success"])
+        self.simulation_metrics["nb_jobs_killed"] = int(data["nb_jobs_killed"])
+        self.simulation_metrics["success_rate"] = float(data["success_rate"])
+        self.simulation_metrics["makespan"] = float(data["makespan"])
+        self.simulation_metrics["mean_waiting_time"] = float(
+            data["mean_waiting_time"])
+        self.simulation_metrics["mean_turnaround_time"] = float(
+            data["mean_turnaround_time"])
+        self.simulation_metrics["mean_slowdown"] = float(data["mean_slowdown"])
+        self.simulation_metrics["max_waiting_time"] = float(
+            data["max_waiting_time"])
+        self.simulation_metrics["max_turnaround_time"] = float(
+            data["max_turnaround_time"])
+        self.simulation_metrics["max_slowdown"] = float(data["max_slowdown"])
+        self.simulation_metrics["energy_consumed"] = float(
+            data["consumed_joules"])
+        self._export_metrics()
+
+    def _export_metrics(self):
+        data = pd.DataFrame(self.simulation_metrics, index=[0])
+        fn = "{}/{}_{}.csv".format(
+            BatsimHandler.OUTPUT_DIR,
+            self.nb_simulation,
+            "schedule_metrics")
+        data.to_csv(fn, index=False)
 
     def _handle_requested_call(self):
         self._alarm_is_set = False
