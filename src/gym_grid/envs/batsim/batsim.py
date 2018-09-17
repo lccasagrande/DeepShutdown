@@ -39,12 +39,20 @@ class BatsimHandler:
         self._simulator_process = None
         self.running_simulation = False
         self.nb_simulation = 0
+        self.max_walltime = self.get_max_walltime(self._workload)
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.protocol_manager = BatsimProtocolHandler()
         self.sched_manager = SchedulerManager(51,
                                               self.resource_manager.nb_resources)
         self._initialize_vars()
+
+    def get_max_walltime(self, workload):
+        with open(workload) as f:
+            data = json.load(f)
+            max_walltime = max(data['jobs'], key=(lambda job: job['walltime']))['walltime']
+
+        return max_walltime    
 
     @property
     def nb_jobs_in_queue(self):
@@ -60,13 +68,20 @@ class BatsimHandler:
 
     @property
     def current_state(self):
-        return self.sched_manager.get_gantt(with_queue=True)
+        gantt = self.sched_manager.get_gantt(with_queue=True)
+        resources = self.resource_manager.get_resources()
+        resources = np.vstack((resources, [0,0,0])) # Queue hw
+        gantt = np.concatenate((resources, gantt), axis=1)
+
+        return gantt
 
     @property
     def state_shape(self):
-        gantt_space = self.sched_manager.gantt_shape
+        gantt_shape = self.sched_manager.gantt_shape
+        res_shape = self.resource_manager.shape
+        assert res_shape[0] == gantt_shape[0]
         # Add job queue space along with resources queue
-        return (gantt_space[0]+1, gantt_space[1])
+        return (gantt_shape[0]+1, gantt_shape[1]+res_shape[1])
 
     def close(self):
         self.network.close()
@@ -182,7 +197,7 @@ class BatsimHandler:
         self._schedule_gantt_jobs()
 
     def _handle_job_submitted(self, data):
-        if data['job']['res'] > self.resource_manager.nb_res:
+        if data['job']['res'] > self.resource_manager.nb_resources:
             self.protocol_manager.reject_job(data['job_id'])
         else:
             self.sched_manager.on_job_submitted(data['job'])
@@ -602,10 +617,11 @@ class BatsimProtocolHandler:
         self._ack = True
 
 
-class ResourcePower:
-    def __init__(self, idle, comp):
-        self.idle = idle
-        self.comp = comp
+class ResourceHardware:
+    def __init__(self, speed, watt_idle, watt_comp):
+        self.speed = speed
+        self.watt_idle = watt_idle
+        self.watt_comp = watt_comp
 
 
 class Resource:
@@ -618,15 +634,34 @@ class Resource:
         SHUT_DOWN = 0
         NORMAL = 1
 
-    def __init__(self, id, state, pstate, name, speed, watt_per_state):
+    def __init__(self, id, state, pstate, name, hw):
         assert isinstance(state, Resource.State)
         assert isinstance(pstate, Resource.PowerState)
+        assert isinstance(hw, dict)
+        assert isinstance(id, int)
         self.state = state
         self.pstate = pstate
         self.name = name
         self.id = id
-        self.speed = speed
-        self.watt_per_state = watt_per_state
+        self.hw = hw
+
+    @staticmethod
+    def from_xml(id, data):
+        name = data.getAttribute('id')
+        host_speed = data.getAttribute('speed').split(',')
+        host_watts = data.getElementsByTagName(
+            'prop')[0].getAttribute('value').split(',')
+        assert "Mf" in host_speed[-1], "Speed is not in Mega Flops"
+
+        hw = {}
+        for i, speed in enumerate(host_speed):
+            (idle, comp) = host_watts[i].split(":")
+            hw[Resource.PowerState(i)] = {
+                'speed': float(speed.replace("Mf", "")) * 1000000,
+                'watt_idle': float(idle),
+                'watt_comp': float(comp)
+            }
+        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, hw)
 
     @property
     def is_available(self):
@@ -640,6 +675,14 @@ class Resource:
         assert isinstance(pstate, Resource.PowerState)
         self.pstate = pstate
 
+    def get_hw(self):
+        hw = self.hw[self.pstate]
+        return hw['speed'], hw['watt_idle'], hw['watt_comp']
+
+    def get_speed(self):
+        hw = self.hw[self.pstate]
+        return hw['speed']
+
 
 class ResourceManager:
     def __init__(self, resources):
@@ -648,65 +691,38 @@ class ResourceManager:
         self.resources = resources
 
         best_host = max(resources.items(), key=(
-            lambda item: item[1].speed))[1]
-        self.max_speed = best_host.speed
-        self.max_watts = best_host.watt_per_state[Resource.PowerState.NORMAL].comp
+            lambda item: item[1].get_speed()))[1]
+        self.max_speed, _, self.max_watts = best_host.get_hw()
 
-        worst_host = min(resources.items(), key=(
-            lambda item: item[1].speed))[1]
-        self.min_speed = worst_host.speed
-        self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
+        # worst_host = min(resources.items(), key=(
+        #    lambda item: item[1].speed))[1]
+        #self.min_speed = worst_host.speed
+        #self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
 
     @staticmethod
     def from_xml(platform_fn):
         platform = minidom.parse(platform_fn)
         hosts = platform.getElementsByTagName('host')
+        hosts.sort(key=lambda x: x.attributes['id'].value)
         resources = {}
         id = 0
-        hosts.sort(key=lambda x: x.attributes['id'].value)
         for host in hosts:
-            name = host.getAttribute('id')
-            if name == 'master_host':
-                continue
-
-            speed = host.getAttribute('speed').split(
-                ',')[Resource.PowerState.NORMAL.value]
-            assert "Mf" in speed, "Speed is not in Mega Flops"
-
-            speed = float(speed.replace("Mf", "")) * 1000000
-            watt_per_state = host.getElementsByTagName('prop')[0]
-            watt_per_state = watt_per_state.getAttribute('value')
-
-            power_state = {}
-            for state, watts in enumerate(watt_per_state.split(",")):
-                state_watt = watts.split(":")
-                power_state[Resource.PowerState(state)] = ResourcePower(
-                    float(state_watt[0]), float(state_watt[1]))
-
-            resources[id] = Resource(id,
-                                     Resource.State.IDLE,
-                                     Resource.PowerState.NORMAL,
-                                     name,
-                                     speed,
-                                     power_state)
-            id += 1
+            if host.getAttribute('id') != 'master_host':
+                resources[id] = Resource.from_xml(id, host)
+                id += 1
 
         return ResourceManager(resources)
 
-    # @staticmethod
-    # def from_json(data):
-    #    resources = {}
-    #    for res in data:
-    #        resources[res['id']] = Resource(res['id'],
-    #                                        Resource.State[res['state'].upper()],
-    #                                        Resource.PowerState.NORMAL,
-    #                                        res['name'],
-    #                                        res['speed'],
-    #                                        res['properties']['watt_per_state'])
-
     @property
-    def nb_res(self):
-        return len(self.resources)
+    def shape(self):
+        return (len(self.resources), 3)
+
+    def get_resources(self):
+        resources = np.zeros(shape=self.shape, dtype=np.float)
+        for id, res in self.resources.items():
+            speed, watt_idle, watt_comp = res.get_hw()
+            resources[id] = [speed, watt_idle, watt_comp]
+        return resources
 
     def is_available(self, res_ids):
         for id in res_ids:
