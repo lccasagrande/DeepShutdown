@@ -9,7 +9,7 @@ import plotly.tools as tools
 import sys
 import time as t
 import csv
-sns.set_style("white")
+#sns.set_style("white")
 
 #def plot_action_values(V):
 #	# reshape the state-value function
