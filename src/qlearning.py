@@ -10,6 +10,8 @@ import time as t
 from collections import defaultdict, deque
 
 
+
+
 class EpsGreedyPolicy:
     def __init__(self, min_epsilon=0.1, eps_decay=100):
         self.min_epsilon = min_epsilon
@@ -46,9 +48,9 @@ class EpsGreedyPolicy:
         return choice(actions)
 
 
-def run(output_dir, n_ep=12000, out_freq=20, plot=True, alpha=.2, gamma=1):
+def run(output_dir, n_ep=100, out_freq=5, plot=True, alpha=.5, gamma=1):
     env = gym.make('grid-v0')
-    policy = EpsGreedyPolicy(eps_decay=2000000)
+    policy = EpsGreedyPolicy(eps_decay=500000)
     Q = defaultdict(lambda: np.zeros(env.action_space.n))
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
@@ -79,32 +81,28 @@ def run(output_dir, n_ep=12000, out_freq=20, plot=True, alpha=.2, gamma=1):
         if i % out_freq == 0:
             avg_scores.append(np.mean(episodic_scores))
 
+    utils.export_q_values(Q, output_dir)
+    utils.export_max_q_values(Q, output_dir)
+    utils.export_rewards(n_ep, avg_scores, output_dir)
+
     # TEST
     state = env.reset()
     score = 0
     actions = []
+    print("--- TESTING ---")
     while True:
         act = policy.select_best_action(Q[tuple(state)], state)
+        env.render()
         next_state, reward, done, _ = env.step(act)
         state = next_state
         score += reward
         actions.append(act)
         if done:
             ac = "-".join(str(act) for act in actions)
-            print(
-                "\nTest Score: {:7} - Actions: {}".format(score, ac))
+            print("\nTest Score: {:7} - Actions: {}".format(score, ac))
             break
 
-    q_values = pd.DataFrame.from_dict(Q, orient='index')
-    q_values.index.name = "state"
-    q_values.to_csv(output_dir+"q_values.csv")
-
-    x, y = np.linspace(0, n_ep, len(avg_scores), endpoint=False), np.asarray(avg_scores)
-    dt = pd.DataFrame({'ep': list(x), 'avg_reward': list(y)})
-    dt.to_csv(output_dir+'rewards.csv', index=False)
-
-    print(('\nBest Average Reward over %d Episodes: ' % out_freq), np.max(avg_scores))
-
+    print("Done!")
 
 if __name__ == "__main__":
     output_dir = 'results/random/'

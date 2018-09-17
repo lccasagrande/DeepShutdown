@@ -19,7 +19,7 @@ class BatsimHandler:
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
     PLATFORM = "platform_10.xml"
-    WORKLOAD = "nancy_1000.json"
+    WORKLOAD = "nantes_1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"

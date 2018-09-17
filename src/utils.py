@@ -23,6 +23,32 @@ import csv
 #	plt.title('State-Value Function')
 #	plt.show()
 
+
+def export_rewards(n_ep, avg_scores, output_dir):
+    x, y = np.linspace(0, n_ep, len(avg_scores),
+                       endpoint=False), np.asarray(avg_scores)
+    dt = pd.DataFrame({'ep': list(x), 'avg_reward': list(y)})
+    dt.to_csv(output_dir+'rewards.csv', index=False)
+
+
+def export_q_values(Q, output_dir):
+    q_values = pd.DataFrame.from_dict(Q, orient='index')
+    q_values.index.name = "state"
+    q_values.to_csv(output_dir+"q_values.csv")
+
+
+def export_max_q_values(Q, output_dir):
+    hist = {}
+    for k, value in Q.items():
+        actions = [i for i, act in enumerate(value) if act == np.amax(value)]
+        actions = "-".join(str(q) for q in actions)
+        hist[k] = actions
+
+    q_max_values = pd.DataFrame.from_dict(hist, orient='index')
+    q_max_values.index.name = "state"
+    q_max_values.to_csv(output_dir+"max_q_values.csv")
+
+
 def dict_to_csv(data, fn):
     dt = pd.DataFrame(data)
     dt.to_csv(fn, index=False)
