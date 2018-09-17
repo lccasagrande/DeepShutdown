@@ -46,9 +46,9 @@ class EpsGreedyPolicy:
         return choice(actions)
 
 
-def run(output_dir, n_ep=2, out_freq=1, plot=True, alpha=.2, gamma=1):
+def run(output_dir, n_ep=12000, out_freq=20, plot=True, alpha=.2, gamma=1):
     env = gym.make('grid-v0')
-    policy = EpsGreedyPolicy()
+    policy = EpsGreedyPolicy(eps_decay=2000000)
     Q = defaultdict(lambda: np.zeros(env.action_space.n))
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
