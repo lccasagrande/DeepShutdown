@@ -18,8 +18,8 @@ class BatsimHandler:
     WORKLOAD_JOB_SEPARATOR = "!"
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
-    PLATFORM = "platform.xml"
-    WORKLOAD = "nantes_1.json"
+    PLATFORM = "platform_2.xml"
+    WORKLOAD = "workload_2.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
@@ -43,16 +43,17 @@ class BatsimHandler:
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.protocol_manager = BatsimProtocolHandler()
-        self.sched_manager = SchedulerManager(51,
-                                              self.resource_manager.nb_resources)
+        self.sched_manager = SchedulerManager(
+            1, self.resource_manager.nb_resources)
         self._initialize_vars()
 
     def get_max_walltime(self, workload):
         with open(workload) as f:
             data = json.load(f)
-            max_walltime = max(data['jobs'], key=(lambda job: job['walltime']))['walltime']
+            max_walltime = max(data['jobs'], key=(
+                lambda job: job['walltime']))['walltime']
 
-        return max_walltime    
+        return max_walltime
 
     @property
     def nb_jobs_in_queue(self):
@@ -70,7 +71,7 @@ class BatsimHandler:
     def current_state(self):
         gantt = self.sched_manager.get_gantt(with_queue=True)
         resources = self.resource_manager.get_resources()
-        resources = np.vstack((resources, [0,0,0])) # Queue hw
+        resources = np.vstack((resources, [0, 0, 0]))  # Queue hw
         gantt = np.concatenate((resources, gantt), axis=1)
 
         return gantt
@@ -87,7 +88,6 @@ class BatsimHandler:
         self.network.close()
         self.running_simulation = False
         if self._simulator_process is not None:
-            time.sleep(1)  # wait simulator finish
             self._simulator_process.kill()
             self._simulator_process.wait()
             self._simulator_process = None
@@ -126,10 +126,6 @@ class BatsimHandler:
         self._schedule_gantt_jobs()
 
         self._wait_state_change()
-
-        # Enqueue jobs if another type of event has ocurred first.
-        if self.running_simulation:
-            self.sched_manager.enqueue_jobs_waiting(self.now())
 
     def _wait_state_change(self):
         self._update_state()
@@ -172,6 +168,7 @@ class BatsimHandler:
             self._start_jobs(jobs_to_sched)
 
     def _handle_resource_pstate_changed(self, data):
+        self.sched_manager.enqueue_jobs_waiting(self.now())
         res_ids = list(map(int, data["resources"].split(" ")))
         self.resource_manager.set_pstate(
             res_ids, Resource.PowerState[int(data["state"])])
@@ -181,8 +178,10 @@ class BatsimHandler:
         job = self.sched_manager.on_job_completed(timestamp, data)
         self.resource_manager.set_state(job.allocation, Resource.State.IDLE)
         self._schedule_gantt_jobs()
+        self.sched_manager.enqueue_jobs_waiting(self.now())
 
     def _handle_job_submitted(self, data):
+        self.sched_manager.enqueue_jobs_waiting(self.now())
         if data['job']['res'] > self.resource_manager.nb_resources:
             self.protocol_manager.reject_job(data['job_id'])
         else:
@@ -226,14 +225,6 @@ class BatsimHandler:
             data["consumed_joules"])
         self._export_metrics()
 
-    def _export_metrics(self):
-        data = pd.DataFrame(self.metrics, index=[0])
-        fn = "{}/{}_{}.csv".format(
-            BatsimHandler.OUTPUT_DIR,
-            self.nb_simulation,
-            "schedule_metrics")
-        data.to_csv(fn, index=False)
-
     def _handle_requested_call(self):
         self._alarm_is_set = False
         self.sched_manager.enqueue_jobs_waiting(self.now())
@@ -263,6 +254,14 @@ class BatsimHandler:
                     "Unknown NOTIFY event type {}".format(event.type))
         else:
             raise Exception("Unknown event type {}".format(event.type))
+
+    def _export_metrics(self):
+        data = pd.DataFrame(self.metrics, index=[0])
+        fn = "{}/{}_{}.csv".format(
+            BatsimHandler.OUTPUT_DIR,
+            self.nb_simulation,
+            "schedule_metrics")
+        data.to_csv(fn, index=False)
 
     def _send_events(self):
         msg = self.protocol_manager.flush()

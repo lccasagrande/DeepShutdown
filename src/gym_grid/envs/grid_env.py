@@ -60,19 +60,18 @@ class GridEnv(gym.Env):
         if self.simulator.running_simulation:
             return -1
 
-        return -1 * self.simulator.metrics['makespan']
+        return -1 *  self.simulator.metrics['makespan']
 
     def _take_action(self, action):
         resources = [] if action == 0 else [action-1]
         self.simulator.schedule_job(resources)
 
     def _update_state(self):
-        state = np.zeros(
-            shape=self.simulator.current_state.shape[0], dtype=np.float)
+        state = np.zeros(shape=self.simulator.current_state.shape[0], dtype=np.float)
         simulator_state = self.simulator.current_state
         for row in range(simulator_state.shape[0]):
-            # Host properties
-            # for col in range(res_shape[1]):
+            ## Host properties
+            #for col in range(res_shape[1]):
             #    self.state[row][col] = simulator_state[row][col]
             job = simulator_state[row][3]
             if job is None:
