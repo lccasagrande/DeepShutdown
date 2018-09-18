@@ -13,7 +13,7 @@ from collections import defaultdict, deque
 
 
 class EpsGreedyPolicy:
-    def __init__(self, min_epsilon=0.1, eps_decay=100):
+    def __init__(self, min_epsilon=0.05, eps_decay=100):
         self.min_epsilon = min_epsilon
         self.epsilon = 1
         self.epsilon_decay_steps = eps_decay
@@ -50,7 +50,7 @@ class EpsGreedyPolicy:
 
 def run(output_dir, n_ep=1000, out_freq=100, plot=True, alpha=.1, gamma=1):
     env = gym.make('grid-v0')
-    policy = EpsGreedyPolicy(eps_decay=1000)
+    policy = EpsGreedyPolicy(eps_decay=500)
     Q = defaultdict(lambda: np.zeros(env.action_space.n))
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
@@ -99,6 +99,9 @@ def run(output_dir, n_ep=1000, out_freq=100, plot=True, alpha=.1, gamma=1):
             ac = "-".join(str(act) for act in actions)
             print("\nTest Score: {:7} - Actions: {}".format(score, ac))
             break
+
+    if plot:
+        utils.plot_reward(avg_scores, n_ep, 'QLEARNING', 'img/q_')
 
     print("Done!")
 
