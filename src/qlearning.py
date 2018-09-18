@@ -29,14 +29,14 @@ class EpsGreedyPolicy:
             return self.select_best_action(q_values, state)
         else:
             valid_actions = [
-                0] + [(i+1) for i in range(q_values.shape[0]-1) if state[i] == 0]
+                0] + [(i+1) for i in range(q_values.shape[0]-1) if state[i][1] == 0]
             return choice(valid_actions)
 
     def select_best_action(self, q_values, state):
         actions = [0]
         q_max = q_values[0]
         for i in range(q_values.shape[0]-1):
-            if state[i] != 0:
+            if state[i][1] != 0:
                 continue
             act = i+1
             if q_values[act] > q_max:
@@ -48,9 +48,9 @@ class EpsGreedyPolicy:
         return choice(actions)
 
 
-def run(output_dir, n_ep=100, out_freq=5, plot=True, alpha=.5, gamma=1):
+def run(output_dir, n_ep=1000, out_freq=10, plot=True, alpha=.1, gamma=1):
     env = gym.make('grid-v0')
-    policy = EpsGreedyPolicy(eps_decay=500000)
+    policy = EpsGreedyPolicy(eps_decay=2500)
     Q = defaultdict(lambda: np.zeros(env.action_space.n))
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
@@ -60,17 +60,15 @@ def run(output_dir, n_ep=100, out_freq=5, plot=True, alpha=.5, gamma=1):
         utils.print_progress(t_start, i, n_ep)
         state = env.reset()
         while True:
-            act = policy.select_valid_action(Q[tuple(state)], state)
+            act = policy.select_valid_action(Q[tuple(state.flatten())], state)
             next_state, reward, done, _ = env.step(act)
-            env.render()
-            best_action = policy.select_best_action(
-                Q[tuple(next_state)], next_state)
+            #env.render()
+            best_action = policy.select_best_action(Q[tuple(next_state.flatten())], next_state)
 
             td_target = reward + gamma * \
-                Q[tuple(next_state)][best_action] - Q[tuple(state)][act]
+                Q[tuple(next_state.flatten())][best_action] - Q[tuple(state.flatten())][act]
 
-            Q[tuple(state)][act] += alpha * td_target
-
+            Q[tuple(state.flatten())][act] += alpha * td_target
             state = next_state
             score += reward
             if done:
@@ -91,7 +89,7 @@ def run(output_dir, n_ep=100, out_freq=5, plot=True, alpha=.5, gamma=1):
     actions = []
     print("--- TESTING ---")
     while True:
-        act = policy.select_best_action(Q[tuple(state)], state)
+        act = policy.select_best_action(Q[tuple(state.flatten())], state)
         env.render()
         next_state, reward, done, _ = env.step(act)
         state = next_state
@@ -105,5 +103,5 @@ def run(output_dir, n_ep=100, out_freq=5, plot=True, alpha=.5, gamma=1):
     print("Done!")
 
 if __name__ == "__main__":
-    output_dir = 'results/random/'
+    output_dir = 'results/qlearning/'
     run(output_dir)

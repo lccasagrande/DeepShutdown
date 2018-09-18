@@ -28,10 +28,23 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        self._take_action(action)
+
+        alloc_resources = self._prepare_input(action)
+
+        # get reward metrics
+        energy_consumed_est = self.simulator.resource_manager.estimate_energy_consumption(alloc_resources)
+        wait_time = self.simulator.sched_manager.get_first_job_wait_time()
+        jobs_waiting = self.simulator.sched_manager.nb_jobs_waiting
+
+        # schedule first job
+        self.simulator.schedule_job(alloc_resources)
+
         state = self._update_state()
-        reward = self._get_reward()
+
         done = not self.simulator.running_simulation
+
+        reward = -1 * (energy_consumed_est + wait_time + jobs_waiting + 1)
+
         return state, reward, done, {}
 
     def reset(self):
@@ -56,28 +69,29 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def _get_reward(self):
-        if self.simulator.running_simulation:
-            return -1
-
-        return -1 *  self.simulator.metrics['makespan']
-
-    def _take_action(self, action):
-        resources = [] if action == 0 else [action-1]
-        self.simulator.schedule_job(resources)
+    def _prepare_input(self, action):
+        return [] if action == 0 else [action-1]
 
     def _update_state(self):
-        state = np.zeros(shape=self.simulator.current_state.shape[0], dtype=np.float)
+        shape = self.simulator.current_state.shape
+        state = np.zeros(shape=shape, dtype=np.float)
         simulator_state = self.simulator.current_state
-        for row in range(simulator_state.shape[0]):
-            ## Host properties
-            #for col in range(res_shape[1]):
-            #    self.state[row][col] = simulator_state[row][col]
-            job = simulator_state[row][3]
-            if job is None:
-                state[row] = 0
+        for row in range(shape[0]):
+            if simulator_state[row][0] != None:
+                # Get host property
+                diff = simulator_state[row][0].get_energy_pstate_diff()
+                speed = simulator_state[row][0].get_speed()
+                state[row][0] = diff / (speed/1000000)
+                for col in range(1, shape[1]):
+                    # Get jobs remaining time
+                    job = simulator_state[row][col]
+                    state[row][col] = job.remaining_time if job is not None else 0
             else:
-                state[row] = 1
+                # Add first job in queue and number of waiting jobs
+                job = simulator_state[row][1]
+                state[row][0] = job.waiting_time if job is not None else 0
+                state[row][1] = self.simulator.sched_manager.nb_jobs_waiting
+
         return state
 
     def _get_action_space(self):

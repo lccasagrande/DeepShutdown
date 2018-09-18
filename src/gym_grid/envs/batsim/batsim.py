@@ -18,8 +18,8 @@ class BatsimHandler:
     WORKLOAD_JOB_SEPARATOR = "!"
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
-    PLATFORM = "platform_10.xml"
-    WORKLOAD = "nantes_1.json"
+    PLATFORM = "platform_2.xml"
+    WORKLOAD = "nantes_2.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
@@ -71,7 +71,7 @@ class BatsimHandler:
     def current_state(self):
         gantt = self.sched_manager.get_gantt(with_queue=True)
         resources = self.resource_manager.get_resources()
-        resources = np.vstack((resources, [0, 0, 0]))  # Queue hw
+        resources = np.append(resources, None).reshape(gantt.shape)
         gantt = np.concatenate((resources, gantt), axis=1)
 
         return gantt
@@ -79,10 +79,8 @@ class BatsimHandler:
     @property
     def state_shape(self):
         gantt_shape = self.sched_manager.gantt_shape
-        res_shape = self.resource_manager.shape
-        assert res_shape[0] == gantt_shape[0]
-        # Add job queue space along with resources queue
-        return (gantt_shape[0]+1, gantt_shape[1]+res_shape[1])
+        # Add job queue space along with resources
+        return (gantt_shape[0]+1, gantt_shape[1]+1)
 
     def close(self):
         self.network.close()
@@ -178,14 +176,12 @@ class BatsimHandler:
         job = self.sched_manager.on_job_completed(timestamp, data)
         self.resource_manager.set_state(job.allocation, Resource.State.IDLE)
         self._schedule_gantt_jobs()
-        self.sched_manager.enqueue_jobs_waiting(self.now())
 
     def _handle_job_submitted(self, data):
-        self.sched_manager.enqueue_jobs_waiting(self.now())
         if data['job']['res'] > self.resource_manager.nb_resources:
             self.protocol_manager.reject_job(data['job_id'])
         else:
-            self.sched_manager.on_job_submitted(data['job'])
+            self.sched_manager.on_job_submitted(self.now(), data['job'])
             self.nb_jobs_submitted += 1
 
     def _handle_simulation_begins(self, data):
@@ -611,7 +607,6 @@ class ResourceHardware:
 
 class Resource:
     class State(Enum):
-        SLEEPING = 'sleeping'
         IDLE = 'idle'
         COMPUTING = 'computing'
 
@@ -665,8 +660,16 @@ class Resource:
         return hw['speed'], hw['watt_idle'], hw['watt_comp']
 
     def get_speed(self):
-        hw = self.hw[self.pstate]
-        return hw['speed']
+        speed, _, _ = self.get_hw()
+        return speed
+
+    def get_energy_consumption(self):
+        _, w_idle, w_computing = self.get_hw()
+        return w_computing if self.state == Resource.State.COMPUTING else w_idle
+
+    def get_energy_pstate_diff(self):
+        _, w_idle, w_computing = self.get_hw()
+        return w_computing - w_idle
 
 
 class ResourceManager:
@@ -684,6 +687,10 @@ class ResourceManager:
         #self.min_speed = worst_host.speed
         #self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
 
+    @property
+    def nb_resources_idle(self):
+        return 0
+
     @staticmethod
     def from_xml(platform_fn):
         platform = minidom.parse(platform_fn)
@@ -698,15 +705,19 @@ class ResourceManager:
 
         return ResourceManager(resources)
 
-    @property
-    def shape(self):
-        return (len(self.resources), 3)
+    def estimate_energy_consumption(self, res_ids):
+        energy = 0
+        for id in res_ids:
+            current_watts = self.resources[id].get_energy_consumption()
+            speed, _, w_comp = self.resources[id].get_hw()
+            energy += (w_comp - current_watts) / (speed/1000000)
+        return energy
 
     def get_resources(self):
-        resources = np.zeros(shape=self.shape, dtype=np.float)
-        for id, res in self.resources.items():
-            speed, watt_idle, watt_comp = res.get_hw()
-            resources[id] = [speed, watt_idle, watt_comp]
+        resources = np.empty((self.nb_resources,), dtype=object)
+        for k, value in self.resources.items():
+            resources[int(k)] = deepcopy(value)
+
         return resources
 
     def is_available(self, res_ids):
@@ -749,6 +760,10 @@ class SchedulerManager():
         self.gantt_shape = (nb_resources, space)
         self.reset()
 
+    @property
+    def nb_jobs_waiting(self):
+        return len(self.jobs_queue) + len(self.jobs_waiting)
+
     def get_jobs_running(self):
         jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
         jobs_running = [job for job in jobs if job.state == Job.State.RUNNING]
@@ -766,13 +781,13 @@ class SchedulerManager():
 
     def get_gantt(self, with_queue=True):
         if not with_queue:
-            return self.gantt
+            return deepcopy(self.gantt)
 
         jobs_in_queue = np.empty(shape=self.gantt_shape[1], dtype=object)
         for i in range(min(self.gantt_shape[1], len(self.jobs_queue))):
             jobs_in_queue[i] = self.jobs_queue[i]
 
-        return np.append(self.gantt, [jobs_in_queue], axis=0)
+        return deepcopy(np.append(self.gantt, [jobs_in_queue], axis=0))
 
     def update_jobs_progress(self, time):
         jobs = self.gantt[:, 0]
@@ -804,6 +819,22 @@ class SchedulerManager():
             self.jobs_queue.appendleft(job)
             raise
 
+    def get_first_job_wait_time(self):
+        if len(self.jobs_queue) == 0:
+            return 0
+            
+        return self.jobs_queue[0].waiting_time
+
+    def get_total_wait_time(self):
+        wait_time = 0
+        # queued jobs
+        for j in self.jobs_queue:
+            wait_time += j.waiting_time
+
+        for j in self.jobs_waiting:
+            wait_time += j.waiting_time
+        return wait_time
+
     def delay_first_job(self, time):
         job = self.jobs_queue.popleft()
         self.jobs_waiting.append(job)
@@ -832,17 +863,19 @@ class SchedulerManager():
         job.set_start_time(time)
         job.set_waiting_time(job.start_time - job.submit_time)
 
-    def on_job_completed(self, timestamp, data):
+    def on_job_completed(self, time, data):
         job = self._remove_from_gantt(data['job_id'])
-        self._update_job_stats(job, timestamp, data)
+        self._update_job_stats(job, time, data)
         self.jobs_finished[job.id] = job
+        self.enqueue_jobs_waiting(time)
         return job
 
-    def on_job_submitted(self, data):
+    def on_job_submitted(self, time, data):
         job = Job.from_json(data)
         job.state = Job.State.SUBMITTED
         job.set_waiting_time(0)
         self.jobs_queue.append(job)
+        self.enqueue_jobs_waiting(time)
 
     def _remove_from_gantt(self, job_id):
         job = None
