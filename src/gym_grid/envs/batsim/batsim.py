@@ -624,6 +624,8 @@ class Resource:
         self.name = name
         self.id = id
         self.hw = hw
+        self.max_watt = self.hw[Resource.PowerState.NORMAL]['watt_comp']
+        self.min_watt = self.hw[Resource.PowerState.SHUT_DOWN]['watt_idle']
 
     @staticmethod
     def from_xml(id, data):
@@ -637,15 +639,30 @@ class Resource:
         for i, speed in enumerate(host_speed):
             (idle, comp) = host_watts[i].split(":")
             hw[Resource.PowerState(i)] = {
-                'speed': float(speed.replace("Mf", "")) * 1000000,
+                'speed': float(speed.replace("Mf", "")),
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
         return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, hw)
 
     @property
+    def max_cost_to_compute(self):
+        speed = self.hw[Resource.PowerState.NORMAL]['speed']
+        return (self.max_watt - self.min_watt) / speed
+
+    @property
+    def cost_to_compute(self):
+        speed, w_idle, w_computing = self.get_hw()
+        cost = (w_computing - w_idle) / speed
+        return cost
+
+    @property
     def is_available(self):
         return True if self.state == Resource.State.IDLE else False
+
+    @property
+    def is_computing(self):
+        return True if self.state == Resource.State.COMPUTING else False
 
     def set_state(self, state):
         assert isinstance(state, Resource.State)
@@ -677,19 +694,13 @@ class ResourceManager:
         assert isinstance(resources, dict)
         self.nb_resources = len(resources)
         self.resources = resources
-
-        best_host = max(resources.items(), key=(
-            lambda item: item[1].get_speed()))[1]
-        self.max_speed, _, self.max_watts = best_host.get_hw()
-
-        # worst_host = min(resources.items(), key=(
-        #    lambda item: item[1].speed))[1]
-        #self.min_speed = worst_host.speed
-        #self.min_watts = worst_host.watt_per_state[Resource.PowerState.NORMAL].comp
+        self.max_cost_to_compute = max(self.resources.items(), key=(
+            lambda item: item[1].max_cost_to_compute))[1].max_cost_to_compute
 
     @property
-    def nb_resources_idle(self):
-        return 0
+    def nb_resources_unused(self):
+        nb = len([k for k, res in self.resources.items() if not res.is_computing])
+        return nb
 
     @staticmethod
     def from_xml(platform_fn):
@@ -708,9 +719,7 @@ class ResourceManager:
     def estimate_energy_consumption(self, res_ids):
         energy = 0
         for id in res_ids:
-            current_watts = self.resources[id].get_energy_consumption()
-            speed, _, w_comp = self.resources[id].get_hw()
-            energy += (w_comp - current_watts) / (speed/1000000)
+            energy += self.resources[id].cost_to_compute
         return energy
 
     def get_resources(self):
@@ -819,10 +828,16 @@ class SchedulerManager():
             self.jobs_queue.appendleft(job)
             raise
 
+    def get_first_job_walltime(self):
+        if len(self.jobs_queue) == 0:
+            return 0
+
+        return self.jobs_queue[0].requested_time
+
     def get_first_job_wait_time(self):
         if len(self.jobs_queue) == 0:
             return 0
-            
+
         return self.jobs_queue[0].waiting_time
 
     def get_total_wait_time(self):

@@ -3,6 +3,7 @@ from copy import deepcopy
 from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
+from sklearn.preprocessing import MinMaxScaler
 from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
 import numpy as np
 
@@ -15,14 +16,6 @@ class GridEnv(gym.Env):
         self.seed()
 
     @property
-    def max_speed(self):
-        return self.simulator.resource_manager.max_speed
-
-    @property
-    def max_watt(self):
-        return self.simulator.resource_manager.max_watts
-
-    @property
     def max_time(self):
         return self.simulator.max_walltime
 
@@ -33,17 +26,29 @@ class GridEnv(gym.Env):
 
         # get reward metrics
         energy_consumed_est = self.simulator.resource_manager.estimate_energy_consumption(alloc_resources)
+        #energy_consumed_est = float(energy_consumed_est) / self.simulator.resource_manager.max_cost_to_compute
+
         wait_time = self.simulator.sched_manager.get_first_job_wait_time()
-        jobs_waiting = self.simulator.sched_manager.nb_jobs_waiting
+       # expected_runtime = self.simulator.sched_manager.get_first_job_walltime()
+        #expected_turnaround = max((wait_time + expected_runtime) / expected_runtime, 1)
 
         # schedule first job
         self.simulator.schedule_job(alloc_resources)
 
         state = self._update_state()
+        
+        #nb_res = self.simulator.resource_manager.nb_resources
+        jobs_waiting = self.simulator.sched_manager.nb_jobs_waiting
+        #load = min(nb_res, jobs_waiting) / nb_res
 
         done = not self.simulator.running_simulation
 
+        #energy_consumed_est = -1*energy_consumed_est
+        #load = -1*load
+        #bdslowdown = 1 - min(expected_turnaround, 2)
+
         reward = -1 * (energy_consumed_est + wait_time + jobs_waiting + 1)
+        #reward = (energy_consumed_est + bdslowdown + load) / 3
 
         return state, reward, done, {}
 
@@ -79,9 +84,7 @@ class GridEnv(gym.Env):
         for row in range(shape[0]):
             if simulator_state[row][0] != None:
                 # Get host property
-                diff = simulator_state[row][0].get_energy_pstate_diff()
-                speed = simulator_state[row][0].get_speed()
-                state[row][0] = diff / (speed/1000000)
+                state[row][0] = simulator_state[row][0].cost_to_compute
                 for col in range(1, shape[1]):
                     # Get jobs remaining time
                     job = simulator_state[row][col]
