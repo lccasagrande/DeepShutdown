@@ -4,16 +4,17 @@ from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
 from sklearn.preprocessing import MinMaxScaler
-from .batsim.batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
+from .batsim.batsim import BatsimHandler, Resource, InsufficientResourcesError, UnavailableResourcesError
 import numpy as np
 
 
 class GridEnv(gym.Env):
     def __init__(self):
+        self.seed()
         self.simulator = BatsimHandler(output_freq=1)
+        self._update_state()
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
-        self.seed()
 
     @property
     def max_time(self):
@@ -25,7 +26,8 @@ class GridEnv(gym.Env):
         alloc_resources = self._prepare_input(action)
 
         # get reward metrics
-        energy_consumed_est = self.simulator.resource_manager.estimate_energy_consumption(alloc_resources)
+        energy_consumed_est = self.simulator.resource_manager.estimate_energy_consumption(
+            alloc_resources)
         #energy_consumed_est = float(energy_consumed_est) / self.simulator.resource_manager.max_cost_to_compute
 
         wait_time = self.simulator.sched_manager.get_first_job_wait_time()
@@ -35,8 +37,8 @@ class GridEnv(gym.Env):
         # schedule first job
         self.simulator.schedule_job(alloc_resources)
 
-        state = self._update_state()
-        
+        self._update_state()
+
         #nb_res = self.simulator.resource_manager.nb_resources
         jobs_waiting = self.simulator.sched_manager.nb_jobs_waiting
         #load = min(nb_res, jobs_waiting) / nb_res
@@ -50,13 +52,13 @@ class GridEnv(gym.Env):
         reward = -1 * (energy_consumed_est + wait_time + jobs_waiting + 1)
         #reward = (energy_consumed_est + bdslowdown + load) / 3
 
-        return state, reward, done, {}
+        return self.state, reward, done, {}
 
     def reset(self):
         self.simulator.close()
         self.simulator.start()
-        state = self._update_state()
-        return state
+        self._update_state()
+        return self.state
 
     def render(self, mode='human'):
         stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
@@ -78,24 +80,20 @@ class GridEnv(gym.Env):
         return [] if action == 0 else [action-1]
 
     def _update_state(self):
-        shape = self.simulator.current_state.shape
-        state = np.zeros(shape=shape, dtype=np.float)
-        simulator_state = self.simulator.current_state
-        for row in range(shape[0]):
-            if simulator_state[row][0] != None:
-                # Get host property
-                state[row][0] = simulator_state[row][0].cost_to_compute
-                for col in range(1, shape[1]):
-                    # Get jobs remaining time
-                    job = simulator_state[row][col]
-                    state[row][col] = job.remaining_time if job is not None else 0
-            else:
-                # Add first job in queue and number of waiting jobs
-                job = simulator_state[row][1]
-                state[row][0] = job.waiting_time if job is not None else 0
-                state[row][1] = self.simulator.sched_manager.nb_jobs_waiting
+        resources = self.simulator.resource_manager.get_resources()
+        gantt = self.simulator.sched_manager.get_gantt(with_queue=False)
+        state = []
+        for resource in resources:
+            speed, w_idle, w_comp = resource.get_hw()
+            res_state = 1 if resource.state == Resource.State.COMPUTING else 0
+            res_properties = [speed, w_idle, w_comp, res_state]
+            res_queue = [job.remaining_time if job is not None else 0 for job in gantt[resource.id]]
+            state.append(res_properties + res_queue)
 
-        return state
+        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(1)
+        jobs_queue = [j.requested_time for j in jobs_queue] if jobs_queue != None else [0]
+        state.append(jobs_queue)
+        self.state = np.array(state, copy=False, subok=True)
 
     def _get_action_space(self):
         return spaces.Discrete(self.simulator.nb_resources+1)
@@ -103,7 +101,7 @@ class GridEnv(gym.Env):
     def _get_observation_space(self):
         obs_space = spaces.Box(low=0,
                                high=self.max_time,
-                               shape=self.simulator.state_shape,
+                               shape=self.state.shape,
                                dtype=np.int16)
 
         return obs_space

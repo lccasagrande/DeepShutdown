@@ -48,9 +48,9 @@ class EpsGreedyPolicy:
         return choice(actions)
 
 
-def run(output_dir, n_ep=1000, out_freq=100, plot=True, alpha=.1, gamma=1):
+def run(output_dir, n_ep=200, out_freq=100, plot=True, alpha=.1, gamma=1):
     env = gym.make('grid-v0')
-    policy = EpsGreedyPolicy(eps_decay=500)
+    policy = EpsGreedyPolicy(min_epsilon=0.05, eps_decay=500)
     Q = defaultdict(lambda: np.zeros(env.action_space.n))
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
@@ -60,15 +60,17 @@ def run(output_dir, n_ep=1000, out_freq=100, plot=True, alpha=.1, gamma=1):
         utils.print_progress(t_start, i, n_ep)
         state = env.reset()
         while True:
-            act = policy.select_valid_action(Q[tuple(state.flatten())], state)
+            state_hash = tuple(np.hstack(state))
+            act = policy.select_valid_action(Q[state_hash], state)
             next_state, reward, done, _ = env.step(act)
-            #env.render()
-            best_action = policy.select_best_action(Q[tuple(next_state.flatten())], next_state)
+
+            next_state_hash = tuple(np.hstack(next_state))
+            best_action = policy.select_best_action(Q[next_state_hash], next_state)
 
             td_target = reward + gamma * \
-                Q[tuple(next_state.flatten())][best_action] - Q[tuple(state.flatten())][act]
+                Q[next_state_hash][best_action] - Q[state_hash][act]
 
-            Q[tuple(state.flatten())][act] += alpha * td_target
+            Q[state_hash][act] += alpha * td_target
             state = next_state
             score += reward
             if done:
@@ -89,7 +91,7 @@ def run(output_dir, n_ep=1000, out_freq=100, plot=True, alpha=.1, gamma=1):
     actions = []
     print("--- TESTING ---")
     while True:
-        act = policy.select_best_action(Q[tuple(state.flatten())], state)
+        act = policy.select_best_action(Q[tuple(np.hstack(state))], state)
         env.render()
         next_state, reward, done, _ = env.step(act)
         state = next_state

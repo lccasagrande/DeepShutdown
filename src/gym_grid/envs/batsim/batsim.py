@@ -5,6 +5,7 @@ import os
 import json
 import zmq
 import time
+import itertools
 import pandas as pd
 from xml.dom import minidom
 from enum import Enum, unique
@@ -725,7 +726,7 @@ class ResourceManager:
     def get_resources(self):
         resources = np.empty((self.nb_resources,), dtype=object)
         for k, value in self.resources.items():
-            resources[int(k)] = deepcopy(value)
+            resources[int(k)] = value
 
         return resources
 
@@ -773,6 +774,14 @@ class SchedulerManager():
     def nb_jobs_waiting(self):
         return len(self.jobs_queue) + len(self.jobs_waiting)
 
+    def lookup_jobs_queue(self, nb):
+        nb_jobs_in_queue = len(self.jobs_queue) 
+        if nb_jobs_in_queue == 0: 
+            return None
+
+        jobs = list(itertools.islice(self.jobs_queue, 0, min(nb, nb_jobs_in_queue)))
+        return jobs
+
     def get_jobs_running(self):
         jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
         jobs_running = [job for job in jobs if job.state == Job.State.RUNNING]
@@ -790,13 +799,13 @@ class SchedulerManager():
 
     def get_gantt(self, with_queue=True):
         if not with_queue:
-            return deepcopy(self.gantt)
+            return self.gantt
 
         jobs_in_queue = np.empty(shape=self.gantt_shape[1], dtype=object)
         for i in range(min(self.gantt_shape[1], len(self.jobs_queue))):
             jobs_in_queue[i] = self.jobs_queue[i]
 
-        return deepcopy(np.append(self.gantt, [jobs_in_queue], axis=0))
+        return np.append(self.gantt, [jobs_in_queue], axis=0)
 
     def update_jobs_progress(self, time):
         jobs = self.gantt[:, 0]

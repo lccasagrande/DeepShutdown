@@ -1,1 +1,1 @@
-from .batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
+from .batsim import BatsimHandler, Resource, InsufficientResourcesError, UnavailableResourcesError
