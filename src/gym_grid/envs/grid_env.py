@@ -107,7 +107,7 @@ class GridEnv(gym.Env):
             state.append(res_properties + res_queue)
 
         jobs = np.zeros(shape=len(state[0]))
-        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(2)
+        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(5)
         if jobs_queue != None:
             for i, j in enumerate(jobs_queue):
                 jobs[i] = j.requested_time

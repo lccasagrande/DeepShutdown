@@ -19,7 +19,7 @@ class BatsimHandler:
     WORKLOAD_JOB_SEPARATOR = "!"
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
-    PLATFORM = "platform_10.xml"
+    PLATFORM = "platform.xml"
     WORKLOAD = "nantes_1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
@@ -651,16 +651,15 @@ class Resource:
             }
         return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, hw)
 
-    @property
-    def max_cost_to_compute(self):
-        speed = self.hw[Resource.PowerState.NORMAL]['speed']
-        return (self.max_watt - self.min_watt) / speed
+    #@property
+    #def max_cost_to_compute(self):
+    #    speed = self.hw[Resource.PowerState.NORMAL]['speed']
+    #    return (self.max_watt - self.min_watt)
 
     @property
     def cost_to_compute(self):
         speed, w_idle, w_computing = self.get_hw()
-        cost = (w_computing - w_idle) / speed
-        return cost
+        return w_computing - w_idle
 
     @property
     def is_available(self):

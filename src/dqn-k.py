@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import random
 import gym
+import time
 import gym_grid.envs.grid_env as g
 import keras.backend as K
 from keras.models import Sequential
@@ -97,21 +98,16 @@ class GridProcessor(Processor):
         self.time_scaler.transform(observation[:self.nb_res, 4:])
         self.time_scaler.transform(observation[-1, :].reshape(-1, 1))
         observation = observation.reshape(self.input_shape)
-        assert observation.ndim == 2  # (height, width, channel)
+        assert observation.ndim == 3  # (height, width, channel)
         return observation
 
 
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(32, (4, 4), strides=(
-       1, 1), data_format="channels_last"))
+    model.add(Convolution2D(32, (5, 5), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
-    model.add(Convolution2D(64, (2, 2), strides=(
-       1, 1), data_format="channels_last"))
-    model.add(Activation('relu'))
-    model.add(Convolution2D(64, (1, 1), strides=(
-       1, 1), data_format="channels_last"))
+    model.add(Convolution2D(64, (1, 1), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
     model.add(Flatten())
     model.add(Dense(512))
@@ -125,11 +121,11 @@ def build_model(output_shape, input_shape):
 if __name__ == "__main__":
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
-    name = "dqn_cnn"
+    name = "dqn_keras"
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
-    input_shape = env.observation_space.shape  # + (1,)  # add channel
+    input_shape = env.observation_space.shape + (1,)  # add channel
 
     model = build_model(nb_actions, input_shape)
 
@@ -145,7 +141,7 @@ if __name__ == "__main__":
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
     policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=50000)
+                                  nb_steps=1000000)
 
     test_policy = CustomGreedyQPolicy()
 
@@ -156,20 +152,20 @@ if __name__ == "__main__":
     # Feel free to give it a try!
 
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
-                   processor=processor, nb_steps_warmup=10000, gamma=.1, target_model_update=20000,
+                   processor=processor, nb_steps_warmup=50000, gamma=1, target_model_update=10000,
                    train_interval=4, delta_clip=1.)
-    dqn.compile(Adam(lr=.0001), metrics=['mae'])
+    dqn.compile(Adam(lr=.00025), metrics=['mae'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
     callbacks = [ModelIntervalCheckpoint(
-        'weights/'+name+'_1_weights_{step}.h5f', interval=50000)]
+        'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=200000,
-            log_interval=10000, visualize=False)
+    dqn.fit(env, callbacks=callbacks, nb_steps=3500000,log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
-
-    #dqn.test(env, nb_episodes=1, visualize=False)
+    time.sleep(10)
+    #dqn.load_weights('weights/dqn_keras_1_weights_200000.h5f')
+    dqn.test(env, nb_episodes=1, visualize=True)
