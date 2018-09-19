@@ -65,7 +65,7 @@ class GridEnv(gym.Env):
         #load = -1*load
         #bdslowdown = 1 - min(expected_turnaround, 2)
 
-        reward = -1 * (energy_consumed_est + wait_time + jobs_waiting)
+        reward = -1 * (energy_consumed_est + jobs_waiting)
         #reward = (energy_consumed_est + bdslowdown + load) / 3
 
         return self.state, reward, done, {}
