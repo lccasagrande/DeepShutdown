@@ -20,6 +20,22 @@ class GridEnv(gym.Env):
     def max_time(self):
         return self.simulator.max_walltime
 
+    @property
+    def max_speed(self):
+        return self.simulator.resource_manager.max_speed
+    
+    @property
+    def nb_res(self):
+        return self.simulator.nb_resources
+
+    @property
+    def nb_res_properties(self):
+        return 4
+
+    @property
+    def max_watt(self):
+        return self.simulator.resource_manager.max_watt
+
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
 
@@ -49,7 +65,7 @@ class GridEnv(gym.Env):
         #load = -1*load
         #bdslowdown = 1 - min(expected_turnaround, 2)
 
-        reward = -1 * (energy_consumed_est + wait_time + jobs_waiting + 1)
+        reward = -1 * (energy_consumed_est + wait_time + jobs_waiting)
         #reward = (energy_consumed_est + bdslowdown + load) / 3
 
         return self.state, reward, done, {}
@@ -90,9 +106,13 @@ class GridEnv(gym.Env):
             res_queue = [job.remaining_time if job is not None else 0 for job in gantt[resource.id]]
             state.append(res_properties + res_queue)
 
-        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(1)
-        jobs_queue = [j.requested_time for j in jobs_queue] if jobs_queue != None else [0]
-        state.append(jobs_queue)
+        jobs = np.zeros(shape=len(state[0]))
+        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(2)
+        if jobs_queue != None:
+            for i, j in enumerate(jobs_queue):
+                jobs[i] = j.requested_time
+
+        state.append(jobs)
         self.state = np.array(state, copy=False, subok=True)
 
     def _get_action_space(self):

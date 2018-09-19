@@ -11,11 +11,11 @@ from collections import defaultdict, deque
 
 
 def sample_valid_action(env, state):
-    valid_actions = [0] + [(i+1) for i in range(env.action_space.n-1) if np.any(state[i] == 0)]
+    valid_actions = [0] + [(i+1) for i in range(env.action_space.n-1) if state[i][3] == 0]
     return choice(valid_actions)
 
 
-def run(output_dir, n_ep=10, out_freq=2, plot=True):
+def run(output_dir, n_ep=10, out_freq=1, plot=False):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
@@ -42,18 +42,15 @@ def run(output_dir, n_ep=10, out_freq=2, plot=True):
         if i % out_freq == 0:
             avg_scores.append(np.mean(episodic_scores))
 
-    pd.DataFrame(action_history,
-                 columns=range(0, env.action_space.n),
-                 dtype=np.int).to_csv(output_dir+"actions_hist.csv")
+    #pd.DataFrame(action_history,
+    #             columns=range(0, env.action_space.n),
+    #             dtype=np.int).to_csv(output_dir+"actions_hist.csv")
 
     if plot:
         utils.plot_reward(avg_scores,
                           n_ep,
                           title='Random Policy',
                           output_dir=output_dir)
-
-    print(('\nBest Average Reward over %d Episodes: ' %
-           out_freq), np.max(avg_scores))
 
 
 if __name__ == "__main__":

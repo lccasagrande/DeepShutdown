@@ -19,8 +19,8 @@ class BatsimHandler:
     WORKLOAD_JOB_SEPARATOR = "!"
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
-    PLATFORM = "platform_2.xml"
-    WORKLOAD = "nantes_2.json"
+    PLATFORM = "platform_10.xml"
+    WORKLOAD = "nantes_1.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results"
@@ -87,8 +87,10 @@ class BatsimHandler:
         self.network.close()
         self.running_simulation = False
         if self._simulator_process is not None:
+            time.sleep(0.5)
             self._simulator_process.kill()
             self._simulator_process.wait()
+            time.sleep(0.5)
             self._simulator_process = None
 
     def start(self):
@@ -111,8 +113,10 @@ class BatsimHandler:
         if len(resources) == 0:  # Handle VOID Action
             self.sched_manager.delay_first_job(self.now())
         else:
-            self.sched_manager.allocate_first_job(
-                resources, self.now())
+            job = self.sched_manager.allocate_first_job(resources, self.now())
+            self.protocol_manager.start_job(job.id,  job.allocation)
+            self.resource_manager.set_state(job.allocation, Resource.State.COMPUTING)
+            self.sched_manager.on_job_scheduled(job, self.now())
 
         # All jobs in the queue has to be scheduled or delayed
         if self.sched_manager.has_work():
@@ -122,7 +126,7 @@ class BatsimHandler:
             self.protocol_manager.wake_me_up_at(self.now() + 10)
             self._alarm_is_set = True
 
-        self._schedule_gantt_jobs()
+        #self._schedule_gantt_jobs()
 
         self._wait_state_change()
 
@@ -627,6 +631,7 @@ class Resource:
         self.hw = hw
         self.max_watt = self.hw[Resource.PowerState.NORMAL]['watt_comp']
         self.min_watt = self.hw[Resource.PowerState.SHUT_DOWN]['watt_idle']
+        self.max_speed = self.hw[Resource.PowerState.NORMAL]['speed']
 
     @staticmethod
     def from_xml(id, data):
@@ -695,8 +700,8 @@ class ResourceManager:
         assert isinstance(resources, dict)
         self.nb_resources = len(resources)
         self.resources = resources
-        self.max_cost_to_compute = max(self.resources.items(), key=(
-            lambda item: item[1].max_cost_to_compute))[1].max_cost_to_compute
+        self.max_watt = max(self.resources.items(), key=(lambda item: item[1].max_watt))[1].max_watt
+        self.max_speed = max(self.resources.items(), key=(lambda item: item[1].max_speed))[1].max_speed
 
     @property
     def nb_resources_unused(self):
@@ -836,6 +841,7 @@ class SchedulerManager():
         except:
             self.jobs_queue.appendleft(job)
             raise
+        return job
 
     def get_first_job_walltime(self):
         if len(self.jobs_queue) == 0:
