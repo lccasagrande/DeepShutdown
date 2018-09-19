@@ -105,12 +105,12 @@ class GridProcessor(Processor):
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(32, (5, 5), strides=(1, 1), data_format="channels_last"))
+    model.add(Convolution2D(64, (5, 5), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
-    model.add(Convolution2D(64, (1, 1), strides=(1, 1), data_format="channels_last"))
+    model.add(Convolution2D(128, (1, 1), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
     model.add(Flatten())
-    model.add(Dense(512))
+    model.add(Dense(1024))
     model.add(Activation('relu'))
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
@@ -121,7 +121,7 @@ def build_model(output_shape, input_shape):
 if __name__ == "__main__":
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
-    name = "dqn_keras"
+    name = "dqn_keras_2"
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
@@ -162,7 +162,7 @@ if __name__ == "__main__":
         'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=3500000,log_interval=10000, visualize=False)
+    dqn.fit(env, callbacks=callbacks, nb_steps=3000000,log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
