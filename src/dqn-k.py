@@ -9,7 +9,7 @@ import gym_grid.envs.grid_env as g
 import keras.backend as K
 from keras.models import Sequential
 from keras.callbacks import TensorBoard
-from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, GRU
+from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, GRU, Dropout
 from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from dqn_utils import DQNAgent
@@ -107,11 +107,14 @@ def build_model(output_shape, input_shape):
     model.add(Permute((1, 2, 3), input_shape=input_shape))
     model.add(Convolution2D(32, (5, 5), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
+    model.add(Dropout(.4))
     model.add(Convolution2D(64, (1, 1), strides=(1, 1), data_format="channels_last"))
     model.add(Activation('relu'))
+    model.add(Dropout(.4))
     model.add(Flatten())
     model.add(Dense(512))
     model.add(Activation('relu'))
+    model.add(Dropout(.4))
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
     print(model.summary())
