@@ -10,11 +10,11 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.seed()
-        self.simulator = BatsimHandler(output_freq=1)
+        self.simulator = BatsimHandler()
         self._update_state()
         self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
+        self.max_waiting_time = 360
 
     @property
     def max_time(self):
@@ -22,51 +22,35 @@ class GridEnv(gym.Env):
 
     @property
     def max_speed(self):
-        return self.simulator.resource_manager.max_speed
+        return self.simulator.max_resource_speed
     
     @property
-    def nb_res(self):
-        return self.simulator.nb_resources
-
-    @property
-    def nb_res_properties(self):
-        return 4
-
-    @property
-    def max_watt(self):
-        return self.simulator.resource_manager.max_watt
+    def max_energy_consumption(self):
+        return self.simulator.max_energy_consumption
+    
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
 
         alloc_resources = self._prepare_input(action)
 
-        # get reward metrics
-        energy_consumed_est = self.simulator.resource_manager.estimate_energy_consumption(
-            alloc_resources)
-        #energy_consumed_est = float(energy_consumed_est) / self.simulator.resource_manager.max_cost_to_compute
+        energy_consumed_est = self.simulator.estimate_energy_consumption(alloc_resources)
+        energy_consumed_est /= self.max_energy_consumption
 
-        wait_time = self.simulator.sched_manager.get_first_job_wait_time()
-       # expected_runtime = self.simulator.sched_manager.get_first_job_walltime()
-        #expected_turnaround = max((wait_time + expected_runtime) / expected_runtime, 1)
 
-        # schedule first job
+        queue_jobs = self.simulator.nb_jobs_waiting + self.simulator.nb_jobs_in_queue
+        queue_jobs = queue_jobs - 1 if action != 0 else queue_jobs
+        queue_load = min(self.simulator.nb_resources, queue_jobs) / self.simulator.nb_resources
+        waiting_time = min(self.max_waiting_time, int(self.simulator.lookup_first_job().waiting_time)) / self.max_waiting_time
+
+        reward = -1 * (energy_consumed_est + waiting_time + .5*queue_load) / 3
+        #reward = -1 * int(self.simulator.lookup_first_job().waiting_time)
+
         self.simulator.schedule_job(alloc_resources)
 
         self._update_state()
 
-        #nb_res = self.simulator.resource_manager.nb_resources
-        jobs_waiting = self.simulator.sched_manager.nb_jobs_waiting
-        #load = min(nb_res, jobs_waiting) / nb_res
-
         done = not self.simulator.running_simulation
-
-        #energy_consumed_est = -1*energy_consumed_est
-        #load = -1*load
-        #bdslowdown = 1 - min(expected_turnaround, 2)
-
-        reward = -1 * (energy_consumed_est + jobs_waiting)
-        #reward = (energy_consumed_est + bdslowdown + load) / 3
 
         return self.state, reward, done, {}
 
@@ -96,24 +80,7 @@ class GridEnv(gym.Env):
         return [] if action == 0 else [action-1]
 
     def _update_state(self):
-        resources = self.simulator.resource_manager.get_resources()
-        gantt = self.simulator.sched_manager.get_gantt(with_queue=False)
-        state = []
-        for resource in resources:
-            speed, w_idle, w_comp = resource.get_hw()
-            res_state = 1 if resource.state == Resource.State.COMPUTING else 0
-            res_properties = [speed, w_idle, w_comp, res_state]
-            res_queue = [job.remaining_time if job is not None else 0 for job in gantt[resource.id]]
-            state.append(res_properties + res_queue)
-
-        jobs = np.zeros(shape=len(state[0]))
-        jobs_queue = self.simulator.sched_manager.lookup_jobs_queue(5)
-        if jobs_queue != None:
-            for i, j in enumerate(jobs_queue):
-                jobs[i] = j.requested_time
-
-        state.append(jobs)
-        self.state = np.array(state, copy=False, subok=True)
+        self.state = self.simulator.current_state
 
     def _get_action_space(self):
         return spaces.Discrete(self.simulator.nb_resources+1)

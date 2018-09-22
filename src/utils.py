@@ -9,6 +9,7 @@ import plotly.tools as tools
 import sys
 import time as t
 import csv
+import os, shutil
 #sns.set_style("white")
 
 #def plot_action_values(V):
@@ -23,6 +24,12 @@ import csv
 #	plt.title('State-Value Function')
 #	plt.show()
 
+
+def clean_or_create_dir(dir):
+    if os.path.exists(dir):
+        shutil.rmtree(dir, ignore_errors=True)
+    
+    os.makedirs(dir)
 
 def export_rewards(n_ep, avg_scores, output_dir):
     x, y = np.linspace(0, n_ep, len(avg_scores),
