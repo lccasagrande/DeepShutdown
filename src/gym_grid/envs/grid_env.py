@@ -4,7 +4,7 @@ from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
 from sklearn.preprocessing import MinMaxScaler
-from .batsim.batsim import BatsimHandler, Resource, InsufficientResourcesError, UnavailableResourcesError
+from .batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
 import numpy as np
 
 
@@ -26,7 +26,7 @@ class GridEnv(gym.Env):
     
     @property
     def max_energy_consumption(self):
-        return self.simulator.max_energy_consumption
+        return self.simulator.max_resource_energy_cost
     
 
     def step(self, action):
@@ -44,7 +44,6 @@ class GridEnv(gym.Env):
         waiting_time = min(self.max_waiting_time, int(self.simulator.lookup_first_job().waiting_time)) / self.max_waiting_time
 
         reward = -1 * (energy_consumed_est + waiting_time + .5*queue_load) / 3
-        #reward = -1 * int(self.simulator.lookup_first_job().waiting_time)
 
         self.simulator.schedule_job(alloc_resources)
 
