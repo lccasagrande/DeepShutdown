@@ -14,7 +14,7 @@ class GridEnv(gym.Env):
         self._update_state()
         #self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
-        self.max_waiting_time = 360
+        self.max_slowdown = 1
 
     @property
     def max_time(self):
@@ -41,16 +41,14 @@ class GridEnv(gym.Env):
         queue_jobs = queue_jobs - 1 if action != 0 else queue_jobs
         queue_load = min(self.simulator.nb_resources,
                          queue_jobs) / self.simulator.nb_resources
-        waiting_time = min(self.max_waiting_time, int(
-            self.simulator.lookup_first_job().waiting_time)) / self.max_waiting_time
+
+        first_job = self.simulator.lookup_first_job()
+        slowdown = min(self.max_slowdown, first_job.waiting_time / first_job.requested_time)
 
         try:
-            self.simulator.schedule_job(alloc_resources)
             reward = -1 * (self.simulator.nb_jobs_in_queue +
                            self.simulator.nb_jobs_running +
                            self.simulator.nb_jobs_waiting)
-            # reward = -1 * (energy_consumed_est +
-            #               waiting_time + .5*queue_load) / 3
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -1
 

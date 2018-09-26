@@ -9,7 +9,7 @@ import gym_grid.envs.grid_env as g
 import keras.backend as K
 from keras.models import Sequential
 from keras.callbacks import TensorBoard
-from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, GRU, Dropout
+from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, GRU, Dropout, BatchNormalization
 from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from dqn_utils import DQNAgent
@@ -20,38 +20,38 @@ from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
 class CustomGreedyQPolicy(Policy):
+    def __init__(self, nb_res):
+        self.nb_res = nb_res
+
     def select_action(self, q_values, state):
         actions = [0]
         q_max = q_values[0]
+        resources = state[-1][1][0:self.nb_res]
 
         for i in range(q_values.shape[0]-1):
-            if state[0][i][3] != 0:
-                continue
-            act = i+1
-            if q_values[act] > q_max:
-                q_max = q_values[act]
-                actions = [act]
-            elif q_values[act] == q_max:
-                actions.append(act)
+            if resources[i][0] == 0.:
+                act = i+1
+                if q_values[act] > q_max:
+                    q_max = q_values[act]
+                    actions = [act]
+                elif q_values[act] == q_max:
+                    actions.append(act)
 
         return random.choice(actions)
 
 
 class CustomEpsGreedyQPolicy(Policy):
-    def __init__(self, eps=.1):
+    def __init__(self, nb_res, eps=.1):
         super(CustomEpsGreedyQPolicy, self).__init__()
         self.eps = eps
+        self.nb_res = nb_res
 
     def select_action(self, q_values, state):
-        assert q_values.ndim == 1
-
         if np.random.uniform() >= self.eps:
             return self.select_best_action(q_values, state)
-            #act = np.amax(np.take(q_values, valid_actions))
-            #valid_actions = np.where(q_values == act)[0]
 
-        valid_actions = [
-            0] + [(i+1) for i in range(q_values.shape[0]-1) if state[0][i][3] == 0]
+        resources = state[-1][1][0:self.nb_res]
+        valid_actions = [0] + [i+1 for i in range(q_values.shape[0]-1) if resources[i][0] == 0.]
         return random.choice(valid_actions)
 
     def get_config(self):
@@ -63,58 +63,100 @@ class CustomEpsGreedyQPolicy(Policy):
         actions = [0]
         q_max = q_values[0]
 
+        resources = state[-1][1][0:self.nb_res]
+
         for i in range(q_values.shape[0]-1):
-            if state[0][i][3] != 0:
-                continue
-            act = i+1
-            if q_values[act] > q_max:
-                q_max = q_values[act]
-                actions = [act]
-            elif q_values[act] == q_max:
-                actions.append(act)
+            if resources[i][0] == 0.:
+                act = i+1
+                if q_values[act] > q_max:
+                    q_max = q_values[act]
+                    actions = [act]
+                elif q_values[act] == q_max:
+                    actions.append(act)
 
         return random.choice(actions)
 
 
 class GridProcessor(Processor):
-    def __init__(self, max_time, max_speed, max_watt, input_shape, nb_res):
+    def __init__(self, job_slots, backlog, time_window, nb_res, max_slowdown, max_efficiency):
         super().__init__()
-        self.time_scaler = MinMaxScaler(feature_range=(0, 1), copy=False)
-        self.speed_scaler = MinMaxScaler(feature_range=(0, 1), copy=False)
-        self.energy_scaler = MinMaxScaler(feature_range=(0, 1), copy=False)
-        self.time_scaler.fit([[0], [max_time]])
-        self.speed_scaler.fit([[0], [max_speed]])
-        self.energy_scaler.fit([[0], [max_watt]])
+        self.max_slowdown = max_slowdown
+        self.max_efficiency = max_efficiency
+        self.time_window = time_window
+        self.job_slots = job_slots
+        self.backlog = backlog
         self.nb_res = nb_res
-        self.input_shape = input_shape
+        self.output_shape = (self.time_window, nb_res +
+                             self.job_slots + self.backlog, 1)
 
     def process_state_batch(self, batch):
         return np.asarray([v[0] for v in batch])
 
     def process_observation(self, observation):
-        self.speed_scaler.transform(
-            observation[:self.nb_res, 0].reshape(-1, 1))
-        self.energy_scaler.transform(observation[:self.nb_res, 1:3])
-        self.time_scaler.transform(observation[:self.nb_res, 4:])
-        self.time_scaler.transform(observation[-1, :].reshape(-1, 1))
-        observation = observation.reshape(self.input_shape)
-        assert observation.ndim == 3  # (height, width, channel)
-        return observation
+        nb_resources = len(observation['gantt'])
+        assert nb_resources == self.nb_res
+        gantt = observation['gantt']
+        jobs_in_queue = observation['job_queue']['jobs']
+        nb_jobs_in_queue = observation['job_queue']['nb_jobs_in_queue']
+        nb_jobs_waiting = observation['job_queue']['nb_jobs_waiting']
+
+        obs = np.zeros(
+            shape=(self.time_window, nb_resources + self.job_slots + self.backlog), dtype=np.float)
+
+        for res, resource_space in enumerate(gantt):
+            job = resource_space['queue'][0]
+            obs[0][res] = resource_space['resource'].cost_to_compute / \
+                self.max_efficiency
+            if job != None:
+                for tim in range(1, min(self.time_window, int(round(job.remaining_time)))):
+                    obs[tim][res] = 1
+
+        job_slots = min(self.job_slots, nb_jobs_in_queue)
+        for job_slot in range(job_slots):
+            job = jobs_in_queue[job_slot]
+            obs[0][job_slot+nb_resources] = min(
+                self.max_slowdown, job.waiting_time / job.requested_time)
+            for tim in range(1, min(self.time_window, job.requested_time)):
+                obs[tim][job_slot+nb_resources] = 1
+
+        nb_jobs_in_queue -= len(jobs_in_queue) + nb_jobs_waiting
+        backlog_slot = nb_resources + self.job_slots
+        window = 0
+        for tim in range(min(self.time_window*self.backlog, nb_jobs_in_queue)):
+            if tim == self.time_window:
+                window = 0
+                backlog_slot += 1
+            obs[window][backlog_slot] = 1
+            window += 1
+
+        obs = obs.reshape(obs.shape + (1,))
+        assert obs.ndim == 3  # (height, width, channel)
+        return obs
 
 
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(32, (5, 5), strides=(1, 1), data_format="channels_last"))
+    model.add(Convolution2D(16, (8, 8), strides=(
+        4, 4), data_format="channels_last"))
+    model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.4))
-    model.add(Convolution2D(64, (1, 1), strides=(1, 1), data_format="channels_last"))
+    model.add(Dropout(.2))
+    model.add(Convolution2D(32, (4, 4), strides=(
+        2, 2), data_format="channels_last"))
+    model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.4))
+    model.add(Dropout(.2))
+    model.add(Convolution2D(32, (2, 2), strides=(
+        1, 1), data_format="channels_last"))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Dropout(.2))
     model.add(Flatten())
-    model.add(Dense(512))
+    model.add(Dense(256))
+    model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.4))
+    model.add(Dropout(.2))
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
     print(model.summary())
@@ -127,26 +169,28 @@ if __name__ == "__main__":
     name = "dqn_keras_2"
     np.random.seed(123)
     env.seed(123)
+    processor = GridProcessor(job_slots=117,
+                              backlog=1,
+                              time_window=128,
+                              nb_res=10,
+                              max_slowdown=env.max_slowdown,
+                              max_efficiency=env.max_energy_consumption)
+
     nb_actions = env.action_space.n
-    input_shape = env.observation_space.shape + (1,)  # add channel
 
-    model = build_model(nb_actions, input_shape)
+    model = build_model(nb_actions, processor.output_shape)
 
-    # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
-    # even the metrics!
-    memory = SequentialMemory(limit=100000, window_length=1)
-    processor = GridProcessor(
-        env.max_time, env.max_speed, env.max_watt, input_shape, env.nb_res)
+    memory = SequentialMemory(limit=50000, window_length=6)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
     # the agent initially explores the environment (high eps) and then gradually sticks to what it knows
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
-    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(), attr='eps', value_max=1., value_min=.1, value_test=.05,
+    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(10), attr='eps', value_max=1., value_min=.1, value_test=.05,
                                   nb_steps=1000000)
 
-    test_policy = CustomGreedyQPolicy()
+    test_policy = CustomGreedyQPolicy(10)
 
     # The trade-off between exploration and exploitation is difficult and an on-going research topic.
     # If you want, you can experiment with the parameters or use a different policy. Another popular one
@@ -155,7 +199,7 @@ if __name__ == "__main__":
     # Feel free to give it a try!
 
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
-                   processor=processor, nb_steps_warmup=50000, gamma=1, target_model_update=10000,
+                   processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
                    train_interval=4, delta_clip=1.)
     dqn.compile(Adam(lr=.00025), metrics=['mae'])
 
@@ -165,10 +209,11 @@ if __name__ == "__main__":
         'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=3000000,log_interval=10000, visualize=False)
+    dqn.fit(env, callbacks=callbacks, nb_steps=3000000,
+            log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
     time.sleep(10)
-    #dqn.load_weights('weights/dqn_keras_1_weights_200000.h5f')
+    # dqn.load_weights('weights/dqn_keras_1_weights_200000.h5f')
     dqn.test(env, nb_episodes=1, visualize=True)

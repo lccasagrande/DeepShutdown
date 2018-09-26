@@ -17,12 +17,12 @@ from .network import BatsimProtocolHandler
 
 class BatsimHandler:
     PLATFORM = "platform_10.xml"
-    WORKLOAD = "nantes_2.json"
+    WORKLOAD = "nantes_433.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, queue_slots=10, time_window=1, verbose='quiet'):
+    def __init__(self, queue_slots=117, time_window=1, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
