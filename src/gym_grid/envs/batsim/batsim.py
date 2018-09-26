@@ -11,18 +11,18 @@ from enum import Enum
 from copy import deepcopy
 from collections import deque
 from .resource import Resource, ResourceManager
-from .scheduler import  SchedulerManager
-from .network import BatsimProtocolHandler, NetworkHandler
+from .scheduler import SchedulerManager
+from .network import BatsimProtocolHandler
 
 
 class BatsimHandler:
-    PLATFORM = "platform_2.xml"
+    PLATFORM = "platform_10.xml"
     WORKLOAD = "nantes_2.json"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, time_window=2, verbose='information'):
+    def __init__(self, queue_slots=10, time_window=1, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -37,12 +37,11 @@ class BatsimHandler:
         self._verbose = verbose
         self.time_window = time_window
         self.max_walltime = self._get_max_walltime(self._workload)
-
         self._simulator_process = None
         self.running_simulation = False
         self.nb_simulation = 0
-        self.network = NetworkHandler(BatsimHandler.SOCKET_ENDPOINT)
-        self.protocol_manager = BatsimProtocolHandler()
+        self.queue_slots = queue_slots
+        self.protocol_manager = BatsimProtocolHandler(BatsimHandler.SOCKET_ENDPOINT)
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.sched_manager = SchedulerManager(self.nb_resources, time_window)
         self._reset_vars()
@@ -89,19 +88,26 @@ class BatsimHandler:
 
     @property
     def current_state(self):
-        state = []
+        resources_states = []
         resources = self.resource_manager.get_resources()
         for i in range(self.nb_resources):
-            state.append([resources[i]] + [self.sched_manager.gantt[i]])
+            resource_state = dict(
+                resource=resources[i],
+                queue=self.sched_manager.gantt[i]
+            )
+            resources_states.append(resource_state)
 
         jobs = list(self.sched_manager.jobs_queue)
+        queue_sz = len(jobs)
         job_queue = dict(
-            jobs=jobs[0:min(len(jobs), self.time_window)],
-            lenght=len(jobs)
+            jobs=jobs[0:min(queue_sz, self.queue_slots)],
+            nb_jobs_in_queue=self.sched_manager.nb_jobs_in_queue,
+            nb_jobs_waiting=self.sched_manager.nb_jobs_waiting
         )
-        state.append(job_queue)
 
-        return np.array(deepcopy(state))
+        state = dict(gantt=deepcopy(resources_states),
+                     job_queue=deepcopy(job_queue))
+        return state
 
     @property
     def current_time(self):
@@ -114,10 +120,10 @@ class BatsimHandler:
         return self.resource_manager.estimate_energy_consumption(res_ids)
 
     def close(self):
-        self.network.close()
+        self.protocol_manager.close()
         self.running_simulation = False
         if self._simulator_process is not None:
-            self._simulator_process.kill()
+            self._simulator_process.terminate()
             self._simulator_process.wait()
             self._simulator_process = None
 
@@ -125,7 +131,7 @@ class BatsimHandler:
         self._reset_vars()
         self.nb_simulation += 1
         self._simulator_process = self._start_simulator()
-        self.network.bind()
+        self.protocol_manager.start()
         self._wait_state_change()
         if not self.running_simulation:
             raise ConnectionError(
@@ -173,7 +179,7 @@ class BatsimHandler:
                                                                           self._config,
                                                                           output_path)
 
-        return subprocess.Popen("exec " + cmd, stdout=subprocess.PIPE, shell=True)
+        return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
 
     def _reset_vars(self):
         self.metrics = {}
@@ -209,7 +215,7 @@ class BatsimHandler:
 
     def _handle_simulation_ends(self, data):
         self.protocol_manager.acknowledge()
-        self._send_events()
+        self.protocol_manager.send_events()
         self.running_simulation = False
         self.metrics["scheduling_time"] = float(
             data["scheduling_time"])
@@ -273,54 +279,16 @@ class BatsimHandler:
             "schedule_metrics")
         data.to_csv(fn, index=False)
 
-    def _send_events(self):
-        msg = self.protocol_manager.flush()
-        assert msg is not None, "Cannot send a message if no event ocurred."
-        self.network.send(msg)
-
-    def _read_events(self):
-        def get_msg():
-            msg = None
-            while msg is None:
-                msg = self.network.recv(blocking=not self.running_simulation)
-                if msg is None:
-                    raise ValueError(
-                        "Batsim is not responding (maybe deadlocked)")
-            return BatsimMessage.from_json(msg)
-
-        msg = get_msg()
-
-        self.protocol_manager.update_time(msg.now)
-
-        for event in msg.events:
-            self._handle_batsim_events(event)
 
     def _update_state(self):
-        if self.protocol_manager.has_events():
-            self._send_events()
+        self.protocol_manager.send_events()
 
-        self._read_events()
+        events = self.protocol_manager.read_events(blocking=not self.running_simulation)
+        for event in events:
+            self._handle_batsim_events(event)
 
         self.sched_manager.update_jobs_progress(self.current_time)
 
         # Remember to always ack
         if self.running_simulation:
             self.protocol_manager.acknowledge()
-
-
-class BatsimEvent:
-    def __init__(self, timestamp, type, data):
-        self.timestamp = timestamp
-        self.type = type
-        self.data = data
-
-
-class BatsimMessage:
-    def __init__(self, now, events):
-        self.now = now
-        self.events = [BatsimEvent(
-            event['timestamp'], event['type'], event['data']) for event in events]
-
-    @staticmethod
-    def from_json(data):
-        return BatsimMessage(data['now'], data['events'])

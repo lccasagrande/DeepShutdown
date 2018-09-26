@@ -12,7 +12,7 @@ class GridEnv(gym.Env):
     def __init__(self):
         self.simulator = BatsimHandler()
         self._update_state()
-        self.observation_space = self._get_observation_space()
+        #self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.max_waiting_time = 360
 
@@ -23,29 +23,36 @@ class GridEnv(gym.Env):
     @property
     def max_speed(self):
         return self.simulator.max_resource_speed
-    
+
     @property
     def max_energy_consumption(self):
         return self.simulator.max_resource_energy_cost
-    
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
 
         alloc_resources = self._prepare_input(action)
 
-        energy_consumed_est = self.simulator.estimate_energy_consumption(alloc_resources)
+        energy_consumed_est = self.simulator.estimate_energy_consumption(
+            alloc_resources)
         energy_consumed_est /= self.max_energy_consumption
-
 
         queue_jobs = self.simulator.nb_jobs_waiting + self.simulator.nb_jobs_in_queue
         queue_jobs = queue_jobs - 1 if action != 0 else queue_jobs
-        queue_load = min(self.simulator.nb_resources, queue_jobs) / self.simulator.nb_resources
-        waiting_time = min(self.max_waiting_time, int(self.simulator.lookup_first_job().waiting_time)) / self.max_waiting_time
+        queue_load = min(self.simulator.nb_resources,
+                         queue_jobs) / self.simulator.nb_resources
+        waiting_time = min(self.max_waiting_time, int(
+            self.simulator.lookup_first_job().waiting_time)) / self.max_waiting_time
 
-        reward = -1 * (energy_consumed_est + waiting_time + .5*queue_load) / 3
-
-        self.simulator.schedule_job(alloc_resources)
+        try:
+            self.simulator.schedule_job(alloc_resources)
+            reward = -1 * (self.simulator.nb_jobs_in_queue +
+                           self.simulator.nb_jobs_running +
+                           self.simulator.nb_jobs_waiting)
+            # reward = -1 * (energy_consumed_est +
+            #               waiting_time + .5*queue_load) / 3
+        except (InsufficientResourcesError, UnavailableResourcesError):
+            reward = -1
 
         self._update_state()
 
@@ -85,9 +92,10 @@ class GridEnv(gym.Env):
         return spaces.Discrete(self.simulator.nb_resources+1)
 
     def _get_observation_space(self):
-        obs_space = spaces.Box(low=0,
-                               high=self.max_time,
-                               shape=self.state.shape,
-                               dtype=np.int16)
-
-        return obs_space
+        raise NotImplementedError()
+        # obs_space = spaces.Box(low=0,
+        #                       high=self.max_time,
+        #                       shape=self.state.shape,
+        #                       dtype=np.int16)
+#
+        # return obs_space

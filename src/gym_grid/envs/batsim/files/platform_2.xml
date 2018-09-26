@@ -11,7 +11,7 @@
       <prop id="watt_per_state" value="10:10,150.0:210.0"/>
       <prop id="watt_off" value="10"/>
     </host>
-    <host id="1" pstate="1" speed="0,5.Mf">
+    <host id="1" pstate="1" speed="0,4.Mf">
       <prop id="watt_per_state" value="10:10,150.0:210.0"/>
       <prop id="watt_off" value="10"/>
     </host>

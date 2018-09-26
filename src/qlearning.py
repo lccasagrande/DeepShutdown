@@ -123,7 +123,7 @@ def run(output_dir, n_ep=250, out_freq=10, plot=True, alpha=.1, gamma=.99):
         actions.append(act)
         if done:
             ac = "-".join(str(act) for act in actions)
-            print("\nTest Score: {:7} - Actions: {}".format(score, actions))
+            print("\nTest Score: {:7} - Actions: {}".format(score, ac))
             break
 
     if plot:

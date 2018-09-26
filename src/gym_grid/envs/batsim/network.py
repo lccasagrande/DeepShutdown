@@ -8,15 +8,47 @@ class BatsimProtocolHandler:
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
 
-    def __init__(self):
+    def __init__(self, socket_endpoint):
+        self._network = NetworkHandler(socket_endpoint)
+        self._initialize_vars()
+
+    def read_events(self, blocking):
+        def get_msg():
+            msg = None
+            while msg is None:
+                msg = self._network.recv(blocking=blocking)
+                if msg is None:
+                    raise ValueError(
+                        "Batsim is not responding (maybe deadlocked)")
+            return BatsimMessage.from_json(msg)
+
+        msg = get_msg()
+
+        self.update_time(msg.now)
+
+        return msg.events
+
+    def send_events(self):
+        if not self.has_events():
+            return 
+
+        msg = self._flush()
+        assert msg is not None, "Cannot send a message if no event ocurred."
+        self._network.send(msg)
+
+    def start(self):
+        self._initialize_vars()
+        self._network.bind()
+
+    def close(self):
+        self._network.close()
+
+    def _initialize_vars(self):
         self.events = []
         self.current_time = 0
         self._ack = False
 
-    def flush(self):
-        if not self.has_events():
-            return None
-
+    def _flush(self):
         self._ack = False
 
         if len(self.events) > 0:
@@ -302,6 +334,8 @@ class NetworkHandler:
         self.verbose = verbose
         self.timeout = timeout
         self.context = zmq.Context()
+        #self.context.setsockopt(zmq.REQ_RELAXED, True)
+        #self.context.setsockopt(zmq.REQ_CORRELATE, True)
         self.connection = None
         self.type = type
 
@@ -334,7 +368,6 @@ class NetworkHandler:
     def bind(self):
         assert not self.connection, "Connection already open"
         self.connection = self.context.socket(self.type)
-
         self.connection.bind(self.socket_endpoint)
 
     def connect(self):
@@ -351,3 +384,21 @@ class NetworkHandler:
         if self.connection:
             self.connection.close()
             self.connection = None
+
+
+class BatsimEvent:
+    def __init__(self, timestamp, type, data):
+        self.timestamp = timestamp
+        self.type = type
+        self.data = data
+
+
+class BatsimMessage:
+    def __init__(self, now, events):
+        self.now = now
+        self.events = [BatsimEvent(
+            event['timestamp'], event['type'], event['data']) for event in events]
+
+    @staticmethod
+    def from_json(data):
+        return BatsimMessage(data['now'], data['events'])

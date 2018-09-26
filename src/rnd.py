@@ -10,10 +10,12 @@ import shutil
 from random import choice
 import time as t
 from collections import defaultdict, deque
+from policy import RandomPolicy
+from deep_rm import Processor
 
-
-def sample_valid_action(env, state):
-    valid_actions = [0] + [(i+1) for i in range(env.action_space.n-1) if state[i][0].is_available]
+def sample_valid_action(nb_actions, state):
+    gantt = state['gantt']
+    valid_actions = [0] + [gantt[i]['resource'].id + 1 for i in range(nb_actions-1) if gantt[i]['resource'].is_available]
     return choice(valid_actions)
 
 
@@ -21,15 +23,18 @@ def run(output_dir, n_ep=1, out_freq=100, plot=False):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
+    policy = RandomPolicy(env.action_space.n)
     action_history = []
     t_start = t.time()
+    for_test = Processor(env.action_space.n-1)
     for i in range(1, n_ep + 1):
         score = 0
         epi_actions = np.zeros(env.action_space.n)
         utils.print_progress(t_start, i, n_ep)
         state = env.reset()
         while True:
-            act = sample_valid_action(env, state)
+            deeprm_state = for_test.process_observation(state)
+            act = policy.select_valid_action(state)
             epi_actions[act] += 1
             state, reward, done, _ = env.step(act)
             score += reward
