@@ -9,7 +9,7 @@ import gym_grid.envs.grid_env as g
 import keras.backend as K
 from keras.models import Sequential
 from keras.callbacks import TensorBoard
-from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, GRU, Dropout, BatchNormalization
+from keras.layers import Dense, Activation, Flatten, Convolution2D, BatchNormalization, Permute, GRU, Dropout
 from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from dqn_utils import DQNAgent
@@ -19,32 +19,16 @@ from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
-class CustomGreedyQPolicy(Policy):
-    def __init__(self, nb_res):
-        self.nb_res = nb_res
-
-    def select_action(self, q_values, state):
-        actions = [0]
-        q_max = q_values[0]
-        resources = state[-1][1][0:self.nb_res]
-
-        for i in range(q_values.shape[0]-1):
-            if resources[i][0] == 0.:
-                act = i+1
-                if q_values[act] > q_max:
-                    q_max = q_values[act]
-                    actions = [act]
-                elif q_values[act] == q_max:
-                    actions.append(act)
-
-        return random.choice(actions)
-
-
 class CustomEpsGreedyQPolicy(Policy):
     def __init__(self, nb_res, eps=.1):
         super(CustomEpsGreedyQPolicy, self).__init__()
         self.eps = eps
         self.nb_res = nb_res
+
+    def get_config(self):
+        config = super(CustomEpsGreedyQPolicy, self).get_config()
+        config['eps'] = self.eps
+        return config
 
     def select_action(self, q_values, state):
         if np.random.uniform() >= self.eps:
@@ -53,11 +37,6 @@ class CustomEpsGreedyQPolicy(Policy):
         resources = state[-1][1][0:self.nb_res]
         valid_actions = [0] + [i+1 for i in range(q_values.shape[0]-1) if resources[i][0] == 0.]
         return random.choice(valid_actions)
-
-    def get_config(self):
-        config = super(CustomEpsGreedyQPolicy, self).get_config()
-        config['eps'] = self.eps
-        return config
 
     def select_best_action(self, q_values, state):
         actions = [0]
@@ -75,6 +54,14 @@ class CustomEpsGreedyQPolicy(Policy):
                     actions.append(act)
 
         return random.choice(actions)
+
+
+class CustomGreedyQPolicy(CustomEpsGreedyQPolicy):
+    def __init__(self, nb_res):
+        super(CustomGreedyQPolicy, self).__init__(nb_res, -1)
+
+    def select_action(self, q_values, state):
+        return super(CustomGreedyQPolicy, self).select_best_action(q_values, state)
 
 
 class GridProcessor(Processor):
@@ -137,23 +124,20 @@ class GridProcessor(Processor):
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(16, (8, 8), strides=(
-        4, 4), data_format="channels_last"))
+    model.add(Convolution2D(32, (8, 8), strides=(2, 2), data_format="channels_last"))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(.2))
-    model.add(Convolution2D(32, (4, 4), strides=(
-        2, 2), data_format="channels_last"))
+    model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(.2))
-    model.add(Convolution2D(32, (2, 2), strides=(
-        1, 1), data_format="channels_last"))
+    model.add(Convolution2D(64, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(.2))
     model.add(Flatten())
-    model.add(Dense(256))
+    model.add(Dense(128))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(.2))
@@ -166,7 +150,7 @@ def build_model(output_shape, input_shape):
 if __name__ == "__main__":
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
-    name = "dqn_keras_2"
+    name = "dqn_keras_5"
     np.random.seed(123)
     env.seed(123)
     processor = GridProcessor(job_slots=117,
@@ -180,7 +164,7 @@ if __name__ == "__main__":
 
     model = build_model(nb_actions, processor.output_shape)
 
-    memory = SequentialMemory(limit=15000, window_length=6)
+    memory = SequentialMemory(limit=50000, window_length=12)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
@@ -188,7 +172,7 @@ if __name__ == "__main__":
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
     policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(10), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=1000000)
+                                  nb_steps=200000)
 
     test_policy = CustomGreedyQPolicy(10)
 
@@ -201,7 +185,7 @@ if __name__ == "__main__":
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
                    processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
                    train_interval=4, delta_clip=1.)
-    dqn.compile(Adam(lr=.00025), metrics=['mae'])
+    dqn.compile(Adam(lr=.00001), metrics=['mae','mse'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
@@ -209,11 +193,11 @@ if __name__ == "__main__":
         'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=3000000,
+    dqn.fit(env, callbacks=callbacks, nb_steps=1000000,
             log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
-    dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
-    time.sleep(10)
-    # dqn.load_weights('weights/dqn_keras_1_weights_200000.h5f')
-    dqn.test(env, nb_episodes=1, visualize=True)
+    #dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
+    #time.sleep(10)
+    #dqn.load_weights('weights/dqn_keras_4_1_weights_300000.h5f')
+    #dqn.test(env, nb_episodes=1, visualize=True)

@@ -46,9 +46,8 @@ class GridEnv(gym.Env):
         slowdown = min(self.max_slowdown, first_job.waiting_time / first_job.requested_time)
 
         try:
-            reward = -1 * (self.simulator.nb_jobs_in_queue +
-                           self.simulator.nb_jobs_running +
-                           self.simulator.nb_jobs_waiting)
+            self.simulator.schedule_job(alloc_resources)
+            reward = -1 * (energy_consumed_est + slowdown + .5*queue_load) / 3
         except (InsufficientResourcesError, UnavailableResourcesError):
             reward = -1
 

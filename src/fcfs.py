@@ -10,19 +10,14 @@ import shutil
 from random import choice
 import time as t
 from collections import defaultdict, deque
-from policy import RandomPolicy
-
-def sample_valid_action(nb_actions, state):
-    gantt = state['gantt']
-    valid_actions = [0] + [gantt[i]['resource'].id + 1 for i in range(nb_actions-1) if gantt[i]['resource'].is_available]
-    return choice(valid_actions)
+from policy import FirstFitPolicy
 
 
 def run(output_dir, n_ep=1, out_freq=100, plot=False):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
-    policy = RandomPolicy(env.action_space.n)
+    policy = FirstFitPolicy(env.action_space.n)
     action_history = []
     t_start = t.time()
     for i in range(1, n_ep + 1):
@@ -53,12 +48,12 @@ def run(output_dir, n_ep=1, out_freq=100, plot=False):
     if plot:
         utils.plot_reward(avg_scores,
                           n_ep,
-                          title='Random Policy',
+                          title='FCFS Policy',
                           output_dir=output_dir)
 
 
 if __name__ == "__main__":
-    output_dir = 'results/random/'
+    output_dir = 'results/fcfs/'
     utils.clean_or_create_dir(output_dir)
 
     run(output_dir)
