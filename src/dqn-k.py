@@ -127,18 +127,14 @@ def build_model(output_shape, input_shape):
     model.add(Convolution2D(32, (8, 8), strides=(2, 2), data_format="channels_last"))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.2))
     model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.2))
     model.add(Convolution2D(64, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(.2))
     model.add(Flatten())
     model.add(Dense(128))
-    model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(.2))
     model.add(Dense(output_shape))
@@ -153,28 +149,29 @@ if __name__ == "__main__":
     name = "dqn_keras_5"
     np.random.seed(123)
     env.seed(123)
+    nb_actions = env.action_space.n
+    
     processor = GridProcessor(job_slots=117,
                               backlog=1,
                               time_window=128,
-                              nb_res=10,
+                              nb_res=nb_actions-1,
                               max_slowdown=env.max_slowdown,
                               max_efficiency=env.max_energy_consumption)
 
-    nb_actions = env.action_space.n
 
     model = build_model(nb_actions, processor.output_shape)
 
-    memory = SequentialMemory(limit=50000, window_length=12)
+    memory = SequentialMemory(limit=50000, window_length=1)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
     # the agent initially explores the environment (high eps) and then gradually sticks to what it knows
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
-    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(10), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=200000)
+    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(nb_actions-1), attr='eps', value_max=1., value_min=.1, value_test=.05,
+                                  nb_steps=500000)
 
-    test_policy = CustomGreedyQPolicy(10)
+    test_policy = CustomGreedyQPolicy(nb_actions-1)
 
     # The trade-off between exploration and exploitation is difficult and an on-going research topic.
     # If you want, you can experiment with the parameters or use a different policy. Another popular one
@@ -197,7 +194,7 @@ if __name__ == "__main__":
             log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
-    #dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
+    dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
     #time.sleep(10)
     #dqn.load_weights('weights/dqn_keras_4_1_weights_300000.h5f')
     #dqn.test(env, nb_episodes=1, visualize=True)

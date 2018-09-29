@@ -46,7 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnccl2=2.2.13-1+cuda9.0 \
         libfreetype6-dev \
         libhdf5-serial-dev \
-        libpng12-dev \
+        libpng-dev \
         libzmq3-dev \
         pkg-config \
         software-properties-common \
