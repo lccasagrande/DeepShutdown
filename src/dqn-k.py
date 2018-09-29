@@ -124,10 +124,7 @@ class GridProcessor(Processor):
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(16, (4, 4), strides=(2, 2), data_format="channels_last"))
-    model.add(BatchNormalization())
-    model.add(Activation('relu'))
-    model.add(Convolution2D(16, (2, 2), strides=(1, 1)))
+    model.add(Convolution2D(16, (2, 2), strides=(1, 1), data_format="channels_last"))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Flatten())
@@ -176,7 +173,7 @@ if __name__ == "__main__":
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
                    processor=processor, nb_steps_warmup=20000, gamma=.99, target_model_update=10000,
                    train_interval=10, delta_clip=1.)
-    dqn.compile(Adam(lr=.00001), metrics=['mae','mse'])
+    dqn.compile(Adam(lr=.000001), metrics=['mae','mse'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
