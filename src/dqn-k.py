@@ -185,7 +185,7 @@ if __name__ == "__main__":
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
     dqn.fit(env, callbacks=callbacks, nb_steps=500000,
-            log_interval=10000, visualize=False)
+            log_interval=10000, visualize=False, verbose=2)
 
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
