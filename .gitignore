@@ -1,7 +1,8 @@
 # VS Code
 .vscode
 results/*
-log
+tmp
+src/test.py
 weights
 img
 

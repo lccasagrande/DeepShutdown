@@ -127,13 +127,10 @@ def build_model(output_shape, input_shape):
     model.add(Convolution2D(16, (4, 4), strides=(2, 2), data_format="channels_last"))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Convolution2D(32, (2, 2), strides=(1, 1)))
+    model.add(Convolution2D(16, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Flatten())
-    model.add(Dense(64))
-    model.add(Activation('relu'))
-    model.add(Dropout(.2))
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
     print(model.summary())
@@ -143,7 +140,7 @@ def build_model(output_shape, input_shape):
 if __name__ == "__main__":
     K.set_image_dim_ordering('tf')
     env = gym.make('grid-v0')
-    name = "dqn_keras_5"
+    name = "dqn_keras_6"
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
@@ -158,7 +155,7 @@ if __name__ == "__main__":
 
     model = build_model(nb_actions, processor.output_shape)
 
-    memory = SequentialMemory(limit=50000, window_length=1)
+    memory = SequentialMemory(limit=50000, window_length=10)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
@@ -166,7 +163,7 @@ if __name__ == "__main__":
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
     policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(nb_actions-1), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=500000)
+                                  nb_steps=200000)
 
     test_policy = CustomGreedyQPolicy(nb_actions-1)
 
@@ -177,8 +174,8 @@ if __name__ == "__main__":
     # Feel free to give it a try!
 
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
-                   processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
-                   train_interval=4, delta_clip=1.)
+                   processor=processor, nb_steps_warmup=20000, gamma=.99, target_model_update=10000,
+                   train_interval=10, delta_clip=1.)
     dqn.compile(Adam(lr=.00001), metrics=['mae','mse'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
@@ -187,7 +184,7 @@ if __name__ == "__main__":
         'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=1000000,
+    dqn.fit(env, callbacks=callbacks, nb_steps=500000,
             log_interval=10000, visualize=False)
 
     # After training is done, we save the final weights one more time.
