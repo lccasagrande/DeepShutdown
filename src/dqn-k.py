@@ -124,17 +124,14 @@ class GridProcessor(Processor):
 def build_model(output_shape, input_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(32, (8, 8), strides=(2, 2), data_format="channels_last"))
+    model.add(Convolution2D(16, (4, 4), strides=(2, 2), data_format="channels_last"))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
-    model.add(BatchNormalization())
-    model.add(Activation('relu'))
-    model.add(Convolution2D(64, (2, 2), strides=(1, 1)))
+    model.add(Convolution2D(32, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Flatten())
-    model.add(Dense(128))
+    model.add(Dense(64))
     model.add(Activation('relu'))
     model.add(Dropout(.2))
     model.add(Dense(output_shape))
@@ -150,7 +147,7 @@ if __name__ == "__main__":
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
-    
+
     processor = GridProcessor(job_slots=117,
                               backlog=1,
                               time_window=128,
@@ -161,7 +158,7 @@ if __name__ == "__main__":
 
     model = build_model(nb_actions, processor.output_shape)
 
-    memory = SequentialMemory(limit=50000, window_length=1)
+    memory = SequentialMemory(limit=150000, window_length=1)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
