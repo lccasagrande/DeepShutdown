@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
     model = build_model(nb_actions, processor.output_shape)
 
-    memory = SequentialMemory(limit=150000, window_length=1)
+    memory = SequentialMemory(limit=50000, window_length=1)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
