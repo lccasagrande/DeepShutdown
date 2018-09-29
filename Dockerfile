@@ -3,7 +3,7 @@ FROM lccasagrande/batsim:latest
 # CUDA 9.0 is not officially supported on ubuntu 18.04 yet, we use the ubuntu 17.10 repository for CUDA instead.
 RUN apt-get update && apt-get install -y --no-install-recommends gnupg2 curl ca-certificates wget && \
     wget https://developer.nvidia.com/compute/cuda/9.0/Prod/local_installers/cuda-repo-ubuntu1704-9-0-local_9.0.176-1_amd64-deb && \
-    dpkg -i cuda-repo-ubuntu1704-9-0-local_9.0.176-1_amd64.deb && \
+    dpkg -i cuda-repo-ubuntu1704-9-0-local_9.0.176-1_amd64-deb && \
     apt-key add /var/cuda-repo-<version>/7fa2af80.pub && \
     apt-get update && apt-get install cuda && \
     ln -s cuda-9.0 /usr/local/cuda && \
