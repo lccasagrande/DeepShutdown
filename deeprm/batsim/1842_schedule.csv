@@ -1,0 +1,2 @@
+batsim_version,consumed_joules,makespan,max_slowdown,max_turnaround_time,max_waiting_time,mean_slowdown,mean_turnaround_time,mean_waiting_time,nb_computing_machines,nb_grouped_switches,nb_jobs,nb_jobs_finished,nb_jobs_killed,nb_jobs_success,nb_machine_switches,scheduling_time,simulation_time,success_rate,time_computing,time_idle,time_sleeping,time_switching_off,time_switching_on
+UNKNOWN,1156869.540000,592.006405,407.006405,423.005730,412.005730,90.924502,179.182968,174.987968,10,0,200,200,200,0,0,2.506608,2.681564,0.000000,4481.000000,1398.063435,0.000000,0.000000,0.000000
