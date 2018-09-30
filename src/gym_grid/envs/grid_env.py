@@ -3,6 +3,7 @@ from copy import deepcopy
 from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from .batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError
 import numpy as np
@@ -10,15 +11,20 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.simulator = BatsimHandler()
+        self.job_slots = 21
+        self.simulator = BatsimHandler(self.job_slots, time_window=1)
         self._update_state()
         #self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.max_slowdown = 1
 
     @property
+    def nb_resources(self):
+        return self.simulator.nb_resources
+
+    @property
     def max_time(self):
-        return self.simulator.max_walltime
+        return 15
 
     @property
     def max_speed(self):
@@ -31,31 +37,32 @@ class GridEnv(gym.Env):
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
 
-        alloc_resources = self._prepare_input(action)
-
-        energy_consumed_est = self.simulator.estimate_energy_consumption(
-            alloc_resources)
-        energy_consumed_est /= self.max_energy_consumption
-
-        queue_jobs = self.simulator.nb_jobs_waiting + self.simulator.nb_jobs_in_queue
-        queue_jobs = queue_jobs - 1 if action != 0 else queue_jobs
-        queue_load = min(self.simulator.nb_resources,
-                         queue_jobs) / self.simulator.nb_resources
-
-        first_job = self.simulator.lookup_first_job()
-        slowdown = min(self.max_slowdown, first_job.waiting_time / first_job.requested_time)
-
+        tmp_reward = self._get_reward()
         try:
-            self.simulator.schedule_job(alloc_resources)
-            reward = -1 * (energy_consumed_est + slowdown + .5*queue_load) / 3
-        except (InsufficientResourcesError, UnavailableResourcesError):
-            reward = -1
+            reward = self._get_reward() if action == -1 else 0
+            self.simulator.schedule(action)
+        except (UnavailableResourcesError):
+            self.simulator.schedule(-1)
+            reward = tmp_reward
 
         self._update_state()
 
         done = not self.simulator.running_simulation
 
         return self.state, reward, done, {}
+
+    def _get_reward(self):
+        reward = 0
+        for j in self.simulator.sched_manager.jobs_queue:
+            reward += -1 / j.requested_time
+
+        for j in self.simulator.sched_manager.jobs_waiting:
+            reward += -1 / j.requested_time
+
+        for j in self.simulator.sched_manager.jobs_running:
+            reward += -1 / j.requested_time
+
+        return reward
 
     def reset(self):
         self.simulator.close()
@@ -64,13 +71,12 @@ class GridEnv(gym.Env):
         return self.state
 
     def render(self, mode='human'):
-        stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
-            self.simulator.nb_jobs_submitted,
-            self.simulator.nb_jobs_completed,
-            self.simulator.nb_jobs_running,
-            self.simulator.nb_jobs_in_queue)
-
-        print(stats, end="", flush=True)
+       stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
+           self.simulator.nb_jobs_submitted,
+           self.simulator.nb_jobs_completed,
+           self.simulator.nb_jobs_running,
+           self.simulator.nb_jobs_in_queue)
+       print(stats, end="", flush=True)
 
     def close(self):
         self.simulator.close()
@@ -79,14 +85,11 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def _prepare_input(self, action):
-        return [] if action == 0 else [action-1]
-
     def _update_state(self):
         self.state = self.simulator.current_state
 
     def _get_action_space(self):
-        return spaces.Discrete(self.simulator.nb_resources+1)
+        return spaces.Discrete(self.simulator.queue_slots+1)
 
     def _get_observation_space(self):
         raise NotImplementedError()

@@ -1,4 +1,5 @@
 import itertools
+import math
 import numpy as np
 from enum import Enum
 from collections import deque
@@ -8,6 +9,15 @@ class SchedulerManager():
     def __init__(self, nb_resources, time_window):
         self.gantt_shape = (nb_resources, time_window)
         self.reset()
+
+    @property
+    def jobs_running(self):
+        jobs = []
+        for job in self.gantt[:, 0]:
+            if job != None and job.state == Job.State.RUNNING:
+                jobs.append(job)
+
+        return jobs
 
     @property
     def nb_jobs_waiting(self):
@@ -26,10 +36,8 @@ class SchedulerManager():
 
         return count
 
-    def lookup_first_job(self):
-        if self.nb_jobs_in_queue > 0:
-            return self.jobs_queue[0]
-        return None
+    def lookup(self, idx):
+        return self.jobs_queue[idx]
 
     def lookup_jobs_queue(self, nb):
         nb_jobs_in_queue = self.nb_jobs_in_queue
@@ -40,8 +48,15 @@ class SchedulerManager():
             self.jobs_queue, 0, min(nb, nb_jobs_in_queue)))
         return np.array(jobs)
 
-    def has_free_space(self):
-        return np.any(self.gantt == None)
+    def has_free_space(self, nb=1):
+        free_spaces = 0
+        for res in self.gantt:
+            if np.any(res == None):
+                free_spaces += 1
+            if free_spaces == nb:
+                return True
+
+        return False
 
     def has_jobs_in_queue(self):
         return self.nb_jobs_in_queue > 0
@@ -54,7 +69,7 @@ class SchedulerManager():
 
     def reset(self):
         self.gantt = np.empty(shape=self.gantt_shape, dtype=object)
-        self.jobs_queue = deque()
+        self.jobs_queue = []
         self.jobs_waiting = deque()
         self.jobs_finished = dict()
         self.nb_jobs_submitted = 0
@@ -66,37 +81,41 @@ class SchedulerManager():
             if job != None and job.state == Job.State.RUNNING:
                 job.update_remaining_time(time)
 
-    def allocate_first_job(self, resources):
-        assert self.has_jobs_in_queue()
-        job = self.jobs_queue.popleft()
+    def allocate_job(self, job_idx):
         try:
-            assert job.requested_resources == len(
-                resources), "The job requested more resources than it was allocated."
+            if not self.has_free_space(self.jobs_queue[job_idx].requested_resources):
+                raise UnavailableResourcesError(
+                "There is no resource available for this job.")
+        except IndexError as e:
+            return None
 
-            for res in resources:
-                success = False
-                resource_queue = self.gantt[res]
-                for i in range(len(resource_queue)):  # Find the first space available
-                    if resource_queue[i] == None:
-                        resource_queue[i] = job
-                        success = True
-                        break
+        job = self.jobs_queue.pop(job_idx)
+        res_idx = 0
+        allocated = 0
+        while allocated != job.requested_resources:
+            resource_queue = self.gantt[res_idx]
+            for i in range(len(resource_queue)):  # Find the first space available
+                if resource_queue[i] == None:
+                    resource_queue[i] = job
+                    job.allocation.append(res_idx)
+                    allocated += 1
+                    break
+            res_idx += 1
 
-                if not success:
-                    raise UnavailableResourcesError(
-                        "There is no space available on the resource selected.")
-            job.allocation = resources
-        except:
-            self.jobs_queue.appendleft(job)
-            raise
+        return job.allocation
 
     def delay_first_job(self):
-        job = self.jobs_queue.popleft()
-        self.jobs_waiting.append(job)
+        self.jobs_waiting.append(self.jobs_queue.pop(0))
 
     def get_ready_jobs(self):
+        ready_jobs = []
         jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
-        return [job for job in jobs if job.state != Job.State.RUNNING]
+        for job in jobs:
+            if job.state != Job.State.RUNNING \
+            and job not in ready_jobs \
+            and len(self.gantt[:, 0][self.gantt[:, 0] == job]) == job.requested_resources:
+                ready_jobs.append(job)
+        return ready_jobs
 
     def enqueue_jobs_waiting(self, time):
         while self.has_jobs_waiting():
@@ -115,10 +134,9 @@ class SchedulerManager():
         job.start_time = time
         job.update_waiting_time(time)
 
-    def on_job_completed(self, time, data):
+    def on_job_completed(self, time, resources, data):
         self.nb_jobs_completed += 1
-        job = self._remove_from_gantt(
-            list(map(int, data["alloc"].split(" "))), data['job_id'])
+        job = self._remove_from_gantt(resources, data['job_id'])
         self._update_job_stats(job, time, data)
         self.jobs_finished[job.id] = job
         self.enqueue_jobs_waiting(time)
@@ -198,15 +216,16 @@ class Job(object):
         self.return_code = None
         self.json_dict = json_dict
         self.profile_dict = profile_dict
-        self.allocation = None
+        self.allocation = []
         self.metadata = None
 
     def update_waiting_time(self, t):
         self.waiting_time = t - self.submit_time
 
     def update_remaining_time(self, t):
-        exec_time = (t - self.start_time)
-        self.remaining_time = float(self.requested_time) - exec_time
+        exec_time = int(t - self.start_time)
+        self.remaining_time = self.requested_time - exec_time
+        self.remaining_time = 1 if self.remaining_time == 0 else self.remaining_time
 
     @staticmethod
     def from_json(json_dict, profile_dict=None):

@@ -16,13 +16,13 @@ from .network import BatsimProtocolHandler
 
 
 class BatsimHandler:
-    PLATFORM = "platform_10.xml"
-    WORKLOAD = "nantes_433.json"
+    PLATFORM = "platform_hg_10.xml"
+    WORKLOAD = "workloads"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, queue_slots=117, time_window=1, verbose='quiet'):
+    def __init__(self, queue_slots, time_window, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -30,21 +30,32 @@ class BatsimHandler:
             shutil.rmtree(BatsimHandler.OUTPUT_DIR, ignore_errors=True)
 
         os.makedirs(BatsimHandler.OUTPUT_DIR)
-
-        self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
-        self._workload = os.path.join(fullpath, BatsimHandler.WORKLOAD)
         self._config = os.path.join(fullpath, BatsimHandler.CONFIG)
+        self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
+        workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD)
+        self._workloads = [workloads_path + "/" +
+                           w for w in os.listdir(workloads_path) if w.endswith('.json')]
+        self._workload = None
+        self._simulator_process = None
         self._verbose = verbose
         self.time_window = time_window
-        self.max_walltime = self._get_max_walltime(self._workload)
-        self._simulator_process = None
         self.running_simulation = False
         self.nb_simulation = 0
+        self._workload_idx = 0
         self.queue_slots = queue_slots
-        self.protocol_manager = BatsimProtocolHandler(BatsimHandler.SOCKET_ENDPOINT)
+        self.protocol_manager = BatsimProtocolHandler(
+            BatsimHandler.SOCKET_ENDPOINT)
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.sched_manager = SchedulerManager(self.nb_resources, time_window)
-        self._reset_vars()
+        self._reset()
+
+    def _load_workload(self):
+        if len(self._workloads) == self._workload_idx:
+            np.random.shuffle(self._workloads)
+            self._workload_idx = 0
+
+        self._workload = self._workloads[self._workload_idx]
+        self._workload_idx += 1
 
     def _get_max_walltime(self, workload):
         with open(workload) as f:
@@ -113,8 +124,8 @@ class BatsimHandler:
     def current_time(self):
         return self.protocol_manager.current_time
 
-    def lookup_first_job(self):
-        return self.sched_manager.lookup_first_job()
+    def lookup(self, idx):
+        return deepcopy(self.sched_manager.lookup(idx))
 
     def estimate_energy_consumption(self, res_ids):
         return self.resource_manager.estimate_energy_consumption(res_ids)
@@ -128,7 +139,8 @@ class BatsimHandler:
             self._simulator_process = None
 
     def start(self):
-        self._reset_vars()
+        self._reset()
+        self._load_workload()
         self.nb_simulation += 1
         self._simulator_process = self._start_simulator()
         self.protocol_manager.start()
@@ -137,23 +149,20 @@ class BatsimHandler:
             raise ConnectionError(
                 "An error ocurred during simulator starting.")
 
-    def schedule_job(self, resources):
+    def schedule(self, job):
         assert self.running_simulation, "Simulation is not running."
-        assert resources is not None, "Allocation cannot be null."
+        assert job is not None, "Job cannot be null."
 
-        if len(resources) == 0:  # Handle VOID Action
-            self.sched_manager.delay_first_job()
-        else:
-            self.sched_manager.allocate_first_job(resources)
-            self.resource_manager.on_job_allocated(resources)
-
-        # All jobs in the queue has to be scheduled or delayed
-        if self.sched_manager.is_ready():
-            return
-
-        if self.sched_manager.has_jobs_waiting() and not self._alarm_is_set:
+        if job == -1 and not self._alarm_is_set:  # Handle VOID Action
             self.protocol_manager.wake_me_up_at(self.current_time + 1)
             self._alarm_is_set = True
+        else:
+            resources = self.sched_manager.allocate_job(job)
+            if resources == None:
+                print("OPA")
+            self.resource_manager.on_job_allocated(resources)
+            if self.sched_manager.is_ready():
+                return
 
         self._start_ready_jobs()
 
@@ -161,7 +170,7 @@ class BatsimHandler:
 
     def _wait_state_change(self):
         self._update_state()
-        while self.running_simulation and not self.sched_manager.is_ready():
+        while self.running_simulation and (self._alarm_is_set or not self.sched_manager.is_ready()):
             self._update_state()
 
     def _start_ready_jobs(self):
@@ -181,21 +190,31 @@ class BatsimHandler:
 
         return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
 
-    def _reset_vars(self):
+    def _reset(self):
         self.metrics = {}
         self._alarm_is_set = False
         self.sched_manager.reset()
 
     def _handle_resource_pstate_changed(self, timestamp, data):
+        resources = self._get_resources_from_json(data["resources"])
         self.sched_manager.on_resource_pstate_changed(timestamp)
         self.resource_manager.on_resource_pstate_changed(
-            list(map(int, data["resources"].split(" "))),
-            Resource.PowerState[int(data["state"])])
+            resources, Resource.PowerState[int(data["state"])])
+
+    def _get_resources_from_json(self, data):
+        resources = []
+        for alloc in data.split(" "):
+            nodes = alloc.split("-")
+            if len(nodes) == 2:
+                resources.extend(range(int(nodes[0]), int(nodes[1]) + 1))
+            else:
+                resources.append(int(nodes[0]))
+        return resources
 
     def _handle_job_completed(self, timestamp, data):
-        self.sched_manager.on_job_completed(timestamp, data)
-        self.resource_manager.on_job_completed(
-            list(map(int, data["alloc"].split(" "))))
+        resources = self._get_resources_from_json(data["alloc"])
+        self.sched_manager.on_job_completed(timestamp, resources, data)
+        self.resource_manager.on_job_completed(resources)
         self._start_ready_jobs()
 
     def _handle_job_submitted(self, timestamp, data):
@@ -279,11 +298,11 @@ class BatsimHandler:
             "schedule_metrics")
         data.to_csv(fn, index=False)
 
-
     def _update_state(self):
         self.protocol_manager.send_events()
 
-        events = self.protocol_manager.read_events(blocking=not self.running_simulation)
+        events = self.protocol_manager.read_events(
+            blocking=not self.running_simulation)
         for event in events:
             self._handle_batsim_events(event)
 

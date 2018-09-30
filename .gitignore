@@ -2,6 +2,7 @@
 .vscode
 results/*
 tmp
+log
 src/test.py
 weights
 img

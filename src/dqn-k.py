@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import random
 import gym
+import math
 import time
 import gym_grid.envs.grid_env as g
 import keras.backend as K
@@ -13,55 +14,12 @@ from keras.layers import Dense, Activation, Flatten, Convolution2D, BatchNormali
 from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from dqn_utils import DQNAgent
-from rl.policy import LinearAnnealedPolicy, BoltzmannQPolicy, Policy
+from rl.policy import LinearAnnealedPolicy
 from rl.memory import SequentialMemory
 from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
+from policies import CustomEpsGreedyQPolicy, CustomGreedyQPolicy
 
-
-class CustomEpsGreedyQPolicy(Policy):
-    def __init__(self, nb_res, eps=.1):
-        super(CustomEpsGreedyQPolicy, self).__init__()
-        self.eps = eps
-        self.nb_res = nb_res
-
-    def get_config(self):
-        config = super(CustomEpsGreedyQPolicy, self).get_config()
-        config['eps'] = self.eps
-        return config
-
-    def select_action(self, q_values, state):
-        if np.random.uniform() >= self.eps:
-            return self.select_best_action(q_values, state)
-
-        resources = state[-1][1][0:self.nb_res]
-        valid_actions = [0] + [i+1 for i in range(q_values.shape[0]-1) if resources[i][0] == 0.]
-        return random.choice(valid_actions)
-
-    def select_best_action(self, q_values, state):
-        actions = [0]
-        q_max = q_values[0]
-
-        resources = state[-1][1][0:self.nb_res]
-
-        for i in range(q_values.shape[0]-1):
-            if resources[i][0] == 0.:
-                act = i+1
-                if q_values[act] > q_max:
-                    q_max = q_values[act]
-                    actions = [act]
-                elif q_values[act] == q_max:
-                    actions.append(act)
-
-        return random.choice(actions)
-
-
-class CustomGreedyQPolicy(CustomEpsGreedyQPolicy):
-    def __init__(self, nb_res):
-        super(CustomGreedyQPolicy, self).__init__(nb_res, -1)
-
-    def select_action(self, q_values, state):
-        return super(CustomGreedyQPolicy, self).select_best_action(q_values, state)
 
 
 class GridProcessor(Processor):
@@ -92,17 +50,16 @@ class GridProcessor(Processor):
 
         for res, resource_space in enumerate(gantt):
             job = resource_space['queue'][0]
-            obs[0][res] = resource_space['resource'].cost_to_compute / \
-                self.max_efficiency
+            #obs[0][res] = resource_space['resource'].cost_to_compute / \
+            #    self.max_efficiency
             if job != None:
-                for tim in range(1, min(self.time_window, int(round(job.remaining_time)))):
+                for tim in range(0, min(self.time_window, job.remaining_time)):
                     obs[tim][res] = 1
 
         job_slots = min(self.job_slots, nb_jobs_in_queue)
         for job_slot in range(job_slots):
             job = jobs_in_queue[job_slot]
-            obs[0][job_slot+nb_resources] = min(
-                self.max_slowdown, job.waiting_time / job.requested_time)
+            obs[0][job_slot+nb_resources] = job.requested_resources / self.nb_res
             for tim in range(1, min(self.time_window, job.requested_time)):
                 obs[tim][job_slot+nb_resources] = 1
 
@@ -121,10 +78,13 @@ class GridProcessor(Processor):
         return obs
 
 
-def build_model(output_shape, input_shape):
+def build_model(input_shape, output_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(16, (2, 2), strides=(1, 1), data_format="channels_last"))
+    model.add(Convolution2D(16, (4, 4), strides=(2, 2), data_format="channels_last"))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Convolution2D(32, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Flatten())
@@ -141,28 +101,29 @@ if __name__ == "__main__":
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
+    nb_resources = env.nb_resources
 
-    processor = GridProcessor(job_slots=117,
+    processor = GridProcessor(job_slots=env.job_slots,
                               backlog=1,
-                              time_window=128,
-                              nb_res=nb_actions-1,
+                              time_window=32,
+                              nb_res=env.nb_resources,
                               max_slowdown=env.max_slowdown,
                               max_efficiency=env.max_energy_consumption)
 
 
-    model = build_model(nb_actions, processor.output_shape)
+    model = build_model(processor.output_shape, nb_actions)
 
-    memory = SequentialMemory(limit=50000, window_length=10)
+    memory = SequentialMemory(limit=50000, window_length=1)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
     # the agent initially explores the environment (high eps) and then gradually sticks to what it knows
     # (low eps). We also set a dedicated eps value that is used during testing. Note that we set it to 0.05
     # so that the agent still performs some random actions. This ensures that the agent cannot get stuck.
-    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(nb_actions-1), attr='eps', value_max=1., value_min=.1, value_test=.05,
-                                  nb_steps=200000)
+    policy = LinearAnnealedPolicy(CustomEpsGreedyQPolicy(env.nb_resources, env.job_slots), attr='eps', value_max=1., value_min=.1, value_test=.05,
+                                  nb_steps=500000)
 
-    test_policy = CustomGreedyQPolicy(nb_actions-1)
+    test_policy = CustomGreedyQPolicy(env.nb_resources, env.job_slots)
 
     # The trade-off between exploration and exploitation is difficult and an on-going research topic.
     # If you want, you can experiment with the parameters or use a different policy. Another popular one
@@ -171,9 +132,9 @@ if __name__ == "__main__":
     # Feel free to give it a try!
 
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
-                   processor=processor, nb_steps_warmup=20000, gamma=.99, target_model_update=10000,
+                   processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
                    train_interval=10, delta_clip=1.)
-    dqn.compile(Adam(lr=.000001), metrics=['mae','mse'])
+    dqn.compile(Adam(lr=.00001), metrics=['mae','mse'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
     # can be prematurely aborted. Notice that you can the built-in Keras callbacks!
@@ -181,7 +142,7 @@ if __name__ == "__main__":
         'weights/'+name+'_1_weights_{step}.h5f', interval=100000)]
     callbacks += [FileLogger('log/'+name+'/'+name+'_1_log.json', interval=1)]
     callbacks += [TensorBoard(log_dir='log/'+name)]
-    dqn.fit(env, callbacks=callbacks, nb_steps=500000,
+    dqn.fit(env, callbacks=callbacks, nb_steps=2000000,
             log_interval=10000, visualize=False, verbose=2)
 
     # After training is done, we save the final weights one more time.

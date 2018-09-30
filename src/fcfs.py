@@ -13,7 +13,7 @@ from collections import defaultdict, deque
 from policy import FirstFitPolicy
 
 
-def run(output_dir, n_ep=1, out_freq=100, plot=False):
+def run(output_dir, n_ep=101, out_freq=100, plot=False):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
