@@ -1,2 +1,0 @@
-scheduling_time,nb_jobs,nb_jobs_finished,nb_jobs_success,nb_jobs_killed,success_rate,makespan,mean_waiting_time,mean_turnaround_time,mean_slowdown,max_waiting_time,max_turnaround_time,max_slowdown,energy_consumed
-2.842349,200,200,0,200,0.0,634.007515,213.679066,217.564066,107.582058,603.00747,606.00747,474.007275,1211771.205

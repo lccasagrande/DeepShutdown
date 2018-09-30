@@ -10,14 +10,14 @@ import shutil
 from random import choice
 import time as t
 from collections import defaultdict, deque
-from policy import FirstFitPolicy
+from policies import FirstFitPolicy
 
 
-def run(output_dir, n_ep=101, out_freq=100, plot=False):
+def run(output_dir, n_ep=3, out_freq=100, plot=False):
     env = gym.make('grid-v0')
     episodic_scores = deque(maxlen=out_freq)
     avg_scores = deque(maxlen=n_ep)
-    policy = FirstFitPolicy(env.action_space.n)
+    policy = FirstFitPolicy()
     action_history = []
     t_start = t.time()
     for i in range(1, n_ep + 1):

@@ -17,6 +17,8 @@ class GridEnv(gym.Env):
         #self.observation_space = self._get_observation_space()
         self.action_space = self._get_action_space()
         self.max_slowdown = 1
+        self.max_steps = 2000
+        self.step_nb = 0
 
     @property
     def nb_resources(self):
@@ -36,6 +38,7 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
+        self.step_nb += 1
 
         tmp_reward = self._get_reward()
         try:
@@ -48,6 +51,8 @@ class GridEnv(gym.Env):
         self._update_state()
 
         done = not self.simulator.running_simulation
+        if self.step == self.max_steps:
+            done = True
 
         return self.state, reward, done, {}
 
@@ -65,6 +70,7 @@ class GridEnv(gym.Env):
         return reward
 
     def reset(self):
+        self.step_nb = 0
         self.simulator.close()
         self.simulator.start()
         self._update_state()

@@ -81,12 +81,10 @@ class GridProcessor(Processor):
 def build_model(input_shape, output_shape):
     model = Sequential()
     model.add(Permute((1, 2, 3), input_shape=input_shape))
-    model.add(Convolution2D(16, (4, 4), strides=(2, 2), data_format="channels_last"))
-    model.add(BatchNormalization())
-    model.add(Activation('relu'))
     model.add(Convolution2D(32, (2, 2), strides=(1, 1)))
     model.add(BatchNormalization())
     model.add(Activation('relu'))
+    model.add(Dropout(.5))
     model.add(Flatten())
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
@@ -113,7 +111,7 @@ if __name__ == "__main__":
 
     model = build_model(processor.output_shape, nb_actions)
 
-    memory = SequentialMemory(limit=50000, window_length=1)
+    memory = SequentialMemory(limit=50000, window_length=10)
 
     # Select a policy. We use eps-greedy action selection, which means that a random action is selected
     # with probability eps. We anneal eps from 1.0 to 0.1 over the course of 1M steps. This is done so that
@@ -132,8 +130,8 @@ if __name__ == "__main__":
     # Feel free to give it a try!
 
     dqn = DQNAgent(model=model, nb_actions=nb_actions, policy=policy, test_policy=test_policy, memory=memory,
-                   processor=processor, nb_steps_warmup=50000, gamma=.99, target_model_update=10000,
-                   train_interval=10, delta_clip=1.)
+                   processor=processor, nb_steps_warmup=40000, gamma=.99, target_model_update=5000,
+                   train_interval=4, delta_clip=1.)
     dqn.compile(Adam(lr=.00001), metrics=['mae','mse'])
 
     # Okay, now it's time to learn something! We capture the interrupt exception so that training
@@ -144,9 +142,9 @@ if __name__ == "__main__":
     callbacks += [TensorBoard(log_dir='log/'+name)]
     dqn.fit(env, callbacks=callbacks, nb_steps=2000000,
             log_interval=10000, visualize=False, verbose=2)
-
+#
     # After training is done, we save the final weights one more time.
     dqn.save_weights('weights/'+name+'_1_weights.h5f', overwrite=True)
     #time.sleep(10)
-    #dqn.load_weights('weights/dqn_keras_4_1_weights_300000.h5f')
-    #dqn.test(env, nb_episodes=1, visualize=True)
+    #dqn.load_weights('deeprm/dqn_keras_6_1_weights_2000000.h5f')
+    #dqn.test(env, nb_episodes=100, visualize=True)

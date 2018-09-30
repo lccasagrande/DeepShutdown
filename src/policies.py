@@ -21,20 +21,20 @@ class CustomEpsGreedyQPolicy(Policy):
 
         valid_actions = [-1]
 
-        avail_res = 0
-        for res in state[-1][0][0:self.nb_res]:
-            if res[0] == 0:
-                avail_res += 1
+        #avail_res = 0
+        #for res in state[-1][0][0:self.nb_res]:
+        #    if res[0] == 0:
+        #        avail_res += 1
 
         job_slots = state[-1][0][self.nb_res:self.nb_res+self.job_slots]
         for i, job in enumerate(job_slots):
             if job[0] <= 0:
                 break
 
-            req_res = int(job[0] * self.nb_res)
-
-            if req_res <= avail_res:
-                valid_actions.append(i)
+            #req_res = int(job[0] * self.nb_res)
+#
+            #if req_res <= avail_res:
+            valid_actions.append(i)
 
         return choice(valid_actions)
 
@@ -42,23 +42,23 @@ class CustomEpsGreedyQPolicy(Policy):
         actions = [-1]
         q_max = q_values[0]
 
-        avail_res = 0
-        for res in state[-1][0][0:self.nb_res]:
-            if res[0] == 0:
-                avail_res += 1
+        #avail_res = 0
+        #for res in state[-1][0][0:self.nb_res]:
+        #    if res[0] == 0:
+        #        avail_res += 1
 
         job_slots = state[-1][0][self.nb_res:self.nb_res+self.job_slots]
         for i, job in enumerate(job_slots):
             if job[0] <= 0:
                 break
             
-            req_res = int(job[0] * self.nb_res)
-            if req_res <= avail_res:
-                if q_values[i+1] > q_max:
-                    q_max = q_values[i+1]
-                    actions = [i]
-                elif q_values[i+1] == q_max:
-                    actions.append(i)
+            #req_res = int(job[0] * self.nb_res)
+            #if req_res <= avail_res:
+            if q_values[i+1] > q_max:
+                q_max = q_values[i+1]
+                actions = [i]
+            elif q_values[i+1] == q_max:
+                actions.append(i)
 
         return choice(actions)
 

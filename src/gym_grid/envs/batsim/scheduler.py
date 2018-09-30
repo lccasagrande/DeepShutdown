@@ -82,12 +82,9 @@ class SchedulerManager():
                 job.update_remaining_time(time)
 
     def allocate_job(self, job_idx):
-        try:
-            if not self.has_free_space(self.jobs_queue[job_idx].requested_resources):
-                raise UnavailableResourcesError(
-                "There is no resource available for this job.")
-        except IndexError as e:
-            return None
+        if not self.has_free_space(self.jobs_queue[job_idx].requested_resources):
+            raise UnavailableResourcesError(
+            "There is no resource available for this job.")
 
         job = self.jobs_queue.pop(job_idx)
         res_idx = 0
