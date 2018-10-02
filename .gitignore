@@ -1,9 +1,11 @@
 # VS Code
 .vscode
 results/*
+benchmark/*
 tmp
 log
 src/test.py
+src/tmp.py
 weights
 img
 

@@ -169,13 +169,3 @@ def plot_job_stats(data, title, total, metrics, output_fn, colors=None):
     layout = go.Layout(barmode='stack', title=title)
     fig = go.Figure(data=dt, layout=layout)
     plot(fig, filename=output_fn)
-
-
-#data = merge_results("results", ['random', 'easy_bf_fast'])
-# metrics = ['makespan', 'consumed_joules', 'mean_waiting_time',
-#           'mean_slowdown', 'mean_turnaround_time', 'scheduling_time']
-#plot_results(data, metrics, output_fn='test.html', main_title="Test")
-#data['nb_jobs_rejected'] = data['nb_jobs'] - data['nb_jobs_finished']
-#metrics = ['nb_jobs_success', 'nb_jobs_killed', 'nb_jobs_rejected']
-#colors = ['green', 'red', 'blue']
-#plot_job_stats(data, "jobs", data['nb_jobs'], metrics, 'jobs.html', colors)

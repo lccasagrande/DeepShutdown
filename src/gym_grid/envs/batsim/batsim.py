@@ -17,7 +17,7 @@ from .network import BatsimProtocolHandler
 
 class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
-    WORKLOAD = "workloads"
+    WORKLOAD = "test"
     CONFIG = "config.json"
     SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results/batsim"
@@ -153,16 +153,14 @@ class BatsimHandler:
         assert self.running_simulation, "Simulation is not running."
         assert job is not None, "Job cannot be null."
 
-        if job == -1 and not self._alarm_is_set:  # Handle VOID Action
+        if job != -1:
+            resources = self.sched_manager.allocate_job(job)
+            self.resource_manager.on_job_allocated(resources)
+            if self.sched_manager.is_ready:
+                return
+        elif not self._alarm_is_set:  # Handle VOID Action
             self.protocol_manager.wake_me_up_at(self.current_time + 1)
             self._alarm_is_set = True
-        else:
-            resources = self.sched_manager.allocate_job(job)
-            if resources == None:
-                print("OPA")
-            self.resource_manager.on_job_allocated(resources)
-            if self.sched_manager.is_ready():
-                return
 
         self._start_ready_jobs()
 
@@ -170,7 +168,7 @@ class BatsimHandler:
 
     def _wait_state_change(self):
         self._update_state()
-        while self.running_simulation and (self._alarm_is_set or not self.sched_manager.is_ready()):
+        while self.running_simulation and not self.sched_manager.is_ready:
             self._update_state()
 
     def _start_ready_jobs(self):
@@ -236,6 +234,8 @@ class BatsimHandler:
         self.protocol_manager.acknowledge()
         self.protocol_manager.send_events()
         self.running_simulation = False
+        self.makespan = self.sched_manager.last_job.finish_time - \
+            self.sched_manager.first_job.submit_time
         self.metrics["scheduling_time"] = float(
             data["scheduling_time"])
         self.metrics["nb_jobs"] = int(data["nb_jobs"])

@@ -1,102 +1,142 @@
+from gym_grid.envs.grid_env import GridEnv
 from random import choice
-from rl.policy import Policy
+from collections import defaultdict, deque
+from rl.policy import Policy as RLPolicy
+import utils
+import gym
+import sys
+import csv
+import pandas as pd
 import numpy as np
+import shutil
+import time as t
 
 
-class CustomEpsGreedyQPolicy(Policy):
+class Policy(object):
+    def select_action(self, **kwargs):
+        raise NotImplementedError()
+
+
+class EpsGreedy(RLPolicy):
     def __init__(self, nb_res, job_slots, eps=.1):
-        super(CustomEpsGreedyQPolicy, self).__init__()
+        super(EpsGreedy, self).__init__()
+        self.greedy_policy = Greedy(nb_res, job_slots)
         self.eps = eps
         self.nb_res = nb_res
         self.job_slots = job_slots
 
     def get_config(self):
-        config = super(CustomEpsGreedyQPolicy, self).get_config()
+        config = super(EpsGreedy, self).get_config()
         config['eps'] = self.eps
         return config
 
     def select_action(self, q_values, state):
         if np.random.uniform() >= self.eps:
-            return self.select_best_action(q_values, state)
+            return self.greedy_policy.select_action(q_values, state)
+        else:
+            return self._select_random_action(q_values, state)
 
+    def _select_random_action(self, q_values, state):
         valid_actions = [-1]
+        total_job_slots = self.nb_res+(self.job_slots*self.nb_res)
 
-        #avail_res = 0
-        #for res in state[-1][0][0:self.nb_res]:
-        #    if res[0] == 0:
-        #        avail_res += 1
-
-        job_slots = state[-1][0][self.nb_res:self.nb_res+self.job_slots]
-        for i, job in enumerate(job_slots):
-            if job[0] <= 0:
-                break
-
-            #req_res = int(job[0] * self.nb_res)
-#
-            #if req_res <= avail_res:
-            valid_actions.append(i)
+        action = 0
+        for i in range(self.nb_res, total_job_slots, self.nb_res):
+            if state[-1][0][i] > 0:
+                valid_actions.append(action)
+                action += 1
 
         return choice(valid_actions)
 
-    def select_best_action(self, q_values, state):
-        actions = [-1]
-        q_max = q_values[0]
 
-        #avail_res = 0
-        #for res in state[-1][0][0:self.nb_res]:
-        #    if res[0] == 0:
-        #        avail_res += 1
-
-        job_slots = state[-1][0][self.nb_res:self.nb_res+self.job_slots]
-        for i, job in enumerate(job_slots):
-            if job[0] <= 0:
-                break
-            
-            #req_res = int(job[0] * self.nb_res)
-            #if req_res <= avail_res:
-            if q_values[i+1] > q_max:
-                q_max = q_values[i+1]
-                actions = [i]
-            elif q_values[i+1] == q_max:
-                actions.append(i)
-
-        return choice(actions)
-
-
-class CustomGreedyQPolicy(CustomEpsGreedyQPolicy):
+class Greedy(RLPolicy):
     def __init__(self, nb_res, job_slots):
-        super(CustomGreedyQPolicy, self).__init__(nb_res, job_slots, -1)
+        super(Greedy, self).__init__()
+        self.nb_res = nb_res
+        self.job_slots = job_slots
 
     def select_action(self, q_values, state):
-        return super(CustomGreedyQPolicy, self).select_best_action(q_values, state)
+        q_pos = 0
+        actions = [q_pos-1]
+        q_max = q_values[q_pos]
+        total_job_slots = self.nb_res+(self.job_slots*self.nb_res)
 
+        for i in range(self.nb_res, total_job_slots, self.nb_res):
+            if state[-1][0][i] > 0:
+                q_pos += 1
 
-class RandomPolicy():
-    def select_valid_action(self, state):
-        gantt = state['gantt']
-        jobs = state['job_queue']['jobs']
-        available_resources = [
-            res_data['resource'].id for res_data in gantt if res_data['resource'].is_available]
-        actions = [-1]
-
-        for i, job in enumerate(jobs):
-            if len(available_resources) >= job.requested_resources:
-                actions.append(i)
-                break
+                if q_values[q_pos] > q_max:
+                    q_max = q_values[q_pos]
+                    actions = [q_pos-1]
+                elif q_values[q_pos] == q_max:
+                    actions.append(q_pos-1)
 
         return choice(actions)
 
 
-class FirstFitPolicy():
-    def select_valid_action(self, state):
-        gantt = state['gantt']
+class Random(Policy):
+    def select_action(self, state):
         jobs = state['job_queue']['jobs']
-        available_resources = [
-            res_data['resource'].id for res_data in gantt if res_data['resource'].is_available]
-        action = -1
+        actions = [-1] + list(range(len(jobs)))
+
+        return choice(actions)
+
+
+class SJF(Policy):
+    def select_action(self, state):
+        action, shortest_job = -1, np.inf
+        jobs = state['job_queue']['jobs']
+        avail_res = len([res_data['resource'].id for res_data in state['gantt']
+                         if res_data['resource'].is_available])
 
         for i, job in enumerate(jobs):
-            if len(available_resources) >= job.requested_resources:
+            if job.requested_resources <= avail_res and job.requested_time < shortest_job:
+                shortest_job = job.requested_time
+                action = i
+
+        return action
+
+
+class LJF(Policy):
+    def select_action(self, state):
+        action, shortest_job = -1, -1
+        jobs = state['job_queue']['jobs']
+        avail_res = len([res_data['resource'].id for res_data in state['gantt']
+                     if res_data['resource'].is_available])
+
+        for i, job in enumerate(jobs):
+            if job.requested_resources <= avail_res and job.requested_time > shortest_job:
+                shortest_job = job.requested_time
+                action = i
+
+        return action
+
+
+class Tetris(Policy):
+    def select_action(self, state):
+        action, score = -1, 0
+        jobs = state['job_queue']['jobs']
+        avail_res = len([res_data['resource'].id for res_data in state['gantt']
+                         if res_data['resource'].is_available])
+
+        for i, job in enumerate(jobs):
+            if job.requested_resources <= avail_res and job.requested_resources > score:
+                score = job.requested_resources
+                action = i
+
+        return action
+
+
+class FirstFit(Policy):
+    def select_action(self, state):
+        action = -1
+        gantt = state['gantt']
+        jobs = state['job_queue']['jobs']
+        avail_res = len(
+            [res_data['resource'].id for res_data in gantt if res_data['resource'].is_available])
+
+        for i, job in enumerate(jobs):
+            if job.requested_resources <= avail_res:
                 action = i
                 break
 

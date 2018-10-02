@@ -1,6 +1,8 @@
 import itertools
 import math
 import numpy as np
+import random
+from matplotlib.colors import XKCD_COLORS as allcolors
 from enum import Enum
 from collections import deque
 
@@ -9,6 +11,24 @@ class SchedulerManager():
     def __init__(self, nb_resources, time_window):
         self.gantt_shape = (nb_resources, time_window)
         self.reset()
+
+    @property
+    def mean_turnaround_time(self):
+        if self.nb_jobs_completed == 0:
+            return 0
+        return self.turnaround_sum / self.nb_jobs_completed
+
+    @property
+    def mean_slowdown(self):
+        if self.nb_jobs_completed == 0:
+            return 0
+        return self.slowdown_sum / self.nb_jobs_completed
+
+    @property
+    def mean_waiting_time(self):
+        if self.nb_jobs_completed == 0:
+            return 0
+        return self.waiting_sum / self.nb_jobs_completed
 
     @property
     def jobs_running(self):
@@ -27,6 +47,10 @@ class SchedulerManager():
     def nb_jobs_in_queue(self):
         return len(self.jobs_queue)
 
+    @property
+    def is_ready(self):
+        return self.has_free_space() and self.has_jobs_in_queue()
+        
     @property
     def nb_jobs_running(self):
         count = 0
@@ -64,16 +88,19 @@ class SchedulerManager():
     def has_jobs_waiting(self):
         return self.nb_jobs_waiting > 0
 
-    def is_ready(self):
-        return self.has_free_space() and self.has_jobs_in_queue()
 
     def reset(self):
         self.gantt = np.empty(shape=self.gantt_shape, dtype=object)
         self.jobs_queue = []
         self.jobs_waiting = deque()
-        self.jobs_finished = dict()
+        self.first_job = None
+        self.last_job = None
         self.nb_jobs_submitted = 0
         self.nb_jobs_completed = 0
+        self.slowdown_sum = 0
+        self.slowdown_sum_est = 0 # based on walltime
+        self.turnaround_sum = 0
+        self.waiting_sum = 0
 
     def update_jobs_progress(self, time):
         jobs = self.gantt[:, 0]
@@ -82,9 +109,13 @@ class SchedulerManager():
                 job.update_remaining_time(time)
 
     def allocate_job(self, job_idx):
+        if job_idx > self.nb_jobs_in_queue - 1:
+            raise InvalidJobError(
+                "There is no job {} to schedule".format(job_idx))
+
         if not self.has_free_space(self.jobs_queue[job_idx].requested_resources):
             raise UnavailableResourcesError(
-            "There is no resource available for this job.")
+                "There is no resource available for this job.")
 
         job = self.jobs_queue.pop(job_idx)
         res_idx = 0
@@ -109,8 +140,8 @@ class SchedulerManager():
         jobs = self.gantt[:, 0][self.gantt[:, 0] != None]
         for job in jobs:
             if job.state != Job.State.RUNNING \
-            and job not in ready_jobs \
-            and len(self.gantt[:, 0][self.gantt[:, 0] == job]) == job.requested_resources:
+                    and job not in ready_jobs \
+                    and len(self.gantt[:, 0][self.gantt[:, 0] == job]) == job.requested_resources:
                 ready_jobs.append(job)
         return ready_jobs
 
@@ -130,13 +161,16 @@ class SchedulerManager():
         job.state = Job.State.RUNNING
         job.start_time = time
         job.update_waiting_time(time)
+        self.slowdown_sum_est += (job.waiting_time + job.requested_time) / job.requested_time
+        if self.first_job == None:
+            self.first_job = job
 
     def on_job_completed(self, time, resources, data):
         self.nb_jobs_completed += 1
         job = self._remove_from_gantt(resources, data['job_id'])
-        self._update_job_stats(job, time, data)
-        self.jobs_finished[job.id] = job
+        self._update_stats(job, time, data)
         self.enqueue_jobs_waiting(time)
+        self.last_job = job
 
     def on_job_submitted(self, time, data):
         self.nb_jobs_submitted += 1
@@ -160,11 +194,10 @@ class SchedulerManager():
         assert job is not None
         return job
 
-    def _update_job_stats(self, job, timestamp, data):
+    def _update_stats(self, job, timestamp, data):
         job.finish_time = timestamp
-        job.waiting_time = data["job_waiting_time"]
-        job.turnaround_time = data["job_turnaround_time"]
-        job.runtime = data["job_runtime"]
+        job.runtime = job.finish_time - job.start_time
+        job.turnaround_time = job.waiting_time + job.runtime
         job.consumed_energy = data["job_consumed_energy"]
         job.remaining_time = 0
         job.return_code = data["return_code"]
@@ -173,6 +206,10 @@ class SchedulerManager():
             job.state = Job.State[data["job_state"]]
         except KeyError:
             job.state = Job.State.UNKNOWN
+
+        self.slowdown_sum += job.turnaround_time / job.requested_time
+        self.waiting_sum += job.waiting_time
+        self.turnaround_sum += job.turnaround_time
 
 
 class Job(object):
@@ -204,7 +241,7 @@ class Job(object):
         self.profile = profile
         self.start_time = -1  # will be set on scheduling by batsim
         self.finish_time = -1  # will be set on completion by batsim
-        self.waiting_time = 0  # will be set on completion by batsim
+        self.waiting_time = 0.  # will be set on completion by batsim
         self.turnaround_time = -1  # will be set on completion by batsim
         self.runtime = -1  # will be set on completion by batsim
         self.consumed_energy = -1  # will be set on completion by batsim
@@ -214,6 +251,7 @@ class Job(object):
         self.json_dict = json_dict
         self.profile_dict = profile_dict
         self.allocation = []
+        self.color = list(np.random.choice(range(1, 255), size=3))
         self.metadata = None
 
     def update_waiting_time(self, t):
@@ -240,4 +278,8 @@ class InsufficientResourcesError(Exception):
 
 
 class UnavailableResourcesError(Exception):
+    pass
+
+
+class InvalidJobError(Exception):
     pass
