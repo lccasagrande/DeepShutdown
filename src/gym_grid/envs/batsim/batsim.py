@@ -7,6 +7,7 @@ import shutil
 import pandas as pd
 import subprocess
 import numpy as np
+import random
 from enum import Enum
 from copy import deepcopy
 from collections import deque
@@ -17,54 +18,34 @@ from .network import BatsimProtocolHandler
 
 class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
-    WORKLOAD = "test"
     CONFIG = "config.json"
+    WORKLOAD_DIR = "workloads"
     OUTPUT_DIR = "results/batsim"
-
 
     def __init__(self, queue_slots, time_window, queue_size=2000, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
-        if os.path.exists(BatsimHandler.OUTPUT_DIR):
-            shutil.rmtree(BatsimHandler.OUTPUT_DIR, ignore_errors=True)
 
-        os.makedirs(BatsimHandler.OUTPUT_DIR)
+        self._output_dir = self._make_random_dir(BatsimHandler.OUTPUT_DIR)
         self._config = os.path.join(fullpath, BatsimHandler.CONFIG)
         self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
-        workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD)
+        workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD_DIR)
         self._workloads = [workloads_path + "/" +
                            w for w in os.listdir(workloads_path) if w.endswith('.json')]
+
         self._workload = None
+        self._workload_idx = 0
         self._simulator_process = None
         self._verbose = verbose
         self.time_window = time_window
         self.running_simulation = False
         self.nb_simulation = 0
-        self._workload_idx = 0
         self.queue_slots = queue_slots
         self.protocol_manager = BatsimProtocolHandler()
-        print(self.protocol_manager.socket_endpoint)
         self.resource_manager = ResourceManager.from_xml(self._platform)
-        self.sched_manager = SchedulerManager(
-            self.nb_resources, time_window, queue_size, queue_slots)
+        self.sched_manager = SchedulerManager(self.nb_resources, time_window, queue_size, queue_slots)
         self._reset()
-
-    def _load_workload(self):
-        if len(self._workloads) == self._workload_idx:
-            np.random.shuffle(self._workloads)
-            self._workload_idx = 0
-
-        self._workload = self._workloads[self._workload_idx]
-        self._workload_idx += 1
-
-    def _get_max_walltime(self, workload):
-        with open(workload) as f:
-            data = json.load(f)
-            max_walltime = max(data['jobs'], key=(
-                lambda job: job['walltime']))['walltime']
-
-        return max_walltime
 
     @property
     def nb_jobs_in_queue(self):
@@ -179,7 +160,7 @@ class BatsimHandler:
             self.sched_manager.on_job_scheduled(job, self.current_time)
 
     def _start_simulator(self):
-        output_path = BatsimHandler.OUTPUT_DIR + "/" + str(self.nb_simulation)
+        output_path = self._output_dir + "/" + str(self.nb_simulation)
         cmd = "batsim -s {} -p {} -w {} -v {} -E --config-file {} -e {}".format(self.protocol_manager.socket_endpoint,
                                                                                 self._platform,
                                                                                 self._workload,
@@ -295,7 +276,7 @@ class BatsimHandler:
     def _export_metrics(self):
         data = pd.DataFrame(self.metrics, index=[0])
         fn = "{}/{}_{}.csv".format(
-            BatsimHandler.OUTPUT_DIR,
+            self._output_dir,
             self.nb_simulation,
             "schedule_metrics")
         data.to_csv(fn, index=False)
@@ -314,3 +295,29 @@ class BatsimHandler:
         # Remember to always ack
         if self.running_simulation:
             self.protocol_manager.acknowledge()
+
+    def _load_workload(self):
+        if len(self._workloads) == self._workload_idx:
+            np.random.shuffle(self._workloads)
+            self._workload_idx = 0
+
+        self._workload = self._workloads[self._workload_idx]
+        self._workload_idx += 1
+
+    def _get_max_walltime(self, workload):
+        with open(workload) as f:
+            data = json.load(f)
+            max_walltime = max(data['jobs'], key=(
+                lambda job: job['walltime']))['walltime']
+
+        return max_walltime
+
+
+    def _make_random_dir(self, path):
+        num = 1
+        while os.path.exists(path + str(num)):
+            num += 1
+            
+        output_dir = path + str(num)
+        os.makedirs(output_dir)
+        return output_dir

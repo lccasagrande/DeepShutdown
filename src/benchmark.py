@@ -2,6 +2,7 @@ from gym_grid.envs.grid_env import GridEnv
 from collections import deque
 from policies import Tetris, SJF, LJF, Random, FirstFit
 import utils
+import shutil
 import gym
 import csv
 import numpy as np
@@ -34,8 +35,8 @@ def run_experiment(policy, n_ep, seed, results):
                 policy_results['slowdown'].append(info['mean_slowdown'])
                 policy_results['makespan'].append(info['makespan'])
                 policy_results['energy'].append(info['energy_consumed'])
-                print("\n{} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}"
-                      .format(policy_name, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
+                #print("\n{} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}"
+                #      .format(policy_name, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
                 break
 
     results[policy_name] = policy_results
@@ -86,10 +87,12 @@ def plot_results(data, name):
 if __name__ == "__main__":
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), Random(), SJF(), LJF()]
-    n_episodes = 200
+    n_episodes = 100
     seed = 123
-    
-    run(output_dir, [SJF(), Tetris()], n_episodes, seed)
+    shutil.rmtree(output_dir, ignore_errors=True)
+    shutil.rmtree('results', ignore_errors=True)
+
+    run(output_dir, policies, n_episodes, seed)
     #plot_results(rewards, 'Episode Rewards')
     #plot_results(slowdowns, 'Mean Slowdown')
     #plot_results(makespans, 'Makespan')
