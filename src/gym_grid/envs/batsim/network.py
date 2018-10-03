@@ -1,4 +1,5 @@
 import json
+import socket
 import zmq
 from .scheduler import Job
 
@@ -8,8 +9,20 @@ class BatsimProtocolHandler:
     ATTEMPT_JOB_SEPARATOR = "#"
     WORKLOAD_JOB_SEPARATOR_REPLACEMENT = "%"
 
-    def __init__(self, socket_endpoint):
-        self._network = NetworkHandler(socket_endpoint)
+    def get_free_tcp_address(self):
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.bind(('', 0))
+        host, port = tcp.getsockname()
+        tcp.close()
+        return 'tcp://{host}:{port}'.format(**locals())
+
+    def __init__(self, socket_endpoint=None):
+        if socket_endpoint == None:
+            self.socket_endpoint = self.get_free_tcp_address()
+        else:
+            self.socket_endpoint = socket_endpoint
+            
+        self._network = NetworkHandler(self.socket_endpoint)
         self._initialize_vars()
 
     def read_events(self, blocking):
@@ -30,7 +43,7 @@ class BatsimProtocolHandler:
 
     def send_events(self):
         if not self.has_events():
-            return 
+            return
 
         msg = self._flush()
         assert msg is not None, "Cannot send a message if no event ocurred."
@@ -67,14 +80,22 @@ class BatsimProtocolHandler:
     def has_events(self):
         return len(self.events) > 0 or self._ack
 
+    @property
+    def current_time(self):
+        return self._current_time
+
+    @current_time.setter
+    def current_time(self, value):
+        self._current_time = float("%4.f" % value)
+
     def update_time(self, time):
         self.current_time = time
 
-    def consume_time(self, t):
-        self.current_time += float(t)
+    def consume_time(self, time):
+        self.current_time += time
         return self.current_time
 
-    def wake_me_up_at(self, time):
+    def set_alarm(self, time):
         self.events.append(
             {"timestamp": self.current_time,
              "type": "CALL_ME_LATER",
@@ -388,14 +409,14 @@ class NetworkHandler:
 
 class BatsimEvent:
     def __init__(self, timestamp, type, data):
-        self.timestamp = timestamp
+        self.timestamp = float("%4.f" % timestamp)
         self.type = type
         self.data = data
 
 
 class BatsimMessage:
     def __init__(self, now, events):
-        self.now = now
+        self.now = float("%4.f" % now)
         self.events = [BatsimEvent(
             event['timestamp'], event['type'], event['data']) for event in events]
 

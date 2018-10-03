@@ -11,21 +11,18 @@ import plotly.plotly as py
 import plotly.graph_objs as go
 import plotly.tools as tls
 from plotly.offline import plot
+from multiprocessing import Process, Manager
 
 
-def run_experiment(output_dir, policy, n_ep, out_freq, plot=False, render=False):
+def run_experiment(policy, n_ep, seed, results):
+    policy_name = policy.__class__.__name__
+    policy_results = dict(score=[], slowdown=[], makespan=[], energy=[])
     env = gym.make('grid-v0')
-    episodic_scores = []
-    episodic_slowdowns = []
-    episodic_makespans = []
-    episodic_energy = []
+    env.seed(seed)
 
     for i in range(1, n_ep + 1):
         score, state = 0,  env.reset()
         while True:
-            if render:
-                env.render()
-
             act = policy.select_action(state)
 
             state, reward, done, info = env.step(act)
@@ -33,54 +30,41 @@ def run_experiment(output_dir, policy, n_ep, out_freq, plot=False, render=False)
             score += reward
 
             if done:
-                episodic_scores.append(score)
-                episodic_slowdowns.append(info['mean_slowdown'])
-                episodic_makespans.append(info['makespan'])
-                episodic_energy.append(info['energy_consumed'])
-                print("Episode {:7}, Score: {:7} - Mean Slowdown {:3} - Makespan {:7}"
-                      .format(i, score, info['mean_slowdown'], info['makespan']))
+                policy_results['score'].append(score)
+                policy_results['slowdown'].append(info['mean_slowdown'])
+                policy_results['makespan'].append(info['makespan'])
+                policy_results['energy'].append(info['energy_consumed'])
+                print("\n{} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}"
+                      .format(policy_name, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
                 break
 
-    if plot:
-        utils.plot_reward(episodic_scores,
-                          n_ep,
-                          title=policy.__class__.__name__ + ' Policy',
-                          output_dir=output_dir)
-
-    return episodic_scores, episodic_slowdowns, episodic_makespans, episodic_energy
+    results[policy_name] = policy_results
 
 
-def run(output_dir, policies):
-    rewards = dict()
-    slowdowns = dict()
-    makespans = dict()
-    energy = dict()
+def run(output_dir, policies, n_ep, seed):
+    np.random.seed(seed)
+    manager = Manager()
+    manager_result = manager.dict()
+    metrics = ['score','slowdown','makespan','energy']
+    process = []
+    utils.clean_or_create_dir(output_dir)
 
     for policy in policies:
-        output = output_dir + policy.__class__.__name__ + "/"
-        utils.clean_or_create_dir(output)
-        eps_rewards, eps_slowdowns, eps_makespans, eps_energy = run_experiment(output_dir=output,
-                                                                               policy=policy,
-                                                                               n_ep=10,
-                                                                               out_freq=100,
-                                                                               plot=False,
-                                                                               render=False)
+        p = Process(target=run_experiment, args=(policy, n_ep, seed, manager_result, ))
+        p.start()
+        process.append(p)
 
-        rewards[policy.__class__.__name__] = list(eps_rewards)
-        slowdowns[policy.__class__.__name__] = list(eps_slowdowns)
-        makespans[policy.__class__.__name__] = list(eps_makespans)
-        energy[policy.__class__.__name__] = list(eps_energy)
+    for p in process:
+        p.join()
 
-    dt = pd.DataFrame.from_dict(rewards)
-    dt.to_csv(output_dir+"rewards.csv", index=False)
-    dt = pd.DataFrame.from_dict(slowdowns)
-    dt.to_csv(output_dir+"slowdowns.csv", index=False)
-    dt = pd.DataFrame.from_dict(makespans)
-    dt.to_csv(output_dir+"makespans.csv", index=False)
-    dt = pd.DataFrame.from_dict(energy)
-    dt.to_csv(output_dir+"energy.csv", index=False)
-    return rewards, slowdowns, makespans, energy
+    # PRINT
+    for metric in metrics:
+        tmp = dict()
+        for key, value in manager_result.items():
+            tmp[key] = value[metric]
 
+        dt = pd.DataFrame.from_dict(tmp)
+        dt.to_csv(output_dir+metric+".csv", index=False)
 
 def plot_results(data, name):
     def get_bar_plot(dt):
@@ -102,7 +86,10 @@ def plot_results(data, name):
 if __name__ == "__main__":
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), Random(), SJF(), LJF()]
-    rewards, slowdowns, makespans, energy = run(output_dir, policies)
-    plot_results(rewards, 'Episode Rewards')
-    plot_results(slowdowns, 'Mean Slowdown')
-    plot_results(makespans, 'Makespan')
+    n_episodes = 200
+    seed = 123
+    
+    run(output_dir, [SJF(), Tetris()], n_episodes, seed)
+    #plot_results(rewards, 'Episode Rewards')
+    #plot_results(slowdowns, 'Mean Slowdown')
+    #plot_results(makespans, 'Makespan')

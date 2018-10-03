@@ -38,17 +38,16 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        time_after = self.simulator.current_time
-        jobs_requested_time = self._get_jobs_requested_time()
+        slowdown_before = self.simulator.sched_manager.runtime_slowdown
 
         try:
             self.simulator.schedule(action)
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
-        time_passed = self.simulator.current_time - time_after
+        slowdown_after = self.simulator.sched_manager.runtime_slowdown - slowdown_before
 
-        reward = self._get_reward(time_passed, jobs_requested_time)
+        reward = -1 * slowdown_after
 
         self._update_state()
 
@@ -58,36 +57,16 @@ class GridEnv(gym.Env):
         return self.state, reward, done, info
 
     def _get_info(self):
-        if self.simulator.running_simulation:
-            info = dict(
-                nb_jobs_submitted=self.simulator.nb_jobs_submitted,
-                nb_jobs_completed=self.simulator.nb_jobs_completed,
-                nb_jobs_running=self.simulator.nb_jobs_running,
-                nb_jobs_in_queue=self.simulator.nb_jobs_in_queue)
-        else:
-            info = dict(
-                makespan=self.simulator.metrics['makespan'],
-                mean_slowdown=self.simulator.metrics['mean_slowdown'],
-                energy_consumed=self.simulator.metrics['energy_consumed'])
+        info = {}
+        if not self.simulator.running_simulation:
+            info['makespan'] = self.simulator.metrics['makespan']
+            info['mean_slowdown'] = self.simulator.metrics['mean_slowdown']
+            info['energy_consumed'] = self.simulator.metrics['energy_consumed']
+            info['total_slowdown'] = self.simulator.metrics['total_slowdown']
+            info['total_turnaround_time'] = self.simulator.metrics['total_turnaround_time']
+            info['total_waiting_time'] = self.simulator.metrics['total_waiting_time']
+
         return info
-
-    def _get_jobs_requested_time(self):
-        jobs = []
-        for j in self.simulator.sched_manager.jobs_queue:
-            jobs.append(j.requested_time)
-        for j in self.simulator.sched_manager.jobs_waiting:
-            jobs.append(j.requested_time)
-        for j in self.simulator.sched_manager.jobs_running:
-            jobs.append(j.requested_time)
-        return jobs
-
-    def _get_reward(self, time_passed, jobs_req_time):
-        reward = 0
-        if time_passed != 0:
-            for time in jobs_req_time:
-                reward += -1 * (time_passed / time)
-
-        return reward
 
     def reset(self):
         self.all_time = 0
@@ -138,7 +117,7 @@ class GridEnv(gym.Env):
             for res_idx, resource in enumerate(self.state['gantt']):
                 job = resource['queue'][0]
                 if job is not None:
-                    time_window = min(self.time_window, job.remaining_time)
+                    time_window = min(self.time_window, int(job.remaining_time))
                     resource_state[0:time_window, res_idx] = job.color
 
             plt.subplot(1, 1 + self.simulator.queue_slots + 1, 1)
@@ -153,7 +132,8 @@ class GridEnv(gym.Env):
             ax.set_yticks(np.arange(-.5, self.time_window, 1), minor=True)
             ax.set_aspect('auto')
             ax.set_title("RES")
-            ax.grid(which='minor', color='w', linestyle='-', linewidth=1)
+            ax.grid(which='minor', color='w',
+                    linestyle='-', linewidth=1)
 
         def plot_queue_state(offset=1):
             nb_res = self.simulator.nb_resources

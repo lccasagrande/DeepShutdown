@@ -19,10 +19,10 @@ class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
     WORKLOAD = "test"
     CONFIG = "config.json"
-    SOCKET_ENDPOINT = "tcp://*:28000"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, queue_slots, time_window, verbose='quiet'):
+
+    def __init__(self, queue_slots, time_window, queue_size=2000, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -43,10 +43,11 @@ class BatsimHandler:
         self.nb_simulation = 0
         self._workload_idx = 0
         self.queue_slots = queue_slots
-        self.protocol_manager = BatsimProtocolHandler(
-            BatsimHandler.SOCKET_ENDPOINT)
+        self.protocol_manager = BatsimProtocolHandler()
+        print(self.protocol_manager.socket_endpoint)
         self.resource_manager = ResourceManager.from_xml(self._platform)
-        self.sched_manager = SchedulerManager(self.nb_resources, time_window)
+        self.sched_manager = SchedulerManager(
+            self.nb_resources, time_window, queue_size, queue_slots)
         self._reset()
 
     def _load_workload(self):
@@ -108,16 +109,15 @@ class BatsimHandler:
             )
             resources_states.append(resource_state)
 
-        jobs = list(self.sched_manager.jobs_queue)
-        queue_sz = len(jobs)
+        jobs = self.sched_manager.jobs_queue
         job_queue = dict(
-            jobs=jobs[0:min(queue_sz, self.queue_slots)],
+            jobs=jobs[0:min(len(jobs), self.queue_slots)],
             nb_jobs_in_queue=self.sched_manager.nb_jobs_in_queue,
             nb_jobs_waiting=self.sched_manager.nb_jobs_waiting
         )
 
-        state = dict(gantt=deepcopy(resources_states),
-                     job_queue=deepcopy(job_queue))
+        state = dict(gantt=resources_states,
+                     job_queue=job_queue)
         return state
 
     @property
@@ -159,7 +159,7 @@ class BatsimHandler:
             if self.sched_manager.is_ready:
                 return
         elif not self._alarm_is_set:  # Handle VOID Action
-            self.protocol_manager.wake_me_up_at(self.current_time + 1)
+            self.protocol_manager.set_alarm(self.current_time + 1)
             self._alarm_is_set = True
 
         self._start_ready_jobs()
@@ -180,11 +180,12 @@ class BatsimHandler:
 
     def _start_simulator(self):
         output_path = BatsimHandler.OUTPUT_DIR + "/" + str(self.nb_simulation)
-        cmd = "batsim -p {} -w {} -v {} -E --config-file {} -e {}".format(self._platform,
-                                                                          self._workload,
-                                                                          self._verbose,
-                                                                          self._config,
-                                                                          output_path)
+        cmd = "batsim -s {} -p {} -w {} -v {} -E --config-file {} -e {}".format(self.protocol_manager.socket_endpoint,
+                                                                                self._platform,
+                                                                                self._workload,
+                                                                                self._verbose,
+                                                                                self._config,
+                                                                                output_path)
 
         return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
 
@@ -216,10 +217,9 @@ class BatsimHandler:
         self._start_ready_jobs()
 
     def _handle_job_submitted(self, timestamp, data):
-        if data['job']['res'] > self.resource_manager.nb_resources:
+        accepted = self.sched_manager.on_job_submitted(timestamp, data['job'])
+        if not accepted:
             self.protocol_manager.reject_job(data['job_id'])
-        else:
-            self.sched_manager.on_job_submitted(timestamp, data['job'])
 
     def _handle_simulation_begins(self, data):
         self.running_simulation = True
@@ -256,13 +256,15 @@ class BatsimHandler:
         self.metrics["max_turnaround_time"] = float(
             data["max_turnaround_time"])
         self.metrics["max_slowdown"] = float(data["max_slowdown"])
-        self.metrics["energy_consumed"] = float(
-            data["consumed_joules"])
+        self.metrics["energy_consumed"] = float(data["consumed_joules"])
+        self.metrics['total_slowdown'] = self.sched_manager.total_slowdown
+        self.metrics['total_turnaround_time'] = self.sched_manager.total_turnaround_time
+        self.metrics['total_waiting_time'] = self.sched_manager.total_waiting_time
         self._export_metrics()
 
     def _handle_requested_call(self, timestamp):
         self._alarm_is_set = False
-        self.sched_manager.on_delay_expired(timestamp)
+        self.sched_manager.on_alarm_fired(timestamp)
 
     def _handle_batsim_events(self, event):
         if event.type == "SIMULATION_BEGINS":
@@ -303,10 +305,11 @@ class BatsimHandler:
 
         events = self.protocol_manager.read_events(
             blocking=not self.running_simulation)
+
+        self.sched_manager.update_state(self.current_time)
+
         for event in events:
             self._handle_batsim_events(event)
-
-        self.sched_manager.update_jobs_progress(self.current_time)
 
         # Remember to always ack
         if self.running_simulation:
