@@ -37,10 +37,10 @@ class EpsGreedy(RLPolicy):
             return self._select_random_action(q_values, state)
 
     def _select_random_action(self, q_values, state):
-        valid_actions = [-1]
+        valid_actions = [0]
         total_job_slots = self.nb_res+(self.job_slots*self.nb_res)
 
-        action = 0
+        action = 1
         for i in range(self.nb_res, total_job_slots, self.nb_res):
             if state[-1][0][i] > 0:
                 valid_actions.append(action)
@@ -57,7 +57,7 @@ class Greedy(RLPolicy):
 
     def select_action(self, q_values, state):
         q_pos = 0
-        actions = [q_pos-1]
+        actions = [q_pos]
         q_max = q_values[q_pos]
         total_job_slots = self.nb_res+(self.job_slots*self.nb_res)
 
@@ -67,9 +67,9 @@ class Greedy(RLPolicy):
 
                 if q_values[q_pos] > q_max:
                     q_max = q_values[q_pos]
-                    actions = [q_pos-1]
+                    actions = [q_pos]
                 elif q_values[q_pos] == q_max:
-                    actions.append(q_pos-1)
+                    actions.append(q_pos)
 
         return choice(actions)
 
@@ -77,14 +77,14 @@ class Greedy(RLPolicy):
 class Random(Policy):
     def select_action(self, state):
         jobs = state['job_queue']['jobs']
-        actions = [-1] + list(range(len(jobs)))
+        actions = [0] + list(range(1, len(jobs)+1))
 
         return choice(actions)
 
 
 class SJF(Policy):
     def select_action(self, state):
-        action, shortest_job = -1, np.inf
+        action, shortest_job = 0, np.inf
         jobs = state['job_queue']['jobs']
         avail_res = len([res_data['resource'].id for res_data in state['gantt']
                          if res_data['resource'].is_available])
@@ -92,29 +92,29 @@ class SJF(Policy):
         for i, job in enumerate(jobs):
             if job.requested_resources <= avail_res and job.requested_time < shortest_job:
                 shortest_job = job.requested_time
-                action = i
+                action = i+1
 
         return action
 
 
 class LJF(Policy):
     def select_action(self, state):
-        action, shortest_job = -1, -1
+        action, shortest_job = 0, -1
         jobs = state['job_queue']['jobs']
         avail_res = len([res_data['resource'].id for res_data in state['gantt']
-                     if res_data['resource'].is_available])
+                         if res_data['resource'].is_available])
 
         for i, job in enumerate(jobs):
             if job.requested_resources <= avail_res and job.requested_time > shortest_job:
                 shortest_job = job.requested_time
-                action = i
+                action = i+1
 
         return action
 
 
 class Tetris(Policy):
     def select_action(self, state):
-        action, score = -1, 0
+        action, score = 0, 0
         jobs = state['job_queue']['jobs']
         avail_res = len([res_data['resource'].id for res_data in state['gantt']
                          if res_data['resource'].is_available])
@@ -122,14 +122,14 @@ class Tetris(Policy):
         for i, job in enumerate(jobs):
             if job.requested_resources <= avail_res and job.requested_resources > score:
                 score = job.requested_resources
-                action = i
+                action = i+1
 
         return action
 
 
 class FirstFit(Policy):
     def select_action(self, state):
-        action = -1
+        action = 0
         gantt = state['gantt']
         jobs = state['job_queue']['jobs']
         avail_res = len(
@@ -137,7 +137,7 @@ class FirstFit(Policy):
 
         for i, job in enumerate(jobs):
             if job.requested_resources <= avail_res:
-                action = i
+                action = i+1
                 break
 
         return action

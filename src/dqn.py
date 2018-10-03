@@ -13,7 +13,7 @@ from keras.callbacks import TensorBoard
 from keras.layers import Dense, Activation, Flatten, Convolution2D, BatchNormalization, Permute, GRU, Dropout
 from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
-from policy import Greedy, EpsGreedy
+from policies import Greedy, EpsGreedy
 from dqn_agent import DQNAgent
 from rl.policy import LinearAnnealedPolicy
 from rl.memory import SequentialMemory
@@ -47,8 +47,8 @@ class GridProcessor(Processor):
         for res, resource_space in enumerate(gantt):
             job = resource_space['queue'][0]
             if job != None:
-                time_window = min(self.time_window, job.remaining_time)
-                tmp = obs[0:time_window]
+                time_window = min(self.time_window, int(job.remaining_time))
+                #tmp = obs[0:time_window]
                 obs[0:time_window, res] = [1]
 
         index = self.nb_res

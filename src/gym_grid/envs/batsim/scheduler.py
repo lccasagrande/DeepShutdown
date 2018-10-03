@@ -96,7 +96,7 @@ class SchedulerManager():
             self.runtime_waiting_time += job.waiting_time - wait_before
 
     def allocate_job(self, job_idx):
-        if job_idx > self.nb_jobs_in_queue - 1:
+        if job_idx >= self.nb_jobs_in_queue:
             raise InvalidJobError(
                 "There is no job {} to schedule".format(job_idx))
 

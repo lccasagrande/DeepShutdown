@@ -12,13 +12,19 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 10
-        self.time_window = 20
-        self.backlog = 4
+        self.job_slots = 11
+        self.time_window = 32
+        self.backlog = 8
         self.max_slowdown = 1
         self.simulator = BatsimHandler(self.job_slots, time_window=1)
         self._update_state()
-        self.action_space = self._get_action_space()
+        self.action_space = spaces.Discrete(self.simulator.queue_slots+1)
+        nb_res = self.simulator.nb_resources
+        width = nb_res + (self.job_slots*nb_res) + self.backlog
+        self.observation_space = spaces.Box(low=0,
+                                            high=1,
+                                            shape=(self.time_window, width, 1),
+                                            dtype=np.uint8)
 
     @property
     def nb_resources(self):
@@ -41,7 +47,7 @@ class GridEnv(gym.Env):
         slowdown_before = self.simulator.sched_manager.runtime_slowdown
 
         try:
-            self.simulator.schedule(action)
+            self.simulator.schedule(action-1)
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
@@ -95,12 +101,6 @@ class GridEnv(gym.Env):
     def _update_state(self):
         self.state = self.simulator.current_state
 
-    def _get_action_space(self):
-        return spaces.Discrete(self.simulator.queue_slots+1)
-
-    def _get_observation_space(self):
-        raise NotImplementedError()
-
     def _print(self):
         stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
             self.simulator.nb_jobs_submitted,
@@ -117,7 +117,8 @@ class GridEnv(gym.Env):
             for res_idx, resource in enumerate(self.state['gantt']):
                 job = resource['queue'][0]
                 if job is not None:
-                    time_window = min(self.time_window, int(job.remaining_time))
+                    time_window = min(self.time_window,
+                                      int(job.remaining_time))
                     resource_state[0:time_window, res_idx] = job.color
 
             plt.subplot(1, 1 + self.simulator.queue_slots + 1, 1)

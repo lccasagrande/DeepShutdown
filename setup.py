@@ -30,5 +30,14 @@ setup(name='drl_grid',
           'image',
           'keras',
           'sklearn',
-          'tensorflow-gpu'
+          'tensorflow-gpu',
+          'scipy',
+          'tqdm',
+          'joblib',
+          'dill',
+          'progressbar2',
+          'mpi4py',
+          'cloudpickle',
+          'click',
+          'opencv-python'
       ])
