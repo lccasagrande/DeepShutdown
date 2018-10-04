@@ -22,55 +22,15 @@ from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
 class GridProcessor(Processor):
-    def __init__(self, job_slots, backlog, time_window, nb_res, max_slowdown, max_efficiency):
+    def __init__(self):
         super().__init__()
-        self.max_slowdown = max_slowdown
-        self.max_efficiency = max_efficiency
-        self.time_window = time_window
-        self.job_slots = job_slots
-        self.backlog = backlog
-        self.nb_res = nb_res
-        self.output_shape = (self.time_window, self.nb_res +
-                             (self.job_slots*self.nb_res) + self.backlog, 1)
 
     def process_state_batch(self, batch):
         return np.asarray([v[0] for v in batch])
 
     def process_observation(self, observation):
-        gantt = observation['gantt']
-        jobs_in_queue = observation['job_queue']['jobs']
-        nb_jobs_in_queue = observation['job_queue']['nb_jobs_in_queue']
-        nb_jobs_waiting = observation['job_queue']['nb_jobs_waiting']
-
-        obs = np.zeros(shape=self.output_shape, dtype=np.int8)
-
-        for res, resource_space in enumerate(gantt):
-            job = resource_space['queue'][0]
-            if job != None:
-                time_window = min(self.time_window, int(job.remaining_time))
-                #tmp = obs[0:time_window]
-                obs[0:time_window, res] = [1]
-
-        index = self.nb_res
-        job_slots = min(self.job_slots, nb_jobs_in_queue)
-        for job_slot in range(job_slots):
-            job = jobs_in_queue[job_slot]
-            time_window = min(self.time_window, job.requested_time)
-            start_idx = (job_slot*self.nb_res) + index
-            end_idx = start_idx + job.requested_resources
-            obs[0:time_window, start_idx:end_idx] = [1]
-
-        nb_jobs_in_queue -= len(jobs_in_queue) + nb_jobs_waiting
-        backlog_slot = 0
-        index = self.nb_res + (self.job_slots*self.nb_res)
-        while nb_jobs_in_queue != 0 and backlog_slot != self.backlog:
-            time_window = min(self.time_window, nb_jobs_in_queue)
-            obs[0:time_window, index+backlog_slot] = [1]
-            backlog_slot += 1
-            nb_jobs_in_queue -= time_window
-
-        assert obs.ndim == 3  # (height, width, channel)
-        return obs
+        assert observation.ndim == 3  # (height, width, channel)
+        return observation
 
 
 def build_model(input_shape, output_shape):
@@ -104,16 +64,10 @@ if __name__ == "__main__":
     np.random.seed(seed)
     env.seed(seed)
 
-    processor = GridProcessor(job_slots=env.job_slots,
-                              backlog=env.backlog,
-                              time_window=env.time_window,
-                              nb_res=env.nb_resources,
-                              max_slowdown=env.max_slowdown,
-                              max_efficiency=env.max_energy_consumption)
+    model = build_model(input_shape=env.observation_space.shape,
+                        output_shape=env.action_space.n)
 
-    model = build_model(processor.output_shape, env.action_space.n)
-
-    memory = SequentialMemory(limit=100000, window_length=32)
+    memory = SequentialMemory(limit=1000000, window_length=10)
 
     test_policy = Greedy(env.nb_resources, env.job_slots)
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedy(env.nb_resources, env.job_slots),
@@ -121,14 +75,14 @@ if __name__ == "__main__":
                                         value_max=1.,
                                         value_min=.1,
                                         value_test=.05,
-                                        nb_steps=500000)
+                                        nb_steps=1000000)
 
     dqn = DQNAgent(model=model,
                    nb_actions=env.action_space.n,
                    policy=train_policy,
                    test_policy=test_policy,
+                   processor=GridProcessor(),
                    memory=memory,
-                   processor=processor,
                    nb_steps_warmup=50000,
                    gamma=.99,
                    target_model_update=10000,
@@ -138,17 +92,18 @@ if __name__ == "__main__":
     dqn.compile(Adam(lr=.0001), metrics=['mae'])
 
     callbacks = [
-        ModelIntervalCheckpoint('weights/'+name+'/' + name+'_weights_{step}.h5f', interval=100000),
+        ModelIntervalCheckpoint('weights/'+name+'/' +
+                                name+'_weights_{step}.h5f', interval=100000),
         FileLogger('log/'+name+'/'+name+'_log.json', interval=1),
         TensorBoard(log_dir='log/'+name+'/'+name)
     ]
     if train:
         dqn.fit(env=env,
                 callbacks=callbacks,
-                nb_steps=1750000,
+                nb_steps=3000000,
                 log_interval=10000,
                 visualize=False,
-                verbose=1,
+                verbose=2,
                 nb_max_episode_steps=2000)
 
         dqn.save_weights('weights/'+name+'/'+name +

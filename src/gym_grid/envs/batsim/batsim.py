@@ -22,7 +22,7 @@ class BatsimHandler:
     WORKLOAD_DIR = "workloads"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, queue_slots, time_window, queue_size=2000, verbose='quiet'):
+    def __init__(self, queue_slots, time_window, queue_size, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
