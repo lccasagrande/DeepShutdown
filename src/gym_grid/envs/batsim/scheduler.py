@@ -125,29 +125,32 @@ class SchedulerManager():
         self.runtime_slowdown = 0
         self.runtime_waiting_time = 0
 
-    def update_state(self, now):
-        for _, job in self._jobs_allocated.items():
+    def update_state(self, time_passed):
+        def update_job_running(job):
+            slow_before = job.runtime_slowdown
+            job.update_state(time_passed)
+            self.runtime_slowdown += job.runtime_slowdown - slow_before
+
+        def update_job_not_running(job):
             slow_before = job.runtime_slowdown
             wait_before = job.waiting_time
-            job.update_state(now)
+            job.update_state(time_passed)
             self.runtime_slowdown += job.runtime_slowdown - slow_before
             self.runtime_waiting_time += job.waiting_time - wait_before
+
+        for _, job in self._jobs_allocated.items():
+            update_job_not_running(job)
 
         for _, job in self._jobs_running.items():
-            slow_before = job.runtime_slowdown
-            job.update_state(now)
-            self.runtime_slowdown += job.runtime_slowdown - slow_before
+            update_job_running(job)
 
         for job in self._jobs_queue:
-            slow_before = job.runtime_slowdown
-            wait_before = job.waiting_time
-            job.update_state(now)
-            self.runtime_slowdown += job.runtime_slowdown - slow_before
-            self.runtime_waiting_time += job.waiting_time - wait_before
+            update_job_not_running(job)
 
-    def is_ready(self):
+    def has_job_to_allocate(self, window):
         free_time = self.gantt.free_time
-        for j in self._jobs_queue:
+        slots = min(self.nb_jobs_in_queue, window)
+        for j in self._jobs_queue[0:slots]:
             if (len(np.where(free_time >= j.requested_time)[0]) >= j.requested_resources):
                 return True
         return False
@@ -159,7 +162,7 @@ class SchedulerManager():
 
         job = self._jobs_queue[job_idx]
 
-        resources, time_left_to_start = self._select_available_resources(
+        resources, time_to_start = self._select_available_resources(
             job.requested_resources, job.requested_time)
 
         if resources is None:
@@ -167,7 +170,7 @@ class SchedulerManager():
                 "There is no resource available for this job.")
 
         job.allocation = resources
-        job.time_left_to_start = time_left_to_start
+        job.time_left_to_start = time_to_start
         self.gantt.reserve(job)
         self._jobs_allocated[job.id] = job
         del self._jobs_queue[job_idx]
@@ -222,7 +225,6 @@ class SchedulerManager():
 
         return None, -1
 
-
     def _update_stats(self, job):
         self.total_slowdown += job.slowdown
         self.total_waiting_time += job.waiting_time
@@ -248,6 +250,7 @@ class Job(object):
             subtime,
             walltime,
             res,
+            color,
             profile,
             json_dict,
             profile_dict):
@@ -270,31 +273,25 @@ class Job(object):
         self.json_dict = json_dict
         self.profile_dict = profile_dict
         self.allocation = []
-        self.color = list(np.random.choice(range(25, 225), size=3))
+        self.color = color if color is not None else list(np.random.choice(range(25, 225), size=3))
         self.metadata = None
 
     @property
     def remaining_time(self):
         return self.requested_time - self.runtime if self.finish_time == -1 else 0
 
-    def update_state(self, now):
-        time_passed = 0
+    def update_state(self, time_passed):
         if self.state == Job.State.RUNNING:
-            time_passed = now - self.runtime - self.start_time
             self.runtime += time_passed
         elif self.state == Job.State.SUBMITTED:
-            if self.submit_time < now:
-                time_passed = now - self.waiting_time - self.submit_time
-                self.waiting_time += time_passed
-        else:
-            raise ValueError("Job cannot update its state.")
+            self.waiting_time += time_passed
 
-        if time_passed != 0 and self.time_left_to_start > 0:
+        if self.time_left_to_start > 0:
             self.time_left_to_start = int(
                 max(0, self.time_left_to_start - time_passed))
 
-        self.runtime_slowdown = (
-            self.waiting_time + self.runtime) / self.requested_time
+        runtime_turnaround = self.waiting_time + self.runtime
+        self.runtime_slowdown = runtime_turnaround / self.requested_time
 
     @staticmethod
     def from_json(json_dict, profile_dict=None):
@@ -302,6 +299,7 @@ class Job(object):
                    json_dict["subtime"],
                    json_dict.get("walltime", -1),
                    json_dict["res"],
+                   json_dict['color'],
                    json_dict["profile"],
                    json_dict,
                    profile_dict)

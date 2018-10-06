@@ -127,7 +127,7 @@ class BatsimHandler:
 
     def _wait_state_change(self):
         #self._update_state()
-        while self.running_simulation and (self._alarm_is_set or not self.sched_manager.is_ready()):
+        while self.running_simulation and (self._alarm_is_set or not self.sched_manager.has_job_to_allocate(self.job_slots)):
             self._update_state()
 
     def _get_ready_jobs(self):
@@ -279,10 +279,11 @@ class BatsimHandler:
         events = self.protocol_manager.read_events(
             blocking=not self.running_simulation)
 
-        # We update sched before because new jobs does not need to be updated in this timestep
+        # New jobs does not need to be updated in this timestep
+        # Update jobs if no time has passed does not make sense.
         time_passed = self.current_time - old_time
         if time_passed != 0:
-            self.sched_manager.update_state(self.current_time)
+            self.sched_manager.update_state(time_passed)
 
         for event in events:
             self._handle_batsim_events(event)
@@ -321,26 +322,26 @@ class BatsimHandler:
         jobs = jobs[0:min(len(jobs), self.job_slots)]
 
         # RESOURCES
-        res_state = self.sched_manager.gantt.get_state()
-        state[:, 0:self.nb_resources] = res_state
+        state[:, 0:self.nb_resources] = self.sched_manager.gantt.get_state()
 
         # JOB SLOTS
-        start_idx = self.nb_resources
-        for j in jobs:
+        for i, j in enumerate(jobs):
+            start_idx = (i+1) * self.nb_resources
             end_idx = start_idx + j.requested_resources
             state[0:j.requested_time, start_idx:end_idx] = [255,255,255]
-            start_idx += self.nb_resources
 
         # BACKLOG
-        idx = (self.nb_resources*self.job_slots) + self.nb_resources
-        end_idx = idx + self.backlog_width
-        backlog_jobs = self.sched_manager.nb_jobs_in_queue - len(jobs)
+        start_idx = (self.nb_resources*self.job_slots) + self.nb_resources
+        end_idx = start_idx + self.backlog_width
+        idx = start_idx
         time = 0
+        backlog_jobs = self.sched_manager.nb_jobs_in_queue - len(jobs)
         while backlog_jobs != 0:
+            backlog_jobs -= 1
             state[time, idx] = [255,255,255]
             idx += 1
             if idx == end_idx:
-                idx = 0
+                idx = start_idx
                 time += 1
 
         return state
