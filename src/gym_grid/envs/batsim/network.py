@@ -23,7 +23,13 @@ class BatsimProtocolHandler:
             self.socket_endpoint = socket_endpoint
             
         self._network = NetworkHandler(self.socket_endpoint)
-        self._initialize_vars()
+        self.reset()
+
+    def reset(self):
+        self.events = []
+        self.current_time = 0.0
+        self._ack = False
+
 
     def read_events(self, blocking):
         def get_msg():
@@ -50,16 +56,11 @@ class BatsimProtocolHandler:
         self._network.send(msg)
 
     def start(self):
-        self._initialize_vars()
+        self.reset()
         self._network.bind()
 
     def close(self):
         self._network.close()
-
-    def _initialize_vars(self):
-        self.events = []
-        self.current_time = 0
-        self._ack = False
 
     def _flush(self):
         self._ack = False

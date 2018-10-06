@@ -121,6 +121,9 @@ class ResourceManager:
 
         return ResourceManager(resources)
 
+    def reset(self):
+        self.set_state(self.resources, Resource.State.IDLE)
+
     def on_resource_pstate_changed(self, resources, pstate):
         assert isinstance(pstate, Resource.PowerState)
         self.set_pstate(resources, pstate)
@@ -129,8 +132,9 @@ class ResourceManager:
         self.set_state(resources, Resource.State.COMPUTING)
 
     def on_job_allocated(self, resources):
-        self.set_state(resources, Resource.State.COMPUTING)
-
+        #self.set_state(resources, Resource.State.COMPUTING)
+        return
+        
     def on_job_completed(self, resources):
         self.set_state(resources, Resource.State.IDLE)
 

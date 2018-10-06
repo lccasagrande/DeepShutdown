@@ -8,21 +8,22 @@ import pandas as pd
 import subprocess
 import numpy as np
 import random
+import math
 from enum import Enum
 from copy import deepcopy
 from collections import deque
 from .resource import Resource, ResourceManager
-from .scheduler import SchedulerManager
+from .scheduler import SchedulerManager, Job
 from .network import BatsimProtocolHandler
 
 
 class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
     CONFIG = "config.json"
-    WORKLOAD_DIR = "workloads"
+    WORKLOAD_DIR = "testr"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, queue_slots, time_window, queue_size, verbose='quiet'):
+    def __init__(self, job_slots, time_window, queue_size, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -34,17 +35,21 @@ class BatsimHandler:
         self._workloads = [workloads_path + "/" +
                            w for w in os.listdir(workloads_path) if w.endswith('.json')]
 
-        self._workload = None
-        self._workload_idx = 0
+        self._workload_idx = -1
         self._simulator_process = None
-        self._verbose = verbose
-        self.time_window = time_window
         self.running_simulation = False
         self.nb_simulation = 0
-        self.queue_slots = queue_slots
+        self._verbose = verbose
+        self.time_window = time_window
+        self.job_slots = job_slots
         self.protocol_manager = BatsimProtocolHandler()
         self.resource_manager = ResourceManager.from_xml(self._platform)
-        self.sched_manager = SchedulerManager(self.nb_resources, time_window, queue_size, queue_slots)
+        self.sched_manager = SchedulerManager(
+            self.nb_resources, time_window, queue_size)
+        self.backlog_width = math.ceil(
+            (queue_size - self.job_slots) / self.time_window)
+        self.state_shape = (self.time_window, self.nb_resources +
+                            (self.nb_resources*self.job_slots) + self.backlog_width, 3)
         self._reset()
 
     @property
@@ -72,44 +77,21 @@ class BatsimHandler:
         return self.sched_manager.nb_jobs_completed
 
     @property
-    def nb_jobs_waiting(self):
-        return self.sched_manager.nb_jobs_waiting
-
-    @property
     def nb_resources(self):
         return self.resource_manager.nb_resources
-
-    @property
-    def current_state(self):
-        resources_states = []
-        resources = self.resource_manager.get_resources()
-        for i in range(self.nb_resources):
-            resource_state = dict(
-                resource=resources[i],
-                queue=self.sched_manager.gantt[i]
-            )
-            resources_states.append(resource_state)
-
-        jobs = self.sched_manager.jobs_queue
-        job_queue = dict(
-            jobs=jobs[0:min(len(jobs), self.queue_slots)],
-            nb_jobs_in_queue=self.sched_manager.nb_jobs_in_queue,
-            nb_jobs_waiting=self.sched_manager.nb_jobs_waiting
-        )
-
-        state = dict(gantt=resources_states,
-                     job_queue=job_queue)
-        return state
 
     @property
     def current_time(self):
         return self.protocol_manager.current_time
 
+    def get_state(self, type=''):
+        if type == 'image':
+            return self._get_image()
+        else:
+            return self._get_state()
+
     def lookup(self, idx):
         return deepcopy(self.sched_manager.lookup(idx))
-
-    def estimate_energy_consumption(self, res_ids):
-        return self.resource_manager.estimate_energy_consumption(res_ids)
 
     def close(self):
         self.protocol_manager.close()
@@ -120,25 +102,21 @@ class BatsimHandler:
             self._simulator_process = None
 
     def start(self):
+        assert not self.running_simulation, "A simulation is already running."
         self._reset()
-        self._load_workload()
-        self.nb_simulation += 1
         self._simulator_process = self._start_simulator()
         self.protocol_manager.start()
+        self._update_state()
         self._wait_state_change()
-        if not self.running_simulation:
-            raise ConnectionError(
-                "An error ocurred during simulator starting.")
+        assert self.running_simulation, "An error ocurred during simulator starting."
+        self.nb_simulation += 1
 
     def schedule(self, job):
         assert self.running_simulation, "Simulation is not running."
-        assert job is not None, "Job cannot be null."
 
         if job != -1:
             resources = self.sched_manager.allocate_job(job)
             self.resource_manager.on_job_allocated(resources)
-            if self.sched_manager.is_ready:
-                return
         elif not self._alarm_is_set:  # Handle VOID Action
             self.protocol_manager.set_alarm(self.current_time + 1)
             self._alarm_is_set = True
@@ -148,22 +126,35 @@ class BatsimHandler:
         self._wait_state_change()
 
     def _wait_state_change(self):
-        self._update_state()
-        while self.running_simulation and not self.sched_manager.is_ready:
+        #self._update_state()
+        while self.running_simulation and (self._alarm_is_set or not self.sched_manager.is_ready()):
             self._update_state()
 
+    def _get_ready_jobs(self):
+        ready_jobs = []
+        jobs = self.sched_manager.gantt.get_jobs()
+        for job in jobs:
+
+            if job is not None and \
+            job.state != Job.State.RUNNING and \
+            job.time_left_to_start == 0 and \
+            job not in ready_jobs and \
+            self.resource_manager.is_available(job.allocation):
+                ready_jobs.append(job)
+        return ready_jobs
+
     def _start_ready_jobs(self):
-        ready_jobs = self.sched_manager.get_ready_jobs()
+        ready_jobs = self._get_ready_jobs()
         for job in ready_jobs:
             self.protocol_manager.start_job(job.id,  job.allocation)
-            self.resource_manager.on_job_allocated(job.allocation)
-            self.sched_manager.on_job_scheduled(job, self.current_time)
+            self.resource_manager.on_job_scheduled(job.allocation)
+            self.sched_manager.on_job_scheduled(job.id, self.current_time)
 
     def _start_simulator(self):
         output_path = self._output_dir + "/" + str(self.nb_simulation)
         cmd = "batsim -s {} -p {} -w {} -v {} -E --config-file {} -e {}".format(self.protocol_manager.socket_endpoint,
                                                                                 self._platform,
-                                                                                self._workload,
+                                                                                self._get_workload(),
                                                                                 self._verbose,
                                                                                 self._config,
                                                                                 output_path)
@@ -174,26 +165,20 @@ class BatsimHandler:
         self.metrics = {}
         self._alarm_is_set = False
         self.sched_manager.reset()
+        self.protocol_manager.reset()
+        self.resource_manager.reset()
+
+    def _handle_requested_call(self, timestamp):
+        self._alarm_is_set = False
 
     def _handle_resource_pstate_changed(self, timestamp, data):
         resources = self._get_resources_from_json(data["resources"])
-        self.sched_manager.on_resource_pstate_changed(timestamp)
-        self.resource_manager.on_resource_pstate_changed(
-            resources, Resource.PowerState[int(data["state"])])
-
-    def _get_resources_from_json(self, data):
-        resources = []
-        for alloc in data.split(" "):
-            nodes = alloc.split("-")
-            if len(nodes) == 2:
-                resources.extend(range(int(nodes[0]), int(nodes[1]) + 1))
-            else:
-                resources.append(int(nodes[0]))
-        return resources
+        state = Resource.PowerState[int(data["state"])]
+        self.resource_manager.on_resource_pstate_changed(resources, state)
 
     def _handle_job_completed(self, timestamp, data):
         resources = self._get_resources_from_json(data["alloc"])
-        self.sched_manager.on_job_completed(timestamp, resources, data)
+        self.sched_manager.on_job_completed(timestamp, data)
         self.resource_manager.on_job_completed(resources)
         self._start_ready_jobs()
 
@@ -243,10 +228,6 @@ class BatsimHandler:
         self.metrics['total_waiting_time'] = self.sched_manager.total_waiting_time
         self._export_metrics()
 
-    def _handle_requested_call(self, timestamp):
-        self._alarm_is_set = False
-        self.sched_manager.on_alarm_fired(timestamp)
-
     def _handle_batsim_events(self, event):
         if event.type == "SIMULATION_BEGINS":
             assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
@@ -273,6 +254,16 @@ class BatsimHandler:
         else:
             raise Exception("Unknown event type {}".format(event.type))
 
+    def _get_resources_from_json(self, data):
+        resources = []
+        for alloc in data.split(" "):
+            nodes = alloc.split("-")
+            if len(nodes) == 2:
+                resources.extend(range(int(nodes[0]), int(nodes[1]) + 1))
+            else:
+                resources.append(int(nodes[0]))
+        return resources
+
     def _export_metrics(self):
         data = pd.DataFrame(self.metrics, index=[0])
         fn = "{}/{}_{}.csv".format(
@@ -284,10 +275,14 @@ class BatsimHandler:
     def _update_state(self):
         self.protocol_manager.send_events()
 
+        old_time = self.current_time
         events = self.protocol_manager.read_events(
             blocking=not self.running_simulation)
 
-        self.sched_manager.update_state(self.current_time)
+        # We update sched before because new jobs does not need to be updated in this timestep
+        time_passed = self.current_time - old_time
+        if time_passed != 0:
+            self.sched_manager.update_state(self.current_time)
 
         for event in events:
             self._handle_batsim_events(event)
@@ -296,13 +291,12 @@ class BatsimHandler:
         if self.running_simulation:
             self.protocol_manager.acknowledge()
 
-    def _load_workload(self):
-        if len(self._workloads) == self._workload_idx:
-            np.random.shuffle(self._workloads)
-            self._workload_idx = 0
+    def _get_workload(self):
+        if len(self._workloads) == self._workload_idx + 1:
+            self._workload_idx = -1
 
-        self._workload = self._workloads[self._workload_idx]
         self._workload_idx += 1
+        return self._workloads[self._workload_idx]
 
     def _get_max_walltime(self, workload):
         with open(workload) as f:
@@ -312,12 +306,51 @@ class BatsimHandler:
 
         return max_walltime
 
-
     def _make_random_dir(self, path):
         num = 1
         while os.path.exists(path + str(num)):
             num += 1
-            
+
         output_dir = path + str(num)
         os.makedirs(output_dir)
         return output_dir
+
+    def _get_image(self):
+        state = np.zeros(shape=self.state_shape, dtype=np.uint8)
+        jobs = self.sched_manager.jobs_queue
+        jobs = jobs[0:min(len(jobs), self.job_slots)]
+
+        # RESOURCES
+        res_state = self.sched_manager.gantt.get_state()
+        state[:, 0:self.nb_resources] = res_state
+
+        # JOB SLOTS
+        start_idx = self.nb_resources
+        for j in jobs:
+            end_idx = start_idx + j.requested_resources
+            state[0:j.requested_time, start_idx:end_idx] = [255,255,255]
+            start_idx += self.nb_resources
+
+        # BACKLOG
+        idx = (self.nb_resources*self.job_slots) + self.nb_resources
+        end_idx = idx + self.backlog_width
+        backlog_jobs = self.sched_manager.nb_jobs_in_queue - len(jobs)
+        time = 0
+        while backlog_jobs != 0:
+            state[time, idx] = [255,255,255]
+            idx += 1
+            if idx == end_idx:
+                idx = 0
+                time += 1
+
+        return state
+
+    def _get_state(self):
+        jobs = self.sched_manager.jobs_queue
+        state = dict(
+            resources_properties=self.resource_manager.get_resources(),
+            resources_spaces=self.sched_manager.gantt.get_state(),
+            queue=jobs[0:min(len(jobs), self.job_slots)],
+            nb_jobs=self.sched_manager.nb_jobs_in_queue
+        )
+        return state
