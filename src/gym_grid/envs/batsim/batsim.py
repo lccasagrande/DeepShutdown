@@ -20,7 +20,7 @@ from .network import BatsimProtocolHandler
 class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
     CONFIG = "config.json"
-    WORKLOAD_DIR = "workloads"
+    WORKLOAD_DIR = "workload"
     OUTPUT_DIR = "results/batsim"
 
     def __init__(self, job_slots, time_window, queue_size, verbose='quiet'):
