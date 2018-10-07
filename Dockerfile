@@ -78,6 +78,8 @@ RUN ${PIP} install ${TF_PACKAGE}
 
 RUN ${PIP} install zmq sklearn pyglet plotly pandas numpy matplotlib keras keras-rl gym image
 
+RUN ${PIP} install image scipy tqdm joblib dill progressbar2 mpi4py cloudpickle click opencv-python
+
 WORKDIR /app
 
 COPY . /app
