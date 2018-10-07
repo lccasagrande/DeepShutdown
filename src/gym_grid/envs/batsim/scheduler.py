@@ -24,10 +24,10 @@ class Gantt():
             return free_time
 
         def get_state(self):
-            state = np.zeros(shape=(self.time_window, 3), dtype=np.uint8)
+            state = np.zeros(shape=(self.time_window), dtype=np.uint8)
             for j in self.queue:
                 end_idx = j.time_left_to_start + int(j.remaining_time)
-                state[j.time_left_to_start:end_idx] = j.color
+                state[j.time_left_to_start:end_idx] = 122 if j.color is None else j.color
             return state
 
         def get_job(self):
@@ -46,9 +46,13 @@ class Gantt():
         # Size: we can have N jobs of 1 lenght (e.g.: exec time is 1 second)
         self._state = [Gantt.Resource(time_window=time_window)
                        for _ in range(nb_resources)]
-        self.shape = (time_window, nb_resources, 3)
+        self.shape = (time_window, nb_resources)
         self.nb_resources = nb_resources
         self.time_window = time_window
+        colors = 250
+        self.colormap = np.arange(
+            colors/float(time_window), colors, colors/float(time_window)).tolist()
+        np.random.shuffle(self.colormap)
 
     @property
     def free_time(self):
@@ -66,14 +70,23 @@ class Gantt():
             yield res.get_job()
 
     def clear(self):
+        np.random.shuffle(self.colormap)
         for res in self._state:
             res.clear()
+
+    def _select_color(self):
+        c = self.colormap.pop(0)
+        self.colormap.append(c)
+        return c
 
     def reserve(self, job):
         for res in job.allocation:
             res_state = self._state[res].get_state()
             if np.any(res_state[job.time_left_to_start:job.requested_time] != 0):
                 return False
+
+        if job.color is None:
+            job.color = self._select_color()
 
         for res in job.allocation:
             self._state[res].reserve(job)
@@ -91,6 +104,10 @@ class SchedulerManager():
         self._jobs_allocated = dict()
         self.queue_size = queue_size
         self.reset()
+
+    @property
+    def is_empty(self):
+        return self.nb_jobs_in_queue == 0
 
     @property
     def nb_jobs_running(self):
@@ -147,14 +164,6 @@ class SchedulerManager():
         for job in self._jobs_queue:
             update_job_not_running(job)
 
-    def has_job_to_allocate(self, window):
-        free_time = self.gantt.free_time
-        slots = min(self.nb_jobs_in_queue, window)
-        for j in self._jobs_queue[0:slots]:
-            if (len(np.where(free_time >= j.requested_time)[0]) >= j.requested_resources):
-                return True
-        return False
-
     def allocate_job(self, job_idx):
         if job_idx >= len(self._jobs_queue):
             raise InvalidJobError(
@@ -202,8 +211,8 @@ class SchedulerManager():
         self.nb_jobs_completed += 1
 
     def on_job_submitted(self, time, data):
-        if self.nb_jobs_in_queue == self.queue_size:
-            return False
+        #if self.nb_jobs_in_queue == self.queue_size:
+        #    return False
 
         if data['res'] > self.gantt.nb_resources:
             return False
@@ -250,7 +259,6 @@ class Job(object):
             subtime,
             walltime,
             res,
-            color,
             profile,
             json_dict,
             profile_dict):
@@ -273,7 +281,7 @@ class Job(object):
         self.json_dict = json_dict
         self.profile_dict = profile_dict
         self.allocation = []
-        self.color = color if color is not None else list(np.random.choice(range(25, 225), size=3))
+        self.color = None
         self.metadata = None
 
     @property
@@ -299,7 +307,6 @@ class Job(object):
                    json_dict["subtime"],
                    json_dict.get("walltime", -1),
                    json_dict["res"],
-                   json_dict['color'],
                    json_dict["profile"],
                    json_dict,
                    profile_dict)

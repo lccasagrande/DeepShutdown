@@ -1,6 +1,6 @@
 from gym_grid.envs.grid_env import GridEnv
 from collections import deque
-from policies import Tetris, SJF, LJF, Random, FirstFit
+from policies import Tetris, SJF, LJF, Random, FirstFit, FCFS
 import utils
 import shutil
 import gym
@@ -23,11 +23,14 @@ def run_experiment(policy, n_ep, seed, results):
 
     for i in range(1, n_ep + 1):
         score, state = 0,  env.reset()
+        steps = 0
         while True:
+            #env.render('image')
             act = policy.select_action(state)
+            #act = int(input("Action: "))
 
             state, reward, done, info = env.step(act)
-
+            steps += 1
             score += reward
 
             if done:
@@ -35,23 +38,24 @@ def run_experiment(policy, n_ep, seed, results):
                 policy_results['slowdown'].append(info['mean_slowdown'])
                 policy_results['makespan'].append(info['makespan'])
                 policy_results['energy'].append(info['energy_consumed'])
-                #print("\n{} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}"
-                #      .format(policy_name, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
+                print("\n{} Steps {} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}".format(
+                    policy_name, steps, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
                 break
 
     results[policy_name] = policy_results
 
 
-def run(output_dir, policies, n_ep, seed):
+def run(output_dir, policies, n_ep, seed, plot=True):
     np.random.seed(seed)
     manager = Manager()
     manager_result = manager.dict()
-    metrics = ['score','slowdown','makespan','energy']
+    metrics = ['score', 'slowdown', 'makespan', 'energy']
     process = []
     utils.clean_or_create_dir(output_dir)
 
     for policy in policies:
-        p = Process(target=run_experiment, args=(policy, n_ep, seed, manager_result, ))
+        p = Process(target=run_experiment, args=(
+            policy, n_ep, seed, manager_result, ))
         p.start()
         process.append(p)
 
@@ -64,8 +68,13 @@ def run(output_dir, policies, n_ep, seed):
         for key, value in manager_result.items():
             tmp[key] = value[metric]
 
+        
+        if plot:
+            plot_results(tmp, metric)
+
         dt = pd.DataFrame.from_dict(tmp)
         dt.to_csv(output_dir+metric+".csv", index=False)
+
 
 def plot_results(data, name):
     def get_bar_plot(dt):
@@ -86,13 +95,11 @@ def plot_results(data, name):
 
 if __name__ == "__main__":
     output_dir = 'benchmark/'
-    policies = [FirstFit(), Tetris(), Random(), SJF(), LJF()]
+    policies = [FirstFit(), Tetris(), Random(), SJF(), LJF(), FCFS()]
     n_episodes = 100
     seed = 123
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
-
-    run(output_dir, policies, n_episodes, seed)
-    #plot_results(rewards, 'Episode Rewards')
-    #plot_results(slowdowns, 'Mean Slowdown')
-    #plot_results(makespans, 'Makespan')
+    results = {}
+    #run_experiment(SJF(), n_episodes, seed, results)
+    run(output_dir, [SJF(), Tetris()], n_episodes, seed)

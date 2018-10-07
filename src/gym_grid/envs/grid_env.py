@@ -12,10 +12,9 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 10
-        self.time_window = 20
-        self.backlog_width = 3
-        self.max_slowdown = 1
+        self.job_slots = 11
+        self.time_window = 32
+        self.backlog_width = 8
         queue_size = self.job_slots + (self.backlog_width*self.time_window)
 
         self.simulator = BatsimHandler(job_slots=self.job_slots,
@@ -46,7 +45,7 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        slowdown_before = self.simulator.sched_manager.runtime_slowdown
+        slowdown_before = self.simulator.jobs_manager.runtime_slowdown
 
         try:
             self.simulator.schedule(action-1)
@@ -54,7 +53,7 @@ class GridEnv(gym.Env):
             self.simulator.schedule(-1)
 
         done = not self.simulator.running_simulation
-        slowdown_after = self.simulator.sched_manager.runtime_slowdown - slowdown_before
+        slowdown_after = self.simulator.jobs_manager.runtime_slowdown - slowdown_before
 
         obs = self._get_obs()
         reward = -1 * slowdown_after
@@ -94,7 +93,7 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def _get_obs(self, type=''):
+    def _get_obs(self, type='image'):
         return self.simulator.get_state(type)
 
     def _print(self):
@@ -107,6 +106,7 @@ class GridEnv(gym.Env):
 
     def _plot(self):
         obs = self._get_obs(type='image')
+        obs = obs / 255.0
         def plot_resource_state():
             resource_state = obs[:, 0:self.simulator.nb_resources]
             plt.subplot(1, 1 + self.job_slots + 1, 1)
@@ -127,10 +127,10 @@ class GridEnv(gym.Env):
         def plot_job_state():
             end_idx = self.simulator.nb_resources + (self.simulator.nb_resources * self.job_slots)
             jobs = obs[:, self.simulator.nb_resources:end_idx]
-            slot = 0
+            slot = 1
             for start_idx in range(0, self.job_slots*self.simulator.nb_resources, self.simulator.nb_resources):
                 job_state = jobs[:, start_idx:start_idx+self.simulator.nb_resources]
-                plt.subplot(1, 1 + self.job_slots + 1, slot + 2)
+                plt.subplot(1, 1 + self.job_slots + 1, slot + 1)
                 plt.imshow(job_state, interpolation='nearest',
                            vmax=1, aspect='auto')
                 ax = plt.gca()

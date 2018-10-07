@@ -76,21 +76,37 @@ class Greedy(RLPolicy):
 
 class Random(Policy):
     def select_action(self, state):
-        jobs = state['job_queue']['jobs']
+        jobs = state['queue']
         actions = [0] + list(range(1, len(jobs)+1))
 
         return choice(actions)
 
 
+def is_available(time_window, resources):
+    for time in time_window:
+        occuped = np.count_nonzero(time)
+        if len(time) - occuped < resources:
+            return False
+    return True
+
+
+class FCFS(Policy):
+    def select_action(self, state):
+        jobs = state['queue']
+        # always get the first in the queue
+        action = 0 if len(jobs) == 0 else 1
+        return action
+
+
 class SJF(Policy):
     def select_action(self, state):
         action, shortest_job = 0, np.inf
-        jobs = state['job_queue']['jobs']
-        avail_res = len([res_data['resource'].id for res_data in state['gantt']
-                         if res_data['resource'].is_available])
+        jobs = state['queue']
+        res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
-            if job.requested_resources <= avail_res and job.requested_time < shortest_job:
+            requested_time_window = res_spaces[:job.requested_time]
+            if job.requested_time < shortest_job and is_available(requested_time_window, job.requested_resources):
                 shortest_job = job.requested_time
                 action = i+1
 
@@ -99,14 +115,14 @@ class SJF(Policy):
 
 class LJF(Policy):
     def select_action(self, state):
-        action, shortest_job = 0, -1
-        jobs = state['job_queue']['jobs']
-        avail_res = len([res_data['resource'].id for res_data in state['gantt']
-                         if res_data['resource'].is_available])
+        action, largest_job = 0, -1
+        jobs = state['queue']
+        res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
-            if job.requested_resources <= avail_res and job.requested_time > shortest_job:
-                shortest_job = job.requested_time
+            requested_time_window = res_spaces[:job.requested_time]
+            if job.requested_time > largest_job and is_available(requested_time_window, job.requested_resources):
+                largest_job = job.requested_time
                 action = i+1
 
         return action
@@ -115,12 +131,12 @@ class LJF(Policy):
 class Tetris(Policy):
     def select_action(self, state):
         action, score = 0, 0
-        jobs = state['job_queue']['jobs']
-        avail_res = len([res_data['resource'].id for res_data in state['gantt']
-                         if res_data['resource'].is_available])
+        jobs = state['queue']
+        res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
-            if job.requested_resources <= avail_res and job.requested_resources > score:
+            req_res_space = res_spaces[:job.requested_time]
+            if job.requested_resources > score and is_available(req_res_space, job.requested_resources):
                 score = job.requested_resources
                 action = i+1
 
@@ -130,13 +146,12 @@ class Tetris(Policy):
 class FirstFit(Policy):
     def select_action(self, state):
         action = 0
-        gantt = state['gantt']
-        jobs = state['job_queue']['jobs']
-        avail_res = len(
-            [res_data['resource'].id for res_data in gantt if res_data['resource'].is_available])
+        jobs = state['queue']
+        res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
-            if job.requested_resources <= avail_res:
+            requested_time_window = res_spaces[:job.requested_time]
+            if is_available(requested_time_window, job.requested_resources):
                 action = i+1
                 break
 
