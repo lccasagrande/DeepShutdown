@@ -19,7 +19,7 @@ from .network import BatsimProtocolHandler
 
 class BatsimHandler:
     PLATFORM = "platform_hg_10.xml"
-    CONFIG = "config.json"
+    CONFIG = "cfg.json"
     WORKLOAD_DIR = "workload"
     OUTPUT_DIR = "results/batsim"
 
