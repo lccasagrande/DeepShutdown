@@ -82,12 +82,12 @@ class Random(Policy):
         return choice(actions)
 
 
-def is_available(time_window, resources):
-    for time in time_window:
-        occuped = np.count_nonzero(time)
-        if len(time) - occuped < resources:
-            return False
-    return True
+def is_available(time_window, req_res):
+    nb_res = len(time_window[0])
+    for r in range(0, nb_res - req_res+1):
+        if not np.any(time_window[:, r:r+req_res] != 0):
+            return True
+    return False
 
 
 class FCFS(Policy):

@@ -96,10 +96,13 @@ def plot_results(data, name):
 if __name__ == "__main__":
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), Random(), SJF(), LJF(), FCFS()]
-    n_episodes = 100
+    n_episodes = 1
     seed = 123
-    shutil.rmtree(output_dir, ignore_errors=True)
-    shutil.rmtree('results', ignore_errors=True)
+    #shutil.rmtree(output_dir, ignore_errors=True)
+    #shutil.rmtree('results', ignore_errors=True)
     results = {}
-    #run_experiment(SJF(), n_episodes, seed, results)
-    run(output_dir, [SJF(), Tetris()], n_episodes, seed)
+
+    #run_experiment(SJF(), n_episodes, seed, {})
+    run(output_dir, [SJF(), Tetris()], n_episodes, seed, plot=False)
+    #data = pd.read_csv("benchmark/score.csv")
+    #plot_results(data, "Score")
