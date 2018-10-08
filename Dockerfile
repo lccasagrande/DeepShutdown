@@ -60,13 +60,16 @@ RUN apt-get update && \
         apt-get update && \
         apt-get install libnvinfer4=4.1.2-1+cuda9.0
 
-ARG PIP=pip
+ARG USE_PYTHON_3_NOT_2=True
+ARG _PY_SUFFIX=${USE_PYTHON_3_NOT_2:+3}
+ARG PYTHON=python${_PY_SUFFIX}
+ARG PIP=pip${_PY_SUFFIX}
 
 RUN apt-get update && apt-get install -y \
     ${PYTHON} \
     ${PYTHON}-pip
 
-RUN pip install --upgrade pip setuptools
+RUN ${PIP} install --upgrade pip setuptools
 
 RUN pip install tensorflow-gpu
 
