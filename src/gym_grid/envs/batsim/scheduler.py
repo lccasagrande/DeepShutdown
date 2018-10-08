@@ -210,9 +210,6 @@ class SchedulerManager():
         self.nb_jobs_completed += 1
 
     def on_job_submitted(self, time, data):
-        if self.nb_jobs_in_queue == self.queue_size:
-            return False
-
         if data['res'] > self.gantt.nb_resources:
             return False
 
