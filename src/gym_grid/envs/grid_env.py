@@ -13,8 +13,8 @@ import numpy as np
 class GridEnv(gym.Env):
     def __init__(self):
         self.job_slots = 11
-        self.time_window = 32
-        self.backlog_width = 8
+        self.time_window = 20
+        self.backlog_width = 4
         queue_size = self.job_slots + (self.backlog_width*self.time_window)
 
         self.simulator = BatsimHandler(job_slots=self.job_slots,
@@ -84,7 +84,7 @@ class GridEnv(gym.Env):
         elif mode == 'console':
             self._print()
         else:
-            raise AttributeError("Render can be image or console only")
+            self._plot()
 
     def close(self):
         self.simulator.close()

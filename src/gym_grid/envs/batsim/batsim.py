@@ -134,7 +134,6 @@ class BatsimHandler:
         ready_jobs = []
         jobs = self.jobs_manager.gantt.get_jobs()
         for job in jobs:
-
             if job is not None and \
             job.state != Job.State.RUNNING and \
             job.time_left_to_start == 0 and \

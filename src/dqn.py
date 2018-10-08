@@ -18,7 +18,7 @@ from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
-WINDOW_LENGTH = 4
+WINDOW_LENGTH = 8
 
 
 class GridProcessor(Processor):
@@ -34,15 +34,11 @@ class GridProcessor(Processor):
 def build_model(input_shape, output_shape):
     model = Sequential()
     model.add(Permute((2, 3, 1), input_shape=input_shape))
-    model.add(Convolution2D(32, (8, 8), strides=(4, 4), padding='same'))
-    model.add(Activation('relu'))
     model.add(Convolution2D(64, (4, 4), strides=(2, 2), padding='same'))
     model.add(Activation('relu'))
     model.add(Convolution2D(64, (2, 2), strides=(1, 1), padding='same'))
     model.add(Activation('relu'))
     model.add(Flatten())
-    model.add(Dense(512))
-    model.add(Activation('relu'))
     model.add(Dense(output_shape))
     model.add(Activation('linear'))
     print(model.summary())
@@ -52,7 +48,7 @@ def build_model(input_shape, output_shape):
 if __name__ == "__main__":
     train = True
     weights_nb = 0
-    name = "dqn_1"
+    name = "dqn_2"
     seed = 123
 
     env = gym.make('grid-v0')
@@ -61,7 +57,7 @@ if __name__ == "__main__":
 
     model = build_model(input_shape= (WINDOW_LENGTH,) + env.observation_space.shape, output_shape=env.action_space.n)
 
-    memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=4000000, window_length=WINDOW_LENGTH)
 
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedyQPolicy(),
                                         attr='eps',
@@ -78,21 +74,21 @@ if __name__ == "__main__":
                    nb_steps_warmup=100000,
                    gamma=1,
                    target_model_update=10000,
-                   train_interval=4,
+                   train_interval=8,
                    delta_clip=1.)
 
     dqn.compile(Adam(lr=.00001), metrics=['mae'])
 
     callbacks = [
         ModelIntervalCheckpoint('weights/'+name+'/' +
-                                name+'_weights_{step}.h5f', interval=250000),
-        FileLogger('log/'+name+'/'+name+'_log.json', interval=1),
+                                name+'_weights_{step}.h5f', interval=500000),
+        FileLogger('log/'+name+'/'+name+'_log.json', interval=100),
         TensorBoard(log_dir='log/'+name+'/'+name)
     ]
     if train:
         dqn.fit(env=env,
                 callbacks=callbacks,
-                nb_steps=9000000,
+                nb_steps=5000000,
                 log_interval=10000,
                 visualize=False,
                 verbose=1,

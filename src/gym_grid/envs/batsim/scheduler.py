@@ -50,7 +50,7 @@ class Gantt():
         self.time_window = time_window
         colors = 250
         self.colormap = np.arange(
-            colors/float(time_window), colors, colors/float(time_window)).tolist()
+            colors/float(time_window+1), colors, colors/float(time_window)).tolist()
         np.random.shuffle(self.colormap)
 
     @property
@@ -210,8 +210,8 @@ class SchedulerManager():
         self.nb_jobs_completed += 1
 
     def on_job_submitted(self, time, data):
-        #if self.nb_jobs_in_queue == self.queue_size:
-        #    return False
+        if self.nb_jobs_in_queue == self.queue_size:
+            return False
 
         if data['res'] > self.gantt.nb_resources:
             return False
