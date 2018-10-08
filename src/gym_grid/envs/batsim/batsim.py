@@ -329,7 +329,8 @@ class BatsimHandler:
         idx = start_idx
         time = 0
         backlog_jobs = self.jobs_manager.nb_jobs_in_queue - len(jobs)
-        while backlog_jobs != 0:
+        column = 0
+        while backlog_jobs != 0 and time < self.time_window:
             backlog_jobs -= 1
             state[time, idx] = 255
             idx += 1
