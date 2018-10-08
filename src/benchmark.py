@@ -13,11 +13,11 @@ import plotly.graph_objs as go
 import plotly.tools as tls
 from plotly.offline import plot
 from multiprocessing import Process, Manager
+from collections import defaultdict
 
-
-def run_experiment(policy, n_ep, seed, results):
+def run_experiment(policy, n_ep, seed, metrics, results):
     policy_name = policy.__class__.__name__
-    policy_results = dict(score=[], slowdown=[], makespan=[], energy=[])
+    result = defaultdict(list)
     env = gym.make('grid-v0')
     env.seed(seed)
 
@@ -25,37 +25,36 @@ def run_experiment(policy, n_ep, seed, results):
         score, state = 0,  env.reset()
         steps = 0
         while True:
-            #env.render('image')
             act = policy.select_action(state)
-            #act = int(input("Action: "))
-
             state, reward, done, info = env.step(act)
             steps += 1
             score += reward
 
             if done:
-                policy_results['score'].append(score)
-                policy_results['slowdown'].append(info['mean_slowdown'])
-                policy_results['makespan'].append(info['makespan'])
-                policy_results['energy'].append(info['energy_consumed'])
+                for metric in metrics:
+                    result[metric].append(info[metric])
+                result['score'].append(score)
+                result['steps'].append(steps)
+                
                 print("\n{} Steps {} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}".format(
                     policy_name, steps, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
                 break
 
-    results[policy_name] = policy_results
+    results[policy_name] = result
 
 
 def run(output_dir, policies, n_ep, seed, plot=True):
+    metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
+               "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
+               'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
     np.random.seed(seed)
     manager = Manager()
     manager_result = manager.dict()
-    metrics = ['score', 'slowdown', 'makespan', 'energy']
     process = []
-    utils.clean_or_create_dir(output_dir)
 
     for policy in policies:
         p = Process(target=run_experiment, args=(
-            policy, n_ep, seed, manager_result, ))
+            policy, n_ep, seed, metrics, manager_result, ))
         p.start()
         process.append(p)
 
@@ -96,13 +95,51 @@ def plot_results(data, name):
 if __name__ == "__main__":
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), Random(), SJF(), LJF(), FCFS()]
-    n_episodes = 1
+    n_episodes = 100
     seed = 123
     #shutil.rmtree(output_dir, ignore_errors=True)
     #shutil.rmtree('results', ignore_errors=True)
-    results = {}
 
     #run_experiment(SJF(), n_episodes, seed, {})
-    run(output_dir, [SJF(), Tetris()], n_episodes, seed, plot=False)
-    #data = pd.read_csv("benchmark/score.csv")
-    #plot_results(data, "Score")
+    run(output_dir, policies, n_episodes, seed, plot=False)
+
+
+#%%
+
+#import plotly.plotly as py
+#import plotly.graph_objs as go
+#import plotly.tools as tls
+#from plotly.offline import plot
+#import numpy as np
+#
+#
+#metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
+#               "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
+#               'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
+#def plot_results(data, name):
+#    def get_bar_plot(dt):
+#        traces = []
+#        for policy, values in dt.items():
+#            traces.append(go.Bar(
+#                x=[0],  # list(range(len(values))),
+#                y=[np.mean(values)],
+#                text=[np.mean(values)],
+#                textposition='auto',
+#                name=policy
+#            ))
+#        return traces
+#
+#    fig = go.Figure(data=get_bar_plot(data), layout=go.Layout(title=name))
+#    plot(fig, filename="results/"+name+'.html')
+#
+#for metric in metrics:
+#
+#    dt1 = pd.read_csv("benchmark/"+metric+".csv", index_col=False)
+#    dt1.reset_index(drop=True, inplace=True)
+#    dt2 = pd.read_csv("benchmark/ppo_"+metric+".csv", index_col=False)
+#    dt2.columns = ['PPO2']
+#    dt2.reset_index(drop=True, inplace=True)
+#    x = pd.concat([dt1, dt2],axis=1)
+#    print(x.head(5))
+#    x.to_csv("benchmark/all_"+metric+".csv", index=False)
+#    plot_results(x, metric)

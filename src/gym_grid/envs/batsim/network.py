@@ -356,8 +356,6 @@ class NetworkHandler:
         self.verbose = verbose
         self.timeout = timeout
         self.context = zmq.Context()
-        #self.context.setsockopt(zmq.REQ_RELAXED, True)
-        #self.context.setsockopt(zmq.REQ_CORRELATE, True)
         self.connection = None
         self.type = type
 

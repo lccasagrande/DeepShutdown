@@ -24,7 +24,7 @@ class GridEnv(gym.Env):
         self.action_space = spaces.Discrete(self.job_slots+1)
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape,
+                                            shape=self.simulator.state_shape + (1,),
                                             dtype=np.uint8)
 
     @property
@@ -62,24 +62,15 @@ class GridEnv(gym.Env):
         return obs, reward, done, info
 
     def _get_info(self):
-        info = {}
-        if not self.simulator.running_simulation:
-            info['makespan'] = self.simulator.metrics['makespan']
-            info['mean_slowdown'] = self.simulator.metrics['mean_slowdown']
-            info['energy_consumed'] = self.simulator.metrics['energy_consumed']
-            info['total_slowdown'] = self.simulator.metrics['total_slowdown']
-            info['total_turnaround_time'] = self.simulator.metrics['total_turnaround_time']
-            info['total_waiting_time'] = self.simulator.metrics['total_waiting_time']
-
-        return info
+        return dict() if self.simulator.running_simulation else self.simulator.metrics
 
     def reset(self):
         self.simulator.close()
         self.simulator.start()
         return self._get_obs()
 
-    def render(self, mode='image'):
-        if mode == 'image':
+    def render(self, mode='human'):
+        if mode == 'human':
             self._plot()
         elif mode == 'console':
             self._print()
@@ -93,8 +84,11 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def _get_obs(self, type='image'):
-        return self.simulator.get_state(type)
+    def _get_obs(self, type='image', reshape=True):
+        state =  self.simulator.get_state(type)
+        if reshape:
+            state = state.reshape(state.shape + (1,))
+        return state
 
     def _print(self):
         stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
@@ -105,7 +99,7 @@ class GridEnv(gym.Env):
         print(stats, end="", flush=True)
 
     def _plot(self):
-        obs = self._get_obs(type='image')
+        obs = self._get_obs(type='image', reshape=False)
         obs = obs / 255.0
         def plot_resource_state():
             resource_state = obs[:, 0:self.simulator.nb_resources]

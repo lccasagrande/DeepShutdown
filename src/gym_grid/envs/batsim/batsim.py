@@ -126,7 +126,6 @@ class BatsimHandler:
         self._wait_state_change()
 
     def _wait_state_change(self):
-        #self._update_state()
         while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty):
             self._update_state()
 
@@ -135,10 +134,10 @@ class BatsimHandler:
         jobs = self.jobs_manager.gantt.get_jobs()
         for job in jobs:
             if job is not None and \
-            job.state != Job.State.RUNNING and \
-            job.time_left_to_start == 0 and \
-            job not in ready_jobs and \
-            self.resource_manager.is_available(job.allocation):
+                    job.state != Job.State.RUNNING and \
+                    job.time_left_to_start == 0 and \
+                    job not in ready_jobs and \
+                    self.resource_manager.is_available(job.allocation):
                 ready_jobs.append(job)
         return ready_jobs
 
@@ -201,23 +200,18 @@ class BatsimHandler:
         self.running_simulation = False
         self.makespan = self.jobs_manager.last_job.finish_time - \
             self.jobs_manager.first_job.submit_time
-        self.metrics["scheduling_time"] = float(
-            data["scheduling_time"])
+        self.metrics["scheduling_time"] = float(data["scheduling_time"])
         self.metrics["nb_jobs"] = int(data["nb_jobs"])
-        self.metrics["nb_jobs_finished"] = int(
-            data["nb_jobs_finished"])
-        self.metrics["nb_jobs_success"] = int(
-            data["nb_jobs_success"])
+        self.metrics["nb_jobs_finished"] = int(data["nb_jobs_finished"])
+        self.metrics["nb_jobs_success"] = int(data["nb_jobs_success"])
         self.metrics["nb_jobs_killed"] = int(data["nb_jobs_killed"])
         self.metrics["success_rate"] = float(data["success_rate"])
         self.metrics["makespan"] = float(data["makespan"])
-        self.metrics["mean_waiting_time"] = float(
-            data["mean_waiting_time"])
+        self.metrics["mean_waiting_time"] = float(data["mean_waiting_time"])
         self.metrics["mean_turnaround_time"] = float(
             data["mean_turnaround_time"])
         self.metrics["mean_slowdown"] = float(data["mean_slowdown"])
-        self.metrics["max_waiting_time"] = float(
-            data["max_waiting_time"])
+        self.metrics["max_waiting_time"] = float(data["max_waiting_time"])
         self.metrics["max_turnaround_time"] = float(
             data["max_turnaround_time"])
         self.metrics["max_slowdown"] = float(data["max_slowdown"])

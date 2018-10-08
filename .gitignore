@@ -1,7 +1,7 @@
 # VS Code
 .vscode
 results/*
-benchmark/*
+benchmark
 tmp
 log
 src/test.py
