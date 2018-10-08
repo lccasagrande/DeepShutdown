@@ -80,7 +80,7 @@ RUN ${PIP} install zmq sklearn pyglet plotly pandas numpy matplotlib keras keras
 
 RUN ${PIP} install image scipy tqdm joblib dill progressbar2 mpi4py cloudpickle click opencv-python
 
-RUN git clone https://github.com/openai/baselines.git && cd baselines && ${PIP} install -e . && cd .. && rm -rf baselines
+RUN git clone https://github.com/lccasagrande/baselines.git && cd baselines && ${PIP} install -e . && cd .. && rm -rf baselines
 
 WORKDIR /app
 
