@@ -3,7 +3,7 @@ FROM lccasagrande/batsim:latest
 # TENSORFLOW
 # Pick up some TF dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential 
+        build-essential \
         libfreetype6-dev \
         libhdf5-serial-dev \
         libpng-dev \
