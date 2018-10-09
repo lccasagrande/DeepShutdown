@@ -1,0 +1,61 @@
+FROM lccasagrande/batsim:latest
+
+# TENSORFLOW
+# Pick up some TF dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential 
+        libfreetype6-dev \
+        libhdf5-serial-dev \
+        libpng-dev \
+        libzmq3-dev \
+        pkg-config \
+        software-properties-common \
+        unzip \
+        libsm6 \
+        libxrender1 \
+        libfontconfig1 \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG USE_PYTHON_3_NOT_2=True
+ARG _PY_SUFFIX=${USE_PYTHON_3_NOT_2:+3}
+ARG PYTHON=python${_PY_SUFFIX}
+ARG PIP=pip${_PY_SUFFIX}
+
+RUN apt-get update && apt-get install -y \
+    ${PYTHON} \
+    ${PYTHON}-pip
+
+RUN ${PIP} install --upgrade pip setuptools
+
+RUN ${PIP} install tensorflow \
+        zmq \
+        sklearn \
+        pyglet \
+        plotly \
+        pandas \
+        numpy \
+        matplotlib \
+        keras \
+        keras-rl \
+        gym \
+        image \
+        scipy \
+        tqdm \
+        joblib \
+        dill \
+        progressbar2 \
+        mpi4py \
+        cloudpickle \
+        click \
+        opencv-python \
+        sortedcontainers
+
+RUN git clone https://github.com/lccasagrande/baselines.git && cd baselines && pip install -e .
+
+WORKDIR /app
+
+COPY . /app
+
+CMD []
