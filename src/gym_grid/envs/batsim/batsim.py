@@ -318,7 +318,8 @@ class BatsimHandler:
     def get_backlog_state(self):
         s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
         t, i = 0, 0
-        for _ in range(self.jobs_manager.nb_jobs_in_backlog):
+        nb_jobs = min(self.backlog_width*self.time_window, self.jobs_manager.nb_jobs_in_backlog)
+        for _ in range(nb_jobs):
             s[t, i] = 255
             i += 1
             if i == self.backlog_width:
