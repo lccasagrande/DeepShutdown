@@ -23,7 +23,7 @@ class BatsimHandler:
     WORKLOAD_DIR = "workload"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, job_slots, time_window, queue_size, verbose='quiet'):
+    def __init__(self, job_slots, time_window, backlog_width, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -45,24 +45,15 @@ class BatsimHandler:
         self.protocol_manager = BatsimProtocolHandler()
         self.resource_manager = ResourceManager.from_xml(self._platform)
         self.jobs_manager = SchedulerManager(
-            self.nb_resources, time_window, queue_size)
-        self.backlog_width = math.ceil(
-            (queue_size - self.job_slots) / self.time_window)
+            self.nb_resources, time_window, job_slots)
+        self.backlog_width = backlog_width
         self.state_shape = (self.time_window, self.nb_resources +
-                            (self.nb_resources*self.job_slots) + self.backlog_width)
+                            (self.nb_resources*self.job_slots) + backlog_width)
         self._reset()
 
     @property
-    def nb_jobs_in_queue(self):
-        return self.jobs_manager.nb_jobs_in_queue
-
-    @property
-    def max_resource_speed(self):
-        return self.resource_manager.max_resource_speed
-
-    @property
-    def max_resource_energy_cost(self):
-        return self.resource_manager.max_resource_energy_cost
+    def nb_jobs_waiting(self):
+        return self.jobs_manager.nb_jobs_in_backlog + self.jobs_manager.job_slots.lenght
 
     @property
     def nb_jobs_running(self):
@@ -181,9 +172,10 @@ class BatsimHandler:
         self._start_ready_jobs()
 
     def _handle_job_submitted(self, timestamp, data):
-        accepted = self.jobs_manager.on_job_submitted(timestamp, data['job'])
-        if not accepted:
+        if data['job']['res'] > self.resource_manager.nb_resources:
             self.protocol_manager.reject_job(data['job_id'])
+        else:
+            self.jobs_manager.on_job_submitted(timestamp, data['job'])
 
     def _handle_simulation_begins(self, data):
         self.running_simulation = True
@@ -309,43 +301,51 @@ class BatsimHandler:
         os.makedirs(output_dir)
         return output_dir
 
+    def get_resource_state(self):
+        return self.jobs_manager.gantt.get_state()
+
+    def get_job_slot_state(self):
+        s = np.zeros(
+            shape=(self.time_window, self.nb_resources*self.job_slots), dtype=np.uint8)
+
+        for i, job in enumerate(self.jobs_manager.job_slots):
+            if job != None:
+                start_idx = i * self.nb_resources
+                end_idx = start_idx + job.requested_resources
+                s[0:job.requested_time, start_idx:end_idx] = 255
+        return s
+
+    def get_backlog_state(self):
+        s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
+        t, i = 0, 0
+        for _ in range(self.jobs_manager.nb_jobs_in_backlog):
+            s[t, i] = 255
+            i += 1
+            if i == self.backlog_width:
+                i = 0
+                t += 1
+        return s
+
     def _get_image(self):
         state = np.zeros(shape=self.state_shape, dtype=np.uint8)
-        jobs = self.jobs_manager.jobs_queue
-        jobs = jobs[0:min(len(jobs), self.job_slots)]
 
         # RESOURCES
-        state[:, 0:self.nb_resources] = self.jobs_manager.gantt.get_state()
+        resource_end = self.nb_resources
+        state[:, 0:resource_end] = self.get_resource_state()
 
         # JOB SLOTS
-        for i, j in enumerate(jobs):
-            start_idx = (i+1) * self.nb_resources
-            end_idx = start_idx + j.requested_resources
-            state[0:j.requested_time, start_idx:end_idx] = 255
+        job_slot_end = self.nb_resources * self.job_slots + self.nb_resources
+        state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
         # BACKLOG
-        start_idx = (self.nb_resources*self.job_slots) + self.nb_resources
-        end_idx = start_idx + self.backlog_width
-        idx = start_idx
-        time = 0
-        backlog_jobs = self.jobs_manager.nb_jobs_in_queue - len(jobs)
-        column = 0
-        while backlog_jobs != 0 and time < self.time_window:
-            backlog_jobs -= 1
-            state[time, idx] = 255
-            idx += 1
-            if idx == end_idx:
-                idx = start_idx
-                time += 1
+        state[:, job_slot_end:self.state_shape[1]] = self.get_backlog_state()
 
         return state
 
     def _get_state(self):
-        jobs = self.jobs_manager.jobs_queue
         state = dict(
             resources_properties=self.resource_manager.get_resources(),
             resources_spaces=self.jobs_manager.gantt.get_state(),
-            queue=jobs[0:min(len(jobs), self.job_slots)],
-            nb_jobs=self.jobs_manager.nb_jobs_in_queue
-        )
+            queue=self.jobs_manager.job_slots,
+            backlog=self.jobs_manager.nb_jobs_in_backlog)
         return state

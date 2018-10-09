@@ -35,11 +35,10 @@ def ann(unscaled_images, **conv_kwargs):
     """
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
     activ = tf.nn.relu
-    #h = activ(conv(scaled_images, 'c1', nf=64, rf=4, stride=2, init_scale=np.sqrt(2),**conv_kwargs))
-    h = activ(conv(scaled_images, 'c1', nf=64, rf=2, stride=1,init_scale=np.sqrt(2), **conv_kwargs))
-    #h3 = activ(conv(h2, 'c3', nf=64, rf=2, stride=1,
-    #                init_scale=np.sqrt(2), **conv_kwargs))
-    return activ(fc(conv_to_fc(h), 'fc1', nh=128, init_scale=np.sqrt(2))), None
+    h2 = activ(conv(scaled_images, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
+    h3 = activ(conv(h2, 'c3', nf=64, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+    h3 = conv_to_fc(h3)
+    return activ(fc(h3, 'fc1', nh=256, init_scale=np.sqrt(2))), None
 
 
 def build_env(args):
@@ -171,9 +170,9 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=2e6),
+    parser.add_argument('--num_timesteps', type=float, default=50e6),
     parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--reward_scale', default=1., type=float)
+    parser.add_argument('--reward_scale', default=.1, type=float)
     parser.add_argument('--save_path', default='weights/ppo_grid', type=str)
     parser.add_argument('--network', help='Network', default='cnn', type=str)
     parser.add_argument('--load_path', default="weights/ppo_grid", type=str)

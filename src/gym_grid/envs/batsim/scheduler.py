@@ -2,6 +2,7 @@ import itertools
 import math
 import numpy as np
 import random
+from sortedcontainers import SortedList
 from collections import deque
 from matplotlib.colors import XKCD_COLORS as allcolors
 from enum import Enum
@@ -95,25 +96,66 @@ class Gantt():
             self._state[res].release(job)
 
 
+class JobSlot():
+    def __init__(self, slots):
+        self.slots = np.empty(shape=slots, dtype=object)
+        self.slots_free = SortedList(range(slots))
+
+    @property
+    def is_empty(self):
+        return len(self.slots_free) == self.slots.shape[0]
+
+    @property
+    def values(self):
+        return self.slots
+
+    @property
+    def is_full(self):
+        return len(self.slots_free) == 0
+
+    #@property
+    #def lenght(self):
+    #    return self.slots.shape[0] - len(self.slots_free)
+
+    def clear(self):
+        self.slots = np.empty(shape=self.slots.shape, dtype=object)
+        self.slots_free = SortedList(range(self.slots.shape[0]))
+
+    def append(self, value):
+        slot = self.slots_free.pop(0)
+        self.slots[slot] = value
+
+    def remove_at(self, slot):
+        self.slots[slot] = None
+        self.slots_free.add(slot)
+
+    def at(self, slot):
+        return self.slots[slot]
+
+
 class SchedulerManager():
-    def __init__(self, nb_resources, time_window, queue_size):
+    def __init__(self, nb_resources, time_window, job_slots):
         self.gantt = Gantt(nb_resources, time_window)
-        self._jobs_queue = []
+        self._job_slots = JobSlot(job_slots)
+        self._jobs_queue = deque()
         self._jobs_running = dict()
         self._jobs_allocated = dict()
-        self.queue_size = queue_size
         self.reset()
 
     @property
     def is_empty(self):
-        return self.nb_jobs_in_queue == 0
+        return self._job_slots.is_empty
+
+    @property
+    def job_slots(self):
+        return self._job_slots.values
 
     @property
     def nb_jobs_running(self):
         return len(self._jobs_running)
 
     @property
-    def nb_jobs_in_queue(self):
+    def nb_jobs_in_backlog(self):
         return len(self._jobs_queue)
 
     @property
@@ -124,13 +166,15 @@ class SchedulerManager():
     def jobs_queue(self):
         return list(self._jobs_queue)
 
-    def lookup(self, idx):
-        return self._jobs_queue[idx]
+    def lookup(self, index):
+        return self._job_slots.at(index)
 
     def reset(self):
         self.gantt.clear()
+        self._job_slots.clear()
         self._jobs_queue.clear()
         self._jobs_running.clear()
+        self._jobs_allocated.clear()
         self.first_job = None
         self.last_job = None
         self.nb_jobs_submitted = 0
@@ -154,21 +198,24 @@ class SchedulerManager():
             self.runtime_slowdown += job.runtime_slowdown - slow_before
             self.runtime_waiting_time += job.waiting_time - wait_before
 
+        for _, job in self._jobs_running.items():
+            update_job_running(job)
+
         for _, job in self._jobs_allocated.items():
             update_job_not_running(job)
 
-        for _, job in self._jobs_running.items():
-            update_job_running(job)
+        for job in self._job_slots.values:
+            if job != None:
+                update_job_not_running(job)
 
         for job in self._jobs_queue:
             update_job_not_running(job)
 
-    def allocate_job(self, job_idx):
-        if job_idx >= len(self._jobs_queue):
+    def allocate_job(self, index):
+        job = self._job_slots.at(index)
+        if job == None:
             raise InvalidJobError(
-                "There is no job {} to schedule".format(job_idx))
-
-        job = self._jobs_queue[job_idx]
+                "There is no job {} to schedule".format(index))
 
         resources, time_to_start = self._select_available_resources(
             job.requested_resources, job.requested_time)
@@ -179,9 +226,15 @@ class SchedulerManager():
 
         job.allocation = resources
         job.time_left_to_start = time_to_start
+
         self.gantt.reserve(job)
         self._jobs_allocated[job.id] = job
-        del self._jobs_queue[job_idx]
+        self._job_slots.remove_at(index)
+
+        if self._jobs_queue:
+            job = self._jobs_queue.popleft()
+            self._job_slots.append(job)
+
         return job.allocation
 
     def on_job_scheduled(self, job_id, time):
@@ -210,14 +263,15 @@ class SchedulerManager():
         self.nb_jobs_completed += 1
 
     def on_job_submitted(self, time, data):
-        if data['res'] > self.gantt.nb_resources:
-            return False
-
         job = Job.from_json(data)
         job.state = Job.State.SUBMITTED
-        self._jobs_queue.append(job)
+
+        if self._job_slots.is_full:
+            self._jobs_queue.append(job)
+        else:
+            self._job_slots.append(job)
+
         self.nb_jobs_submitted += 1
-        return True
 
     def _select_available_resources(self, nb_res, req_time):
         gantt_state = self.gantt.get_state()

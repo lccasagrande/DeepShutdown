@@ -75,7 +75,7 @@ RUN pip install tensorflow-gpu
 
 RUN pip install zmq sklearn pyglet plotly pandas numpy matplotlib keras keras-rl gym image
 
-RUN pip install image scipy tqdm joblib dill progressbar2 mpi4py cloudpickle click opencv-python
+RUN pip install image scipy tqdm joblib dill progressbar2 mpi4py cloudpickle click opencv-python sortedcontainers
 
 RUN git clone https://github.com/lccasagrande/baselines.git && cd baselines && pip install -e .
 

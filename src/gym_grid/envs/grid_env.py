@@ -15,33 +15,14 @@ class GridEnv(gym.Env):
         self.job_slots = 11
         self.time_window = 20
         self.backlog_width = 4
-        queue_size = self.job_slots + (self.backlog_width*self.time_window)
-
+        self.action_space = spaces.Discrete(self.job_slots+1)
         self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
-                                       queue_size=queue_size)
-                                       
-        self.action_space = spaces.Discrete(self.job_slots+1)
+                                       backlog_width=self.backlog_width)
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape + (1,),
+                                            shape=self.simulator.state_shape +(1,),
                                             dtype=np.uint8)
-
-    @property
-    def nb_resources(self):
-        return self.simulator.nb_resources
-
-    @property
-    def max_time(self):
-        return 15
-
-    @property
-    def max_speed(self):
-        return self.simulator.max_resource_speed
-
-    @property
-    def max_energy_consumption(self):
-        return self.simulator.max_resource_energy_cost
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
@@ -61,8 +42,6 @@ class GridEnv(gym.Env):
 
         return obs, reward, done, info
 
-    def _get_info(self):
-        return dict() if self.simulator.running_simulation else self.simulator.metrics
 
     def reset(self):
         self.simulator.close()
@@ -84,6 +63,9 @@ class GridEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+    def _get_info(self):
+        return dict() if self.simulator.running_simulation else self.simulator.metrics
+        
     def _get_obs(self, type='image', reshape=True):
         state =  self.simulator.get_state(type)
         if reshape:
@@ -91,18 +73,16 @@ class GridEnv(gym.Env):
         return state
 
     def _print(self):
-        stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} In Queue: {:5}".format(
+        stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} Waiting: {:5}".format(
             self.simulator.nb_jobs_submitted,
             self.simulator.nb_jobs_completed,
             self.simulator.nb_jobs_running,
-            self.simulator.nb_jobs_in_queue)
+            self.simulator.nb_jobs_waiting)
         print(stats, end="", flush=True)
 
     def _plot(self):
-        obs = self._get_obs(type='image', reshape=False)
-        obs = obs / 255.0
         def plot_resource_state():
-            resource_state = obs[:, 0:self.simulator.nb_resources]
+            resource_state = self.simulator.get_resource_state()
             plt.subplot(1, 1 + self.job_slots + 1, 1)
             plt.imshow(resource_state, interpolation='nearest',
                        vmax=1, aspect='auto')
@@ -119,10 +99,9 @@ class GridEnv(gym.Env):
                     linestyle='-', linewidth=1)
 
         def plot_job_state():
-            end_idx = self.simulator.nb_resources + (self.simulator.nb_resources * self.job_slots)
-            jobs = obs[:, self.simulator.nb_resources:end_idx]
+            jobs = self.simulator.get_job_slot_state()
             slot = 1
-            for start_idx in range(0, self.job_slots*self.simulator.nb_resources, self.simulator.nb_resources):
+            for start_idx in range(0, jobs.shape[1], self.simulator.nb_resources):
                 job_state = jobs[:, start_idx:start_idx+self.simulator.nb_resources]
                 plt.subplot(1, 1 + self.job_slots + 1, slot + 1)
                 plt.imshow(job_state, interpolation='nearest',
@@ -137,8 +116,7 @@ class GridEnv(gym.Env):
                 slot += 1
 
         def plot_backlog():
-            start_idx = self.simulator.nb_resources + (self.simulator.nb_resources * self.job_slots)
-            backlog_state = obs[:, start_idx: start_idx+self.backlog_width]
+            backlog_state = self.simulator.get_backlog_state()
             plt.subplot(1, 1 + self.job_slots + 1, self.job_slots + 2)
 
             plt.imshow(backlog_state, interpolation='nearest',

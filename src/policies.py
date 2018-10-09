@@ -36,8 +36,11 @@ def is_available(time_window, req_res):
 class FCFS(Policy):
     def select_action(self, state):
         jobs = state['queue']
-        # always get the first in the queue
-        action = 0 if len(jobs) == 0 else 1
+        action = 0
+        for i, j in enumerate(jobs):
+            if j != None:
+                action = i+1
+                break
         return action
 
 
@@ -48,6 +51,7 @@ class SJF(Policy):
         res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
+            if job == None: continue
             requested_time_window = res_spaces[:job.requested_time]
             if job.requested_time < shortest_job and is_available(requested_time_window, job.requested_resources):
                 shortest_job = job.requested_time
@@ -63,6 +67,7 @@ class LJF(Policy):
         res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
+            if job == None: continue
             requested_time_window = res_spaces[:job.requested_time]
             if job.requested_time > largest_job and is_available(requested_time_window, job.requested_resources):
                 largest_job = job.requested_time
@@ -78,6 +83,7 @@ class Tetris(Policy):
         res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
+            if job == None: continue
             req_res_space = res_spaces[:job.requested_time]
             if job.requested_resources > score and is_available(req_res_space, job.requested_resources):
                 score = job.requested_resources
@@ -93,6 +99,7 @@ class FirstFit(Policy):
         res_spaces = state['resources_spaces']
 
         for i, job in enumerate(jobs):
+            if job == None: continue
             requested_time_window = res_spaces[:job.requested_time]
             if is_available(requested_time_window, job.requested_resources):
                 action = i+1

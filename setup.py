@@ -40,4 +40,5 @@ setup(name='drl_grid',
           'cloudpickle',
           'click',
           'opencv-python'
+          'sortedcontainers'
       ])
