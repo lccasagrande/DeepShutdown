@@ -15,19 +15,45 @@ from baselines import bench, logger
 from baselines.acer import acer
 from baselines.a2c import a2c
 from baselines.ppo2 import ppo2
-from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lnlstm
+from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lnlstm, lstm
 from baselines.common import misc_util
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.bench import Monitor
+from baselines.common.models import cnn_lstm
 from baselines.common.retro_wrappers import RewardScaler
-
+from baselines.common.models import register
 try:
     from mpi4py import MPI
 except ImportError:
     MPI = None
 
 
+@register("ann_lstm")
+def ann_lstm(nlstm=256, layer_norm=False, **conv_kwargs):
+    def network_fn(X, nenv=1):
+        nbatch = X.shape[0]
+        nsteps = nbatch // nenv
+
+        h = ann(X, **conv_kwargs)
+
+        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
+        S = tf.placeholder(tf.float32, [nenv, 2*nlstm]) #states
+
+        xs = batch_to_seq(h, nenv, nsteps)
+        ms = batch_to_seq(M, nenv, nsteps)
+
+        if layer_norm:
+            h5, snew = lnlstm(xs, ms, S, scope='lnlstm', nh=nlstm)
+        else:
+            h5, snew = lstm(xs, ms, S, scope='lstm', nh=nlstm)
+
+        h = seq_to_batch(h5)
+        initial_state = np.zeros(S.shape.as_list(), dtype=float)
+
+        return h, {'S':S, 'M':M, 'state':snew, 'initial_state':initial_state}
+
+    return network_fn
 
 def ann(unscaled_images, **conv_kwargs):
     """
@@ -35,10 +61,9 @@ def ann(unscaled_images, **conv_kwargs):
     """
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
     activ = tf.nn.relu
-    h2 = activ(conv(scaled_images, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = activ(conv(h2, 'c3', nf=64, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = conv_to_fc(h3)
-    return activ(fc(h3, 'fc1', nh=256, init_scale=np.sqrt(2))), None
+    h = activ(conv(scaled_images, 'c3', nf=32, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+    h1 = conv_to_fc(h)
+    return activ(fc(h1, 'fc1', nh=128, init_scale=np.sqrt(2)))
 
 
 def build_env(args):
@@ -77,27 +102,25 @@ def make_vec_env(env_id, nenv, seed, reward_scale):
 def train(args):
     total_timesteps = int(args.num_timesteps)
     seed = int(args.seed)
-    network = ann
+    network = "ann_lstm"
     env = build_env(args)
 
-    print('Training with a2c')
+    print('Training with PPO2')
 
     model = ppo2.learn(
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
-        n_steps=2000,
+        nsteps=1000,
         gamma=1,
-        save_interval=2000,
         network=network,
-        lr=lambda f: f * 2.5e-4,
+        lr=2.5e-4,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
         cliprange=lambda f: f * 0.1,
-        load_path=args.load_path
-    )
+        load_path=args.load_path)
 
     return model, env
 
@@ -170,9 +193,9 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=50e6),
+    parser.add_argument('--num_timesteps', type=float, default=40e6),
     parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--reward_scale', default=.1, type=float)
+    parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--save_path', default='weights/ppo_grid', type=str)
     parser.add_argument('--network', help='Network', default='cnn', type=str)
     parser.add_argument('--load_path', default="weights/ppo_grid", type=str)
