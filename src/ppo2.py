@@ -23,22 +23,35 @@ from baselines.bench import Monitor
 from baselines.common.models import cnn_lstm
 from baselines.common.retro_wrappers import RewardScaler
 from baselines.common.models import register
+import tensorflow.contrib.layers as layers
 try:
     from mpi4py import MPI
 except ImportError:
     MPI = None
 
 
+def conv_o(unscaled_images, convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)], **conv_kwargs):
+    out = tf.cast(unscaled_images, tf.float32) / 255.
+    for num_outputs, kernel_size, stride in convs:
+        out = layers.convolution2d(out,
+                                   num_outputs=num_outputs,
+                                   kernel_size=kernel_size,
+                                   stride=stride,
+                                   activation_fn=tf.nn.relu,
+                                   **conv_kwargs)
+    return out
+
+
 @register("ann_lstm")
-def ann_lstm(nlstm=256, layer_norm=False, **conv_kwargs):
+def ann_lstm(nlstm=256, layer_norm=True, **conv_kwargs):
     def network_fn(X, nenv=1):
         nbatch = X.shape[0]
         nsteps = nbatch // nenv
 
-        h = ann(X, **conv_kwargs)
+        h = conv_o(X, [(32, 2, 1)], **conv_kwargs)  # ann(X, **conv_kwargs)
 
-        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
-        S = tf.placeholder(tf.float32, [nenv, 2*nlstm]) #states
+        M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
+        S = tf.placeholder(tf.float32, [nenv, 2*nlstm])  # states
 
         xs = batch_to_seq(h, nenv, nsteps)
         ms = batch_to_seq(M, nenv, nsteps)
@@ -51,9 +64,10 @@ def ann_lstm(nlstm=256, layer_norm=False, **conv_kwargs):
         h = seq_to_batch(h5)
         initial_state = np.zeros(S.shape.as_list(), dtype=float)
 
-        return h, {'S':S, 'M':M, 'state':snew, 'initial_state':initial_state}
+        return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
 
     return network_fn
+
 
 def ann(unscaled_images, **conv_kwargs):
     """
@@ -61,9 +75,10 @@ def ann(unscaled_images, **conv_kwargs):
     """
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
     activ = tf.nn.relu
-    h = activ(conv(scaled_images, 'c3', nf=32, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+    h = activ(conv(scaled_images, 'c3', nf=32, rf=2,
+                   stride=1, init_scale=np.sqrt(2), **conv_kwargs))
     h1 = conv_to_fc(h)
-    return activ(fc(h1, 'fc1', nh=64, init_scale=np.sqrt(2)))
+    return activ(fc(h1, 'fc1', nh=32, init_scale=np.sqrt(2)))
 
 
 def build_env(args):
@@ -139,8 +154,9 @@ def train_model(args):
     env.close()
 
     if args.save_path is not None and rank == 0:
-       save_path = osp.expanduser(args.save_path)
-       model.save(save_path)
+        save_path = osp.expanduser(args.save_path)
+        model.save(save_path)
+
 
 def test_model(args):
     def initialize_placeholders(nlstm=128, **kwargs):
@@ -166,7 +182,7 @@ def test_model(args):
         obs = env.reset()
         steps, score = 0, 0
         while True:
-            #env.render(mode='image')
+            # env.render(mode='image')
             actions, _, state, _ = model.step(obs, S=state, M=dones)
             obs, rew, done, info = env.step(actions)
             done = done.any() if isinstance(done, np.ndarray) else done
@@ -186,16 +202,17 @@ def test_model(args):
     for metric in metrics:
         if args.plot:
             benchmark.plot_results(result[metric], metric)
-        pd.DataFrame.from_dict(result[metric]).to_csv("benchmark/ppo_"+metric+".csv", index=False)
+        pd.DataFrame.from_dict(result[metric]).to_csv(
+            "benchmark/ppo_"+metric+".csv", index=False)
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=10e6),
+    parser.add_argument('--num_timesteps', type=float, default=20e6),
     parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--reward_scale', default=1., type=float)
+    parser.add_argument('--reward_scale', default=.1, type=float)
     parser.add_argument('--save_path', default='weights/ppo_grid', type=str)
     parser.add_argument('--network', help='Network', default='cnn', type=str)
     parser.add_argument('--load_path', default="weights/ppo_grid", type=str)
@@ -206,12 +223,14 @@ def arg_parser():
     args = parser.parse_args()
     return args
 
+
 def main(args):
     if args.train:
         train_model(args)
 
     if args.test:
         test_model(args)
+
 
 if __name__ == '__main__':
     args = arg_parser()

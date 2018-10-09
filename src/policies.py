@@ -17,6 +17,10 @@ class Policy(object):
         raise NotImplementedError()
 
 
+class User(Policy):
+    def select_action(self, state):
+        return int(input("Action: "))
+
 class Random(Policy):
     def select_action(self, state):
         jobs = state['queue']
