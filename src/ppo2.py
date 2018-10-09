@@ -63,7 +63,7 @@ def ann(unscaled_images, **conv_kwargs):
     activ = tf.nn.relu
     h = activ(conv(scaled_images, 'c3', nf=32, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
     h1 = conv_to_fc(h)
-    return activ(fc(h1, 'fc1', nh=128, init_scale=np.sqrt(2)))
+    return activ(fc(h1, 'fc1', nh=64, init_scale=np.sqrt(2)))
 
 
 def build_env(args):
@@ -193,7 +193,7 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=40e6),
+    parser.add_argument('--num_timesteps', type=float, default=10e6),
     parser.add_argument('--num_env', default=None, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--save_path', default='weights/ppo_grid', type=str)
