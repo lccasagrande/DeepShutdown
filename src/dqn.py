@@ -19,7 +19,7 @@ from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
-WINDOW_LENGTH = 8
+WINDOW_LENGTH = 100
 
 
 class GridProcessor(Processor):
@@ -50,8 +50,8 @@ if __name__ == "__main__":
     seed = 123
     weight_path = "weights/" + name
     log_path = "log/" + name
-    utils.clean_or_create_dir(weight_path)
-    utils.clean_or_create_dir(log_path)
+    utils.create_dir(weight_path)
+    utils.create_dir(log_path)
 
     env = gym.make('grid-v0')
     np.random.seed(seed)
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     model = build_model(input_shape=(
         WINDOW_LENGTH,) + env.observation_space.shape, output_shape=env.action_space.n)
 
-    memory = SequentialMemory(limit=4000000, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=3000000, window_length=WINDOW_LENGTH)
 
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedyQPolicy(),
                                         attr='eps',
@@ -97,7 +97,7 @@ if __name__ == "__main__":
                 log_interval=10000,
                 visualize=False,
                 verbose=1,
-                nb_max_episode_steps=4000)
+                nb_max_episode_steps=3000)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
     else:

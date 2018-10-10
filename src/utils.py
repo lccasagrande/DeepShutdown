@@ -25,11 +25,9 @@ import os, shutil
 #	plt.show()
 
 
-def clean_or_create_dir(dir):
-    if os.path.exists(dir):
-        shutil.rmtree(dir, ignore_errors=True)
-    
-    os.makedirs(dir)
+def create_dir(dir):
+    if not os.path.exists(dir):
+        os.makedirs(dir)
 
 def export_rewards(n_ep, avg_scores, output_dir):
     x, y = np.linspace(0, n_ep, len(avg_scores),
