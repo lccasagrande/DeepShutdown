@@ -34,9 +34,7 @@ class GridProcessor(Processor):
 def build_model(input_shape, output_shape):
     model = Sequential()
     model.add(Permute((2, 3, 1), input_shape=input_shape))
-    model.add(Convolution2D(64, (4, 4), strides=(2, 2), padding='same'))
-    model.add(Activation('relu'))
-    model.add(Convolution2D(64, (2, 2), strides=(1, 1), padding='same'))
+    model.add(Convolution2D(32, (2, 2), strides=(1, 1), padding='same'))
     model.add(Activation('relu'))
     model.add(Flatten())
     model.add(Dense(output_shape))
@@ -71,8 +69,10 @@ if __name__ == "__main__":
                    policy=train_policy,
                    processor=GridProcessor(),
                    memory=memory,
+                   dueling_type='max',
+                   enable_dueling_network=True,
                    nb_steps_warmup=100000,
-                   gamma=1,
+                   gamma=.99,
                    target_model_update=10000,
                    train_interval=8,
                    delta_clip=1.)
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         ModelIntervalCheckpoint('weights/'+name+'/' +
                                 name+'_weights_{step}.h5f', interval=500000),
         FileLogger('log/'+name+'/'+name+'_log.json', interval=100),
-        TensorBoard(log_dir='log/'+name+'/'+name)
+        TensorBoard(log_dir='log/'+name+'/'+name, write_grads=True, write_graph=True, write_images=True, histogram_freq=100)
     ]
     if train:
         dqn.fit(env=env,

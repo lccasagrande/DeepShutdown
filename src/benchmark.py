@@ -37,8 +37,8 @@ def run_experiment(policy, n_ep, seed, metrics, results):
                 result['score'].append(score)
                 result['steps'].append(steps)
                 
-                print("\n{} Steps {} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}".format(
-                    policy_name, steps, i, score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
+                print("\n{} Steps {} - Episode {:2} - Energy {:7} - Score: {:5} - Slowdown Sum {:5} Mean {:3} - Makespan {:5}".format(
+                    policy_name, steps, i, info['energy_consumed'], score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
                 break
 
     results[policy_name] = result

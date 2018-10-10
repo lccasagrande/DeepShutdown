@@ -86,16 +86,21 @@ class Resource:
 
     def get_view(self):
         if self.is_sleeping:  # SLEEP
-            return np.zeros(shape=self.time_window, dtype=np.uint8)
-        elif len(self.queue) == 0:  # FULL IDLE
-            return np.full(shape=self.time_window, fill_value=127, dtype=np.uint8)
-        else:  # COMPUTING FULLY OR PARTIAL
+            view = np.zeros(shape=self.time_window, dtype=np.uint8)
+        else:
             view = np.full(shape=self.time_window,
                            fill_value=127, dtype=np.uint8)
-            for j in self.queue:
-                end = j.time_left_to_start + int(j.remaining_time)
-                view[j.time_left_to_start:end] = 255
+
+        if len(self.queue) == 0:
             return view
+
+        view[self.queue[0].time_left_to_start:self.time_window] = 127
+
+        for j in self.queue:
+            end = j.time_left_to_start + int(j.remaining_time)
+            view[j.time_left_to_start:end] = 255
+
+        return view
 
     def reserve(self, job):
         self.queue.append(job)
@@ -156,6 +161,15 @@ class ResourceManager:
         for _, r in self.resources.items():
             r.reset()
 
+    def shut_down_unused(self):
+        res = []
+        for i, r in self.resources.items():
+            if len(r.queue) == 0 and not r.is_sleeping:
+                res.append(i)
+                r.sleep()
+
+        return res
+
     def _select_resources(self, nb, time):
         state = self.get_state()
         for t in range(self.shape[0]-time+1):
@@ -179,11 +193,12 @@ class ResourceManager:
             j = r.get_job()
             if j is not None and j.id not in jobs:
                 jobs[j.id] = j
-        
+
         return jobs.values()
 
     def allocate(self, job):
-        res, time = self._select_resources(job.requested_resources, job.requested_time)
+        res, time = self._select_resources(
+            job.requested_resources, job.requested_time)
         job.allocation = res
         job.time_left_to_start = time
         for r in res:
@@ -209,8 +224,12 @@ class ResourceManager:
             self.resources[i].sleep()
 
     def wake_up(self, res_ids):
+        res = []
         for i in res_ids:
-            self.resources[i].wake_up()
+            if self.resources[i].is_sleeping:
+                self.resources[i].wake_up()
+                res.append(i)
+        return res
 
 
 class InvalidPowerStateError(Exception):

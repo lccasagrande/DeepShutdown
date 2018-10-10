@@ -134,11 +134,18 @@ class BatsimHandler:
         return ready_jobs
 
     def _start_ready_jobs(self):
-        ready_jobs = self._get_ready_jobs()
-        for job in ready_jobs:
-            self.protocol_manager.start_job(job.id,  job.allocation)
-            self.resource_manager.start_job(job)
-            self.jobs_manager.on_job_started(job.id, self.current_time)
+        jobs = self.resource_manager.get_jobs()
+        for job in jobs:
+            if job.state != Job.State.RUNNING and \
+                    job.time_left_to_start == 0 and \
+                    self.resource_manager.is_available(job.allocation):
+                self._wake_up_resources(job.allocation)
+                self._start_job(job)
+
+    def _start_job(self, job):
+        self.protocol_manager.start_job(job.id,  job.allocation)
+        self.resource_manager.start_job(job)
+        self.jobs_manager.on_job_started(job.id, self.current_time)
 
     def _start_simulator(self):
         output_path = self._output_dir + "/" + str(self.nb_simulation)
@@ -165,7 +172,6 @@ class BatsimHandler:
         return
 
     def _handle_job_completed(self, timestamp, data):
-        resources = self._get_resources_from_json(data["alloc"])
         job = self.jobs_manager.on_job_completed(timestamp, data)
         self.resource_manager.release(job)
         self._start_ready_jobs()
@@ -269,6 +275,7 @@ class BatsimHandler:
         if time_passed != 0:
             self.jobs_manager.update_state(time_passed)
             self.resource_manager.update_state(time_passed)
+            self._shut_down_unused_resources()
 
         for event in events:
             self._handle_batsim_events(event)
@@ -276,6 +283,18 @@ class BatsimHandler:
         # Remember to always ack
         if self.running_simulation:
             self.protocol_manager.acknowledge()
+
+    def _wake_up_resources(self, resources):
+        res = self.resource_manager.wake_up(resources)
+        if len(res) != 0:
+            self.protocol_manager.set_resource_pstate(
+                res, Resource.PowerState.NORMAL)
+
+    def _shut_down_unused_resources(self):
+        unused = self.resource_manager.shut_down_unused()
+        if len(unused) != 0:
+            self.protocol_manager.set_resource_pstate(
+                unused, Resource.PowerState.SHUT_DOWN)
 
     def _get_workload(self):
         if len(self._workloads) == self._workload_idx + 1:

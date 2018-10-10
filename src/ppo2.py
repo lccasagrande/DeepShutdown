@@ -15,6 +15,7 @@ from baselines import bench, logger
 from baselines.acer import acer
 from baselines.a2c import a2c
 from baselines.ppo2 import ppo2
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lnlstm, lstm
 from baselines.common import misc_util
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -23,23 +24,10 @@ from baselines.bench import Monitor
 from baselines.common.models import cnn_lstm
 from baselines.common.retro_wrappers import RewardScaler
 from baselines.common.models import register
-import tensorflow.contrib.layers as layers
 try:
     from mpi4py import MPI
 except ImportError:
     MPI = None
-
-
-def conv_o(unscaled_images, convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)], **conv_kwargs):
-    out = tf.cast(unscaled_images, tf.float32) / 255.
-    for num_outputs, kernel_size, stride in convs:
-        out = layers.convolution2d(out,
-                                   num_outputs=num_outputs,
-                                   kernel_size=kernel_size,
-                                   stride=stride,
-                                   activation_fn=tf.nn.relu,
-                                   **conv_kwargs)
-    return out
 
 
 @register("ann_lstm")
@@ -48,7 +36,7 @@ def ann_lstm(nlstm=256, layer_norm=True, **conv_kwargs):
         nbatch = X.shape[0]
         nsteps = nbatch // nenv
 
-        h = conv_o(X, [(32, 2, 1)], **conv_kwargs)  # ann(X, **conv_kwargs)
+        h = ann(X, **conv_kwargs)
 
         M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
         S = tf.placeholder(tf.float32, [nenv, 2*nlstm])  # states
@@ -73,23 +61,25 @@ def ann(unscaled_images, **conv_kwargs):
     """
     CNN from Nature paper.
     """
+
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
     activ = tf.nn.relu
-    h = activ(conv(scaled_images, 'c3', nf=32, rf=2,
-                   stride=1, init_scale=np.sqrt(2), **conv_kwargs))
-    h1 = conv_to_fc(h)
-    return activ(fc(h1, 'fc1', nh=32, init_scale=np.sqrt(2)))
+    h = activ(conv(scaled_images, 'c1', nf=64, rf=4, stride=2, init_scale=np.sqrt(2),
+                   **conv_kwargs))
+    h3 = activ(conv(h, 'c2', nf=64, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+    h3 = conv_to_fc(h3)
+    return activ(fc(h3, 'fc1', nh=128, init_scale=np.sqrt(2)))
 
 
 def build_env(args):
     nenv = args.num_env or multiprocessing.cpu_count()
 
-    get_session(tf.ConfigProto(allow_soft_placement=True,
-                               intra_op_parallelism_threads=1,
-                               inter_op_parallelism_threads=1))
+    #get_session(tf.ConfigProto(allow_soft_placement=True,
+    #                           intra_op_parallelism_threads=1,
+    #                           inter_op_parallelism_threads=1))
 
-    env = make_vec_env(args.env, nenv, args.seed,
-                       reward_scale=args.reward_scale)
+    env = VecFrameStack(make_vec_env(args.env, nenv, args.seed,
+                                     reward_scale=args.reward_scale), args.frames)
 
     return env
 
@@ -117,7 +107,7 @@ def make_vec_env(env_id, nenv, seed, reward_scale):
 def train(args):
     total_timesteps = int(args.num_timesteps)
     seed = int(args.seed)
-    network = "ann_lstm"
+    network = ann
     env = build_env(args)
 
     print('Training with PPO2')
@@ -126,10 +116,11 @@ def train(args):
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
-        nsteps=1000,
-        gamma=1,
+        nsteps=128,
+        lam=0.95,
+        gamma=0.99,
         network=network,
-        lr=2.5e-4,
+        lr=lambda f: f * 2.5e-4,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
@@ -210,12 +201,13 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=20e6),
+    parser.add_argument('--num_timesteps', type=float, default=25e6),
     parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--reward_scale', default=.1, type=float)
-    parser.add_argument('--save_path', default='weights/ppo_grid', type=str)
+    parser.add_argument('--frames', default=20, type=int)
+    parser.add_argument('--reward_scale', default=1., type=float)
+    parser.add_argument('--save_path', default='weights/ppo_grid_e', type=str)
     parser.add_argument('--network', help='Network', default='cnn', type=str)
-    parser.add_argument('--load_path', default="weights/ppo_grid", type=str)
+    parser.add_argument('--load_path', default="weights/ppo_grid_e", type=str)
     parser.add_argument('--train', default=True, action='store_true')
     parser.add_argument('--plot', default=False, action='store_true')
     parser.add_argument('--test', default=False, action='store_true')

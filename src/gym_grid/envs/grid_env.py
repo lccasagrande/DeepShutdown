@@ -12,23 +12,20 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 4
+        self.job_slots = 11
         self.time_window = 20
-        self.max = 0
-        self.backlog_width = 1
-        self.action_space = spaces.Discrete(self.job_slots+1)
+        self.backlog_width = 4
         self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
+        self.action_space = spaces.Discrete(self.job_slots+1)
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape +
-                                            (1,),
+                                            shape=self.simulator.state_shape + (1,),
                                             dtype=np.uint8)
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        slowdown_before = self.simulator.jobs_manager.runtime_slowdown
         energy_before = self.simulator.resource_manager.energy_consumed
 
         try:
@@ -36,29 +33,16 @@ class GridEnv(gym.Env):
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
-        done = not self.simulator.running_simulation
-        slowdown_after = self.simulator.jobs_manager.runtime_slowdown - slowdown_before
         energy_after = self.simulator.resource_manager.energy_consumed - energy_before
-        reward = -1*(energy_after /
-                     self.simulator.resource_manager.max_energy_usage)
-
-        self.max += self.simulator.resource_manager.max_energy_usage / \
-            self.simulator.resource_manager.max_energy_usage
-
-        if done:
-            print("Consumed: {} - Estimated: {} - Max: {}".format(
-                self.simulator.metrics['energy_consumed'],
-                self.simulator.resource_manager.energy_consumed,
-                self.max))
 
         obs = self._get_obs()
-        #reward = -1 * energy_after
+        reward = -1*(energy_after / self.simulator.resource_manager.max_energy_usage)
+        done = not self.simulator.running_simulation
         info = self._get_info()
 
         return obs, reward, done, info
 
     def reset(self):
-        self.max = 0
         self.simulator.close()
         self.simulator.start()
         return self._get_obs()
@@ -81,7 +65,7 @@ class GridEnv(gym.Env):
     def _get_info(self):
         return dict() if self.simulator.running_simulation else self.simulator.metrics
 
-    def _get_obs(self, type='', reshape=False):
+    def _get_obs(self, type='image', reshape=False):
         state = self.simulator.get_state(type)
         if reshape:
             state = state.reshape(state.shape + (1,))
@@ -99,7 +83,7 @@ class GridEnv(gym.Env):
         def plot_resource_state():
             resource_state = self.simulator.get_resource_state()
             plt.subplot(1, 1 + self.job_slots + 1, 1)
-            plt.imshow(resource_state, interpolation='nearest',
+            plt.imshow(resource_state, interpolation='nearest', vmin=0,
                        vmax=255, aspect='auto')
             ax = plt.gca()
             ax.set_xticks(range(self.simulator.nb_resources))
@@ -121,7 +105,7 @@ class GridEnv(gym.Env):
                 job_state = jobs[:, start_idx:start_idx +
                                  self.simulator.nb_resources]
                 plt.subplot(1, 1 + self.job_slots + 1, slot + 1)
-                plt.imshow(job_state, interpolation='nearest',
+                plt.imshow(job_state, interpolation='nearest',vmin=0,
                            vmax=255, aspect='auto')
                 ax = plt.gca()
                 ax.set_xticks([], [])
@@ -137,7 +121,7 @@ class GridEnv(gym.Env):
             backlog_state = self.simulator.get_backlog_state()
             plt.subplot(1, 1 + self.job_slots + 1, self.job_slots + 2)
 
-            plt.imshow(backlog_state, interpolation='nearest',
+            plt.imshow(backlog_state, interpolation='nearest',vmin=0,
                        vmax=255,  aspect='auto')
             ax = plt.gca()
             ax.set_xticks(range(self.backlog_width))
