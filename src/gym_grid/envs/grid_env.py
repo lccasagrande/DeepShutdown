@@ -21,7 +21,7 @@ class GridEnv(gym.Env):
         self.action_space = spaces.Discrete(self.job_slots+1)
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape + (1,),
+                                            shape=self.simulator.state_shape,
                                             dtype=np.uint8)
 
     def step(self, action):
