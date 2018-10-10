@@ -1,4 +1,6 @@
 from enum import Enum, unique
+from collections import deque
+from sortedcontainers import SortedList
 from xml.dom import minidom
 import numpy as np
 
@@ -13,102 +15,115 @@ class Resource:
         SHUT_DOWN = 0
         NORMAL = 1
 
-    def __init__(self, id, state, pstate, name, properties):
+    def __init__(self, id, state, pstate, name, profiles, time_window):
         assert isinstance(state, Resource.State)
         assert isinstance(pstate, Resource.PowerState)
-        assert isinstance(properties, dict)
+        assert isinstance(profiles, dict)
         assert isinstance(id, int)
+        self.queue = []
+        self.time_window = time_window
         self.state = state
         self.pstate = pstate
         self.name = name
         self.id = id
-        self.properties = properties
-        self.max_watt = self.properties[Resource.PowerState.NORMAL]['watt_comp']
-        self.max_speed = self.properties[Resource.PowerState.NORMAL]['speed']
-        self.min_watt = self.properties[Resource.PowerState.SHUT_DOWN]['watt_idle']
+        self.profiles = profiles
+        self.max_watt = self.profiles[Resource.PowerState.NORMAL]['watt_comp']
+        self.min_watt = self.profiles[Resource.PowerState.SHUT_DOWN]['watt_idle']
+        self.max_speed = self.profiles[Resource.PowerState.NORMAL]['speed']
 
     @staticmethod
-    def from_xml(id, data):
+    def from_xml(id, data, time_window):
         name = data.getAttribute('id')
         host_speed = data.getAttribute('speed').split(',')
         host_watts = data.getElementsByTagName(
             'prop')[0].getAttribute('value').split(',')
         assert "Mf" in host_speed[-1], "Speed is not in Mega Flops"
 
-        properties = {}
+        profiles = {}
         for i, speed in enumerate(host_speed):
             (idle, comp) = host_watts[i].split(":")
-            properties[Resource.PowerState(i)] = {
+            if i == 0:
+                assert idle == comp, "Idle and Comp power states should be equal for resource state 0"
+
+            profiles[Resource.PowerState(i)] = {
                 'speed': float(speed.replace("Mf", "")),
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
-        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, properties)
+        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, profiles, time_window)
 
     @property
     def is_sleeping(self):
         return self.state == Resource.State.SLEEPING
 
     @property
-    def is_available(self):
-        return not self.is_computing
-
-    @property
     def is_computing(self):
         return self.state == Resource.State.COMPUTING
 
     @property
-    def cost_to_compute(self):
-        if self.pstate == Resource.PowerState.SHUT_DOWN:
-            _, w_min, _ = self._get_properties(Resource.PowerState.SHUT_DOWN)
-            speed, _, w_comp = self._get_properties(Resource.PowerState.NORMAL)
-        else:
-            speed, w_min, w_comp = self._get_properties(self.pstate)
+    def current_watt(self):
+        curr_prop = self.profiles[self.pstate]
+        return curr_prop['watt_comp'] if self.is_computing else curr_prop['watt_idle']
 
-        return (w_comp - w_min) / speed
+    def get_energy_consumed(self, time_passed):
+        return self.current_watt * time_passed
 
-    def set_state(self, state):
-        assert isinstance(state, Resource.State)
-        self.state = state
+    def get_job(self):
+        return min(self.queue, key=(lambda j: j.time_left_to_start)) if self.queue else None
 
-    def set_pstate(self, pstate):
-        assert isinstance(pstate, Resource.PowerState)
-        if self.is_computing:
-            raise InvalidPowerStateError(
-                "Cannot change resurce power state while it is being used by a job.")
+    def sleep(self):
+        assert not self.is_computing, "Cannot sleep resource while computing!"
+        self.state = Resource.State.SLEEPING
+        self.pstate = Resource.PowerState.SHUT_DOWN
 
-        self.pstate = pstate
-        if pstate == Resource.PowerState.SHUT_DOWN:
-            self.set_state(Resource.State.SLEEPING)
-        else:
-            self.set_state(Resource.State.IDLE)
+    def wake_up(self):
+        self.state = Resource.State.IDLE
+        self.pstate = Resource.PowerState.NORMAL
 
-    def _get_properties(self, pstate):
-        prop = self.properties[pstate]
-        return prop['speed'], prop['watt_idle'], prop['watt_comp']
+    def start_computing(self):
+        assert self.pstate == Resource.PowerState.NORMAL
+        self.state = Resource.State.COMPUTING
+
+    def get_view(self):
+        if self.is_sleeping:  # SLEEP
+            return np.zeros(shape=self.time_window, dtype=np.uint8)
+        elif len(self.queue) == 0:  # FULL IDLE
+            return np.full(shape=self.time_window, fill_value=127, dtype=np.uint8)
+        else:  # COMPUTING FULLY OR PARTIAL
+            view = np.full(shape=self.time_window,
+                           fill_value=127, dtype=np.uint8)
+            for j in self.queue:
+                end = j.time_left_to_start + int(j.remaining_time)
+                view[j.time_left_to_start:end] = 255
+            return view
+
+    def reserve(self, job):
+        self.queue.append(job)
+
+    def release(self, job):
+        self.state = Resource.State.IDLE
+        self.queue.remove(job)
+
+    def reset(self):
+        self.wake_up()
+        self.queue.clear()
 
 
 class ResourceManager:
-    def __init__(self, resources):
+    def __init__(self, resources, time_window):
         assert isinstance(resources, dict)
         self.nb_resources = len(resources)
         self.resources = resources
-
-    @property
-    def nb_resources_unused(self):
-        nb = len([k for k, res in self.resources.items() if not res.is_computing])
-        return nb
-
-    @property
-    def max_resource_energy_cost(self):
-        return max(self.resources.items(), key=(lambda item: item[1].cost_to_compute))[1].cost_to_compute
+        self.energy_consumed = 0
+        self.max_energy_usage = 0
+        self.shape = (time_window, self.nb_resources)
 
     @property
     def max_resource_speed(self):
         return max(self.resources.items(), key=(lambda item: item[1].max_speed))[1].max_speed
 
     @staticmethod
-    def from_xml(platform_fn):
+    def from_xml(platform_fn, time_window):
         platform = minidom.parse(platform_fn)
         hosts = platform.getElementsByTagName('host')
         hosts.sort(key=lambda x: x.attributes['id'].value)
@@ -116,36 +131,71 @@ class ResourceManager:
         id = 0
         for host in hosts:
             if host.getAttribute('id') != 'master_host':
-                resources[id] = Resource.from_xml(id, host)
+                resources[id] = Resource.from_xml(
+                    id, host, time_window=time_window)
                 id += 1
 
-        return ResourceManager(resources)
+        return ResourceManager(resources, time_window)
+
+    def is_available(self, resources):
+        for r in resources:
+            if self.resources[r].is_computing:
+                return False
+        return True
+
+    def get_state(self):
+        state = np.zeros(shape=self.shape, dtype=np.uint8)
+        for k, res in self.resources.items():
+            state[:, k] = res.get_view()
+
+        return state
 
     def reset(self):
-        self.set_state(self.resources, Resource.State.IDLE)
+        self.energy_consumed = 0
+        self.max_energy_usage = 0
+        for _, r in self.resources.items():
+            r.reset()
 
-    def on_resource_pstate_changed(self, resources, pstate):
-        assert isinstance(pstate, Resource.PowerState)
-        self.set_pstate(resources, pstate)
+    def _select_resources(self, nb, time):
+        state = self.get_state()
+        for t in range(self.shape[0]-time+1):
+            for r in range(self.shape[1]-nb+1):
+                if not np.any(state[t:t+time, r:r+nb] == 255):
+                    return list(range(r, r+nb)), t
 
-    def on_job_scheduled(self, resources):
-        self.set_state(resources, Resource.State.COMPUTING)
+        raise UnavailableResourcesError(
+            "There is no resource available for this job.")
 
-    def on_job_allocated(self, resources):
-        #self.set_state(resources, Resource.State.COMPUTING)
-        return
+    def update_state(self, time_passed):
+        assert time_passed != 0
+        self.max_energy_usage = 0
+        for _, r in self.resources.items():
+            self.energy_consumed += r.get_energy_consumed(time_passed)
+            self.max_energy_usage += r.max_watt * time_passed
+
+    def get_jobs(self):
+        jobs = dict()
+        for _, r in self.resources.items():
+            j = r.get_job()
+            if j is not None and j.id not in jobs:
+                jobs[j.id] = j
         
-    def on_job_completed(self, resources):
-        self.set_state(resources, Resource.State.IDLE)
+        return jobs.values()
 
-    def estimate_energy_consumption(self, res_ids):
-        energy = 0
-        for id in res_ids:
-            try:
-                energy += self.resources[id].cost_to_compute
-            except KeyError:
-                raise KeyError("Could not find resource: {}".format(id))
-        return energy
+    def allocate(self, job):
+        res, time = self._select_resources(job.requested_resources, job.requested_time)
+        job.allocation = res
+        job.time_left_to_start = time
+        for r in res:
+            self.resources[r].reserve(job)
+
+    def start_job(self, job):
+        for r in job.allocation:
+            self.resources[r].start_computing()
+
+    def release(self, job):
+        for r in job.allocation:
+            self.resources[r].release(job)
 
     def get_resources(self):
         resources = np.empty((self.nb_resources,), dtype=object)
@@ -154,31 +204,18 @@ class ResourceManager:
 
         return resources
 
-    def is_available(self, res_ids):
-        for id in res_ids:
-            try:
-                resource = self.resources[id]
-                if not resource.is_available:
-                    return False
-            except KeyError:
-                raise KeyError("Could not find resource: {}".format(id))
+    def set_sleep(self, res_ids):
+        for i in res_ids:
+            self.resources[i].sleep()
 
-        return True
-
-    def set_state(self, res_ids, state):
-        for id in res_ids:
-            try:
-                self.resources[id].set_state(state)
-            except KeyError:
-                raise KeyError("Could not find resource: {}".format(id))
-
-    def set_pstate(self, res_ids, pstate):
-        for id in res_ids:
-            try:
-                self.resources[id].set_pstate(pstate)
-            except KeyError:
-                raise KeyError("Could not find resource: {}".format(id))
+    def wake_up(self, res_ids):
+        for i in res_ids:
+            self.resources[i].wake_up()
 
 
 class InvalidPowerStateError(Exception):
+    pass
+
+
+class UnavailableResourcesError(Exception):
     pass

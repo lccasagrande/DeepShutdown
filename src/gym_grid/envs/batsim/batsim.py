@@ -43,9 +43,9 @@ class BatsimHandler:
         self.time_window = time_window
         self.job_slots = job_slots
         self.protocol_manager = BatsimProtocolHandler()
-        self.resource_manager = ResourceManager.from_xml(self._platform)
-        self.jobs_manager = SchedulerManager(
-            self.nb_resources, time_window, job_slots)
+        self.resource_manager = ResourceManager.from_xml(
+            self._platform, time_window)
+        self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
         self.backlog_width = backlog_width
         self.state_shape = (self.time_window, self.nb_resources +
                             (self.nb_resources*self.job_slots) + backlog_width)
@@ -105,9 +105,10 @@ class BatsimHandler:
     def schedule(self, job_pos):
         assert self.running_simulation, "Simulation is not running."
 
-        if job_pos != -1:
-            resources = self.jobs_manager.allocate_job(job_pos)
-            self.resource_manager.on_job_allocated(resources)
+        if job_pos != -1:  # Try to schedule job
+            job = self.jobs_manager.get_job(job_pos)
+            self.resource_manager.allocate(job)
+            self.jobs_manager.on_job_allocated(job_pos)
         elif not self._alarm_is_set:  # Handle VOID Action
             self.protocol_manager.set_alarm(self.current_time + 1)
             self._alarm_is_set = True
@@ -122,7 +123,7 @@ class BatsimHandler:
 
     def _get_ready_jobs(self):
         ready_jobs = []
-        jobs = self.jobs_manager.gantt.get_jobs()
+        jobs = self.resource_manager.get_jobs()
         for job in jobs:
             if job is not None and \
                     job.state != Job.State.RUNNING and \
@@ -136,8 +137,8 @@ class BatsimHandler:
         ready_jobs = self._get_ready_jobs()
         for job in ready_jobs:
             self.protocol_manager.start_job(job.id,  job.allocation)
-            self.resource_manager.on_job_scheduled(job.allocation)
-            self.jobs_manager.on_job_scheduled(job.id, self.current_time)
+            self.resource_manager.start_job(job)
+            self.jobs_manager.on_job_started(job.id, self.current_time)
 
     def _start_simulator(self):
         output_path = self._output_dir + "/" + str(self.nb_simulation)
@@ -161,14 +162,12 @@ class BatsimHandler:
         self._alarm_is_set = False
 
     def _handle_resource_pstate_changed(self, timestamp, data):
-        resources = self._get_resources_from_json(data["resources"])
-        state = Resource.PowerState[int(data["state"])]
-        self.resource_manager.on_resource_pstate_changed(resources, state)
+        return
 
     def _handle_job_completed(self, timestamp, data):
         resources = self._get_resources_from_json(data["alloc"])
-        self.jobs_manager.on_job_completed(timestamp, data)
-        self.resource_manager.on_job_completed(resources)
+        job = self.jobs_manager.on_job_completed(timestamp, data)
+        self.resource_manager.release(job)
         self._start_ready_jobs()
 
     def _handle_job_submitted(self, timestamp, data):
@@ -269,6 +268,7 @@ class BatsimHandler:
         time_passed = self.current_time - old_time
         if time_passed != 0:
             self.jobs_manager.update_state(time_passed)
+            self.resource_manager.update_state(time_passed)
 
         for event in events:
             self._handle_batsim_events(event)
@@ -302,7 +302,7 @@ class BatsimHandler:
         return output_dir
 
     def get_resource_state(self):
-        return self.jobs_manager.gantt.get_state()
+        return self.resource_manager.get_state()
 
     def get_job_slot_state(self):
         s = np.zeros(
@@ -316,9 +316,11 @@ class BatsimHandler:
         return s
 
     def get_backlog_state(self):
-        s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
+        s = np.zeros(shape=(self.time_window, self.backlog_width),
+                     dtype=np.uint8)
         t, i = 0, 0
-        nb_jobs = min(self.backlog_width*self.time_window, self.jobs_manager.nb_jobs_in_backlog)
+        nb_jobs = min(self.backlog_width*self.time_window,
+                      self.jobs_manager.nb_jobs_in_backlog)
         for _ in range(nb_jobs):
             s[t, i] = 255
             i += 1
@@ -346,7 +348,7 @@ class BatsimHandler:
     def _get_state(self):
         state = dict(
             resources_properties=self.resource_manager.get_resources(),
-            resources_spaces=self.jobs_manager.gantt.get_state(),
+            resources_spaces=self.resource_manager.get_state(),
             queue=self.jobs_manager.job_slots,
             backlog=self.jobs_manager.nb_jobs_in_backlog)
         return state

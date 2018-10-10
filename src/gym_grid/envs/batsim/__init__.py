@@ -1,3 +1,3 @@
 from .batsim import BatsimHandler
-from .scheduler import InsufficientResourcesError, UnavailableResourcesError, InvalidJobError
-from .resource import InvalidPowerStateError
+from .scheduler import InsufficientResourcesError, InvalidJobError
+from .resource import InvalidPowerStateError, UnavailableResourcesError

@@ -1,6 +1,6 @@
 from gym_grid.envs.grid_env import GridEnv
 from collections import deque
-from policies import Tetris, SJF, LJF, Random, FirstFit, FCFS
+from policies import Tetris, SJF, LJF, Random, FirstFit, FCFS, User
 import utils
 import shutil
 import gym
@@ -25,6 +25,7 @@ def run_experiment(policy, n_ep, seed, metrics, results):
         score, state = 0,  env.reset()
         steps = 0
         while True:
+            #env.render()
             act = policy.select_action(state)
             state, reward, done, info = env.step(act)
             steps += 1
@@ -95,13 +96,13 @@ def plot_results(data, name):
 if __name__ == "__main__":
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), Random(), SJF(), LJF(), FCFS()]
-    n_episodes = 100
+    n_episodes = 1
     seed = 123
     #shutil.rmtree(output_dir, ignore_errors=True)
     #shutil.rmtree('results', ignore_errors=True)
 
-    #run_experiment(SJF(), n_episodes, seed, {})
-    run(output_dir, policies, n_episodes, seed, plot=False)
+    run_experiment(SJF(), n_episodes, seed, {}, {})
+    #run(output_dir, policies, n_episodes, seed, plot=False)
 
 
 #%%

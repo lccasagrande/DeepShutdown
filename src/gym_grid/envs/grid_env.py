@@ -12,21 +12,24 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 11
+        self.job_slots = 4
         self.time_window = 20
-        self.backlog_width = 4
+        self.max = 0
+        self.backlog_width = 1
         self.action_space = spaces.Discrete(self.job_slots+1)
         self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape +(1,),
+                                            shape=self.simulator.state_shape +
+                                            (1,),
                                             dtype=np.uint8)
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
         slowdown_before = self.simulator.jobs_manager.runtime_slowdown
+        energy_before = self.simulator.resource_manager.energy_consumed
 
         try:
             self.simulator.schedule(action-1)
@@ -35,15 +38,27 @@ class GridEnv(gym.Env):
 
         done = not self.simulator.running_simulation
         slowdown_after = self.simulator.jobs_manager.runtime_slowdown - slowdown_before
+        energy_after = self.simulator.resource_manager.energy_consumed - energy_before
+        reward = -1*(energy_after /
+                     self.simulator.resource_manager.max_energy_usage)
+
+        self.max += self.simulator.resource_manager.max_energy_usage / \
+            self.simulator.resource_manager.max_energy_usage
+
+        if done:
+            print("Consumed: {} - Estimated: {} - Max: {}".format(
+                self.simulator.metrics['energy_consumed'],
+                self.simulator.resource_manager.energy_consumed,
+                self.max))
 
         obs = self._get_obs()
-        reward = -1 * slowdown_after
+        #reward = -1 * energy_after
         info = self._get_info()
 
         return obs, reward, done, info
 
-
     def reset(self):
+        self.max = 0
         self.simulator.close()
         self.simulator.start()
         return self._get_obs()
@@ -65,9 +80,9 @@ class GridEnv(gym.Env):
 
     def _get_info(self):
         return dict() if self.simulator.running_simulation else self.simulator.metrics
-        
-    def _get_obs(self, type='image', reshape=True):
-        state =  self.simulator.get_state(type)
+
+    def _get_obs(self, type='', reshape=False):
+        state = self.simulator.get_state(type)
         if reshape:
             state = state.reshape(state.shape + (1,))
         return state
@@ -91,7 +106,8 @@ class GridEnv(gym.Env):
             ax.set_yticks(range(self.time_window))
             ax.set_ylabel("Time Window")
             ax.set_xlabel("Id")
-            ax.set_xticks(np.arange(.5, self.simulator.nb_resources, 1), minor=True)
+            ax.set_xticks(
+                np.arange(.5, self.simulator.nb_resources, 1), minor=True)
             ax.set_yticks(np.arange(.5, self.time_window, 1), minor=True)
             ax.set_aspect('auto')
             ax.set_title("RES")
@@ -102,14 +118,16 @@ class GridEnv(gym.Env):
             jobs = self.simulator.get_job_slot_state()
             slot = 1
             for start_idx in range(0, jobs.shape[1], self.simulator.nb_resources):
-                job_state = jobs[:, start_idx:start_idx+self.simulator.nb_resources]
+                job_state = jobs[:, start_idx:start_idx +
+                                 self.simulator.nb_resources]
                 plt.subplot(1, 1 + self.job_slots + 1, slot + 1)
                 plt.imshow(job_state, interpolation='nearest',
                            vmax=255, aspect='auto')
                 ax = plt.gca()
                 ax.set_xticks([], [])
                 ax.set_yticks([], [])
-                ax.set_xticks(np.arange(.5, self.simulator.nb_resources, 1), minor=True)
+                ax.set_xticks(
+                    np.arange(.5, self.simulator.nb_resources, 1), minor=True)
                 ax.set_yticks(np.arange(.5, self.time_window, 1), minor=True)
                 ax.set_title("Slot {}".format(slot))
                 ax.grid(which='minor', color='w', linestyle='-', linewidth=1)

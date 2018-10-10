@@ -32,7 +32,7 @@ class Random(Policy):
 def is_available(time_window, req_res):
     nb_res = len(time_window[0])
     for r in range(0, nb_res - req_res+1):
-        if not np.any(time_window[:, r:r+req_res] != 0):
+        if not np.any(time_window[:, r:r+req_res] == 255):
             return True
     return False
 

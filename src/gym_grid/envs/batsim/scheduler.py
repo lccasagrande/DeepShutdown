@@ -10,92 +10,6 @@ from itertools import count
 import heapq
 
 
-class Gantt():
-    class Resource:
-        def __init__(self, time_window):
-            self.time_window = time_window
-            self.queue = []
-
-        @property
-        def free_time(self):
-            free_time = self.time_window
-            for j in self.queue:
-                free_time -= j.remaining_time
-            return free_time
-
-        def get_state(self):
-            state = np.zeros(shape=(self.time_window), dtype=np.uint8)
-            for j in self.queue:
-                end_idx = j.time_left_to_start + int(j.remaining_time)
-                state[j.time_left_to_start:end_idx] = 122 if j.color is None else j.color
-            return state
-
-        def get_job(self):
-            return min(self.queue, key=(lambda j: j.time_left_to_start)) if self.queue else None
-
-        def reserve(self, job):
-            self.queue.append(job)
-
-        def release(self, job):
-            self.queue.remove(job)
-
-        def clear(self):
-            self.queue.clear()
-
-    def __init__(self, nb_resources, time_window):
-        # Size: we can have N jobs of 1 lenght (e.g.: exec time is 1 second)
-        self._state = [Gantt.Resource(time_window=time_window)
-                       for _ in range(nb_resources)]
-        self.shape = (time_window, nb_resources)
-        self.nb_resources = nb_resources
-        self.time_window = time_window
-        colors = 250
-        self.colormap = np.arange(
-            colors/float(time_window+1), colors, colors/float(time_window)).tolist()
-        np.random.shuffle(self.colormap)
-
-    @property
-    def free_time(self):
-        return np.asarray([res.free_time for res in self._state])
-
-    def get_state(self):
-        state = np.zeros(shape=self.shape, dtype=np.uint8)
-        for i, r in enumerate(self._state):
-            state[:, i] = r.get_state()
-
-        return state
-
-    def get_jobs(self):
-        for res in self._state:
-            yield res.get_job()
-
-    def clear(self):
-        np.random.shuffle(self.colormap)
-        for res in self._state:
-            res.clear()
-
-    def _select_color(self):
-        c = self.colormap.pop(0)
-        self.colormap.append(c)
-        return c
-
-    def reserve(self, job):
-        for res in job.allocation:
-            res_state = self._state[res].get_state()
-            if np.any(res_state[job.time_left_to_start:job.requested_time] != 0):
-                return False
-
-        if job.color is None:
-            job.color = self._select_color()
-
-        for res in job.allocation:
-            self._state[res].reserve(job)
-
-    def release(self, job):
-        for res in job.allocation:
-            self._state[res].release(job)
-
-
 class JobSlot():
     def __init__(self, slots):
         self.slots = np.empty(shape=slots, dtype=object)
@@ -113,8 +27,8 @@ class JobSlot():
     def is_full(self):
         return len(self.slots_free) == 0
 
-    #@property
-    #def lenght(self):
+    # @property
+    # def lenght(self):
     #    return self.slots.shape[0] - len(self.slots_free)
 
     def clear(self):
@@ -126,16 +40,20 @@ class JobSlot():
         self.slots[slot] = value
 
     def remove_at(self, slot):
+        job = self.slots[slot]
         self.slots[slot] = None
         self.slots_free.add(slot)
+        return job
 
     def at(self, slot):
+        if slot >= len(self.slots): 
+            return None
+
         return self.slots[slot]
 
 
 class SchedulerManager():
-    def __init__(self, nb_resources, time_window, job_slots):
-        self.gantt = Gantt(nb_resources, time_window)
+    def __init__(self, nb_resources, job_slots):
         self._job_slots = JobSlot(job_slots)
         self._jobs_queue = deque()
         self._jobs_running = dict()
@@ -170,7 +88,6 @@ class SchedulerManager():
         return self._job_slots.at(index)
 
     def reset(self):
-        self.gantt.clear()
         self._job_slots.clear()
         self._jobs_queue.clear()
         self._jobs_running.clear()
@@ -211,33 +128,22 @@ class SchedulerManager():
         for job in self._jobs_queue:
             update_job_not_running(job)
 
-    def allocate_job(self, index):
+    def get_job(self, index):
         job = self._job_slots.at(index)
-        if job == None:
+        if job is None:
             raise InvalidJobError(
                 "There is no job {} to schedule".format(index))
+        return job
 
-        resources, time_to_start = self._select_available_resources(
-            job.requested_resources, job.requested_time)
-
-        if resources is None:
-            raise UnavailableResourcesError(
-                "There is no resource available for this job.")
-
-        job.allocation = resources
-        job.time_left_to_start = time_to_start
-
-        self.gantt.reserve(job)
+    def on_job_allocated(self, index):
+        job = self._job_slots.remove_at(index)
         self._jobs_allocated[job.id] = job
-        self._job_slots.remove_at(index)
 
         if self._jobs_queue:
             job = self._jobs_queue.popleft()
             self._job_slots.append(job)
 
-        return job.allocation
-
-    def on_job_scheduled(self, job_id, time):
+    def on_job_started(self, job_id, time):
         job = self._jobs_allocated.pop(job_id)
         job.state = Job.State.RUNNING
         job.start_time = time
@@ -248,8 +154,6 @@ class SchedulerManager():
 
     def on_job_completed(self, time, data):
         job = self._jobs_running.pop(data['job_id'])
-        self.gantt.release(job)
-
         job.finish_time = time
         job.runtime = job.finish_time - job.start_time
         job.turnaround_time = job.waiting_time + job.runtime
@@ -261,6 +165,7 @@ class SchedulerManager():
         self._update_stats(job)
         self.last_job = job
         self.nb_jobs_completed += 1
+        return job
 
     def on_job_submitted(self, time, data):
         job = Job.from_json(data)
@@ -272,17 +177,6 @@ class SchedulerManager():
             self._job_slots.append(job)
 
         self.nb_jobs_submitted += 1
-
-    def _select_available_resources(self, nb_res, req_time):
-        gantt_state = self.gantt.get_state()
-        # check all time window
-        for time in range(0, self.gantt.time_window-req_time+1):
-            # check all resources
-            for r in range(0, self.gantt.nb_resources - nb_res+1):
-                if not np.any(gantt_state[time:time+req_time, r:r+nb_res] != 0):
-                    return list(range(r, r+nb_res)), time
-
-        return None, -1
 
     def _update_stats(self, job):
         self.total_slowdown += job.slowdown
@@ -363,10 +257,6 @@ class Job(object):
 
 
 class InsufficientResourcesError(Exception):
-    pass
-
-
-class UnavailableResourcesError(Exception):
     pass
 
 
