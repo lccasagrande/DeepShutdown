@@ -3,10 +3,8 @@
 results/*
 benchmark
 tmp
-log
 src/test.py
 src/tmp.py
-weights
 img
 
 # Byte-compiled / optimized / DLL files
