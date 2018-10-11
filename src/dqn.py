@@ -19,7 +19,7 @@ from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
-WINDOW_LENGTH = 100
+WINDOW_LENGTH = 20
 
 
 class GridProcessor(Processor):
@@ -96,7 +96,7 @@ if __name__ == "__main__":
                 nb_steps=10e6,
                 log_interval=10000,
                 visualize=False,
-                verbose=1,
+                verbose=2,
                 nb_max_episode_steps=3000)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
