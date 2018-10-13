@@ -1,6 +1,6 @@
 from gym_grid.envs.grid_env import GridEnv
 from collections import deque
-from policies import Tetris, SJF, LJF, Random, FirstFit, FCFS, User
+from policies import Tetris, SJF, LJF, Random, FirstFit, User
 import utils
 import shutil
 import gym
@@ -15,36 +15,48 @@ from plotly.offline import plot
 from multiprocessing import Process, Manager
 from collections import defaultdict
 
-def run_experiment(policy, n_ep, seed, metrics, results):
+
+def get_trajectory(env, policy, metrics, visualize=False, nb_steps=None):
+    result = defaultdict(float)
+    score, steps, state = 0, 0, env.reset()
+    while True:
+        if visualize:
+            env.render()
+
+        action = policy.select_action(state)
+        state, reward, done, info = env.step(action)
+
+
+        steps += 1
+        score += reward
+
+        if done or (steps == nb_steps if nb_steps != None else False):
+            for metric in metrics:
+                result[metric] = info[metric]
+            result['score'] = score
+            result['steps'] = steps
+            return result
+
+
+def run_experiment(policy, n_ep, seed, metrics, results, verbose=True, visualize=False):
     policy_name = policy.__class__.__name__
     result = defaultdict(list)
     env = gym.make('grid-v0')
     env.seed(seed)
 
     for i in range(1, n_ep + 1):
-        score, state = 0,  env.reset()
-        steps = 0
-        while True:
-            #env.render()
-            act = policy.select_action(state)
-            state, reward, done, info = env.step(act)
-            steps += 1
-            score += reward
+        traj_result = get_trajectory(env, policy, metrics, visualize)
 
-            if done:
-                for metric in metrics:
-                    result[metric].append(info[metric])
-                result['score'].append(score)
-                result['steps'].append(steps)
-                
-                print("\n{} Steps {} - Episode {:2} - Energy {:7} - Score: {:5} - Slowdown Sum {:5} Mean {:3} - Makespan {:5}".format(
-                    policy_name, steps, i, info['energy_consumed'], score, info['total_slowdown'], info['mean_slowdown'], info['makespan']))
-                break
+        for k, v in traj_result.items():
+            result[k].append(v)
 
+        if verbose:
+            print("\nPolicy {} Episode [{}] Steps [{}] Score: [{}] Energy [{}] Slowdown [Sum {} - Mean {}] Makespan [{}]".format(policy_name, i, traj_result['steps'],
+                                                                                                                                 traj_result['score'], traj_result['energy_consumed'], traj_result['total_slowdown'], traj_result['mean_slowdown'], traj_result['makespan']))
     results[policy_name] = result
 
 
-def run(output_dir, policies, n_ep, seed, plot=True):
+def run(output_dir, policies, n_ep, seed, plot=True, verbose=True, visualize=False):
     metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
                "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
                'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
@@ -55,7 +67,7 @@ def run(output_dir, policies, n_ep, seed, plot=True):
 
     for policy in policies:
         p = Process(target=run_experiment, args=(
-            policy, n_ep, seed, metrics, manager_result, ))
+            policy, n_ep, seed, metrics, manager_result, verbose, visualize, ))
         p.start()
         process.append(p)
 
@@ -68,7 +80,6 @@ def run(output_dir, policies, n_ep, seed, plot=True):
         for key, value in manager_result.items():
             tmp[key] = value[metric]
 
-        
         if plot:
             plot_results(tmp, metric)
 
@@ -95,17 +106,17 @@ def plot_results(data, name):
 
 if __name__ == "__main__":
     output_dir = 'benchmark/'
-    policies = [FirstFit(), Tetris(), Random(), SJF(), LJF(), FCFS()]
+    policies = [FirstFit(), Tetris(), Random(), SJF(), LJF()]
     n_episodes = 1
     seed = 123
-    #shutil.rmtree(output_dir, ignore_errors=True)
-    #shutil.rmtree('results', ignore_errors=True)
+    shutil.rmtree(output_dir, ignore_errors=True)
+    shutil.rmtree('results', ignore_errors=True)
 
-    run_experiment(SJF(), n_episodes, seed, {}, {})
-    #run(output_dir, policies, n_episodes, seed, plot=False)
+    #run_experiment(SJF(), n_episodes, seed, {}, {}, visualize=False)
+    run(output_dir, policies, n_episodes, seed, plot=False)
 
 
-#%%
+# %%
 
 #import plotly.plotly as py
 #import plotly.graph_objs as go
@@ -114,10 +125,10 @@ if __name__ == "__main__":
 #import numpy as np
 #
 #
-#metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
+# metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
 #               "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
 #               'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
-#def plot_results(data, name):
+# def plot_results(data, name):
 #    def get_bar_plot(dt):
 #        traces = []
 #        for policy, values in dt.items():
@@ -133,7 +144,7 @@ if __name__ == "__main__":
 #    fig = go.Figure(data=get_bar_plot(data), layout=go.Layout(title=name))
 #    plot(fig, filename="results/"+name+'.html')
 #
-#for metric in metrics:
+# for metric in metrics:
 #
 #    dt1 = pd.read_csv("benchmark/"+metric+".csv", index_col=False)
 #    dt1.reset_index(drop=True, inplace=True)

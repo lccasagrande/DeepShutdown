@@ -27,25 +27,5 @@
       <prop id="watt_per_state" value="10:10,150.0:210.0"/>
       <prop id="watt_off" value="10"/>
     </host>
-    <host id="5" pstate="1" speed="0,1.0Mf">
-      <prop id="watt_per_state" value="10:10,150.0:210.0"/>
-      <prop id="watt_off" value="10"/>
-    </host>
-    <host id="6" pstate="1" speed="0,1.0Mf">
-      <prop id="watt_per_state" value="10:10,150.0:210.0"/>
-      <prop id="watt_off" value="10"/>
-    </host>
-    <host id="7" pstate="1" speed="0,1.0Mf">
-      <prop id="watt_per_state" value="10:10,150.0:210.0"/>
-      <prop id="watt_off" value="10"/>
-    </host>
-    <host id="8" pstate="1" speed="0,1.0Mf">
-      <prop id="watt_per_state" value="10:10,150.0:210.0"/>
-      <prop id="watt_off" value="10"/>
-    </host>
-    <host id="9" pstate="1" speed="0,1.0Mf">
-      <prop id="watt_per_state" value="10:10,150.0:210.0"/>
-      <prop id="watt_off" value="10"/>
-    </host>
   </zone>
 </platform>

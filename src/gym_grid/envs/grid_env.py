@@ -12,16 +12,18 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 11
+        self.job_slots = 5
         self.time_window = 20
-        self.backlog_width = 4
+        self.backlog_width = 1
         self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
         self.action_space = spaces.Discrete(self.job_slots+1)
+        
+        state_shape = self._get_obs()
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=self.simulator.state_shape,
+                                            shape=state_shape.shape,
                                             dtype=np.uint8)
 
     def step(self, action):
@@ -34,7 +36,7 @@ class GridEnv(gym.Env):
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
-        energy_after = self.simulator.resource_manager.energy_consumed - energy_before
+        #energy_after = self.simulator.resource_manager.energy_consumed - energy_before
         slow_after = self.simulator.jobs_manager.runtime_slowdown - slow_before
 
         obs = self._get_obs()
@@ -66,9 +68,9 @@ class GridEnv(gym.Env):
         return [seed]
 
     def _get_info(self):
-        return dict() #if self.simulator.running_simulation else self.simulator.metrics
+        return dict() if self.simulator.running_simulation else self.simulator.metrics
 
-    def _get_obs(self, type='image', reshape=False):
+    def _get_obs(self, type='compact', reshape=False):
         state = self.simulator.get_state(type)
         if reshape:
             state = state.reshape(state.shape + (1,))

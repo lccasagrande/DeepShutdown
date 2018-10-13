@@ -1,6 +1,6 @@
 from gym_grid.envs.grid_env import GridEnv
 from random import choice
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
 from rl.policy import Policy as RLPolicy
 import utils
 import gym
@@ -12,6 +12,36 @@ import shutil
 import time as t
 
 
+def count_resources_inrow_avail(state):
+    count, res_avail = 0, 0
+    resources = state[0:5]
+    for r in resources:
+        if r == 1:
+            count += 1
+        else:
+            if res_avail < count:
+                res_avail = count
+            count = 0
+
+    return res_avail if res_avail > count else count
+
+
+def get_jobs(state):
+    jobs = []
+    slot = 0
+    jobs_state = state[5:]
+    for i in range(0, len(jobs_state), 2):
+        slot += 1
+        if jobs_state[i] == 0:
+            continue
+        job = namedtuple('job', 'requested_resources,requested_time, slot')
+        job.requested_resources = jobs_state[i]
+        job.requested_time = jobs_state[i+1]
+        job.slot = slot
+        jobs.append(job)
+    return jobs
+
+
 class Policy(object):
     def select_action(self, **kwargs):
         raise NotImplementedError()
@@ -21,45 +51,26 @@ class User(Policy):
     def select_action(self, state):
         return int(input("Action: "))
 
+
 class Random(Policy):
     def select_action(self, state):
-        jobs = state['queue']
-        actions = [0] + list(range(1, len(jobs)+1))
-
-        return choice(actions)
-
-
-def is_available(time_window, req_res):
-    nb_res = len(time_window[0])
-    for r in range(0, nb_res - req_res+1):
-        if not np.any(time_window[:, r:r+req_res] == 255):
-            return True
-    return False
-
-
-class FCFS(Policy):
-    def select_action(self, state):
-        jobs = state['queue']
-        action = 0
-        for i, j in enumerate(jobs):
-            if j != None:
-                action = i+1
-                break
-        return action
+        jobs = get_jobs(state)
+        return choice(list(range(0, len(jobs)+1)))
 
 
 class SJF(Policy):
     def select_action(self, state):
         action, shortest_job = 0, np.inf
-        jobs = state['queue']
-        res_spaces = state['resources_spaces']
+        nb_res = count_resources_inrow_avail(state)
+        if nb_res == 0:
+            return action
+
+        jobs = get_jobs(state)
 
         for i, job in enumerate(jobs):
-            if job == None: continue
-            requested_time_window = res_spaces[:job.requested_time]
-            if job.requested_time < shortest_job and is_available(requested_time_window, job.requested_resources):
+            if job.requested_time < shortest_job and nb_res >= job.requested_resources:
                 shortest_job = job.requested_time
-                action = i+1
+                action = job.slot
 
         return action
 
@@ -67,15 +78,16 @@ class SJF(Policy):
 class LJF(Policy):
     def select_action(self, state):
         action, largest_job = 0, -1
-        jobs = state['queue']
-        res_spaces = state['resources_spaces']
+        nb_res = count_resources_inrow_avail(state)
+        if nb_res == 0:
+            return action
+
+        jobs = get_jobs(state)
 
         for i, job in enumerate(jobs):
-            if job == None: continue
-            requested_time_window = res_spaces[:job.requested_time]
-            if job.requested_time > largest_job and is_available(requested_time_window, job.requested_resources):
+            if job.requested_time > largest_job and nb_res >= job.requested_resources:
                 largest_job = job.requested_time
-                action = i+1
+                action = job.slot
 
         return action
 
@@ -83,15 +95,16 @@ class LJF(Policy):
 class Tetris(Policy):
     def select_action(self, state):
         action, score = 0, 0
-        jobs = state['queue']
-        res_spaces = state['resources_spaces']
+        nb_res = count_resources_inrow_avail(state)
+        if nb_res == 0:
+            return action
+
+        jobs = get_jobs(state)
 
         for i, job in enumerate(jobs):
-            if job == None: continue
-            req_res_space = res_spaces[:job.requested_time]
-            if job.requested_resources > score and is_available(req_res_space, job.requested_resources):
+            if job.requested_resources > score and nb_res >= job.requested_resources:
                 score = job.requested_resources
-                action = i+1
+                action = job.slot
 
         return action
 
@@ -99,14 +112,15 @@ class Tetris(Policy):
 class FirstFit(Policy):
     def select_action(self, state):
         action = 0
-        jobs = state['queue']
-        res_spaces = state['resources_spaces']
+        nb_res = count_resources_inrow_avail(state)
+        if nb_res == 0:
+            return action
+
+        jobs = get_jobs(state)
 
         for i, job in enumerate(jobs):
-            if job == None: continue
-            requested_time_window = res_spaces[:job.requested_time]
-            if is_available(requested_time_window, job.requested_resources):
-                action = i+1
+            if nb_res >= job.requested_resources:
+                action = job.slot
                 break
 
         return action

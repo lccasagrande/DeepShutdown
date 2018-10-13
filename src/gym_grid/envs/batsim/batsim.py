@@ -75,11 +75,35 @@ class BatsimHandler:
     def current_time(self):
         return self.protocol_manager.current_time
 
-    def get_state(self, type=''):
+    def get_state(self, type):
         if type == 'image':
             return self._get_image()
+        elif type == 'compact':
+            return self._get_compact_state()
         else:
             return self._get_state()
+
+    def _get_compact_state(self):
+        nb_res = self.resource_manager.nb_resources
+        state = np.zeros(shape=(nb_res + self.job_slots*2), dtype=np.uint8)
+
+        resource_state = self.get_resource_state()
+        for i, r in enumerate(resource_state[0,:]):
+            if r == 0:
+                state[i] = 1
+                
+
+        jobs = self.jobs_manager.job_slots
+        index = nb_res - 2
+        for job in jobs:
+            index += 2
+            if job is None:
+                continue
+            state[index] = job.requested_resources
+            state[index+1] = job.requested_time
+            
+        
+        return state
 
     def lookup(self, idx):
         return deepcopy(self.jobs_manager.lookup(idx))
@@ -139,7 +163,7 @@ class BatsimHandler:
             if job.state != Job.State.RUNNING and \
                     job.time_left_to_start == 0 and \
                     self.resource_manager.is_available(job.allocation):
-               #self._wake_up_resources(job.allocation)
+               # self._wake_up_resources(job.allocation)
                 self._start_job(job)
 
     def _start_job(self, job):
@@ -275,7 +299,7 @@ class BatsimHandler:
         if time_passed != 0:
             self.jobs_manager.update_state(time_passed)
             self.resource_manager.update_state(time_passed)
-            #self._shut_down_unused_resources()
+            # self._shut_down_unused_resources()
 
         for event in events:
             self._handle_batsim_events(event)
