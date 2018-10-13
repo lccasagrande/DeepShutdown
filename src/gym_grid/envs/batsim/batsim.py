@@ -139,7 +139,7 @@ class BatsimHandler:
             if job.state != Job.State.RUNNING and \
                     job.time_left_to_start == 0 and \
                     self.resource_manager.is_available(job.allocation):
-                self._wake_up_resources(job.allocation)
+               #self._wake_up_resources(job.allocation)
                 self._start_job(job)
 
     def _start_job(self, job):
@@ -275,7 +275,7 @@ class BatsimHandler:
         if time_passed != 0:
             self.jobs_manager.update_state(time_passed)
             self.resource_manager.update_state(time_passed)
-            self._shut_down_unused_resources()
+            #self._shut_down_unused_resources()
 
         for event in events:
             self._handle_batsim_events(event)

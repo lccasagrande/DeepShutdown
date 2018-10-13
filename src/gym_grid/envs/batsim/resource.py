@@ -89,16 +89,16 @@ class Resource:
             view = np.zeros(shape=self.time_window, dtype=np.uint8)
         else:
             view = np.full(shape=self.time_window,
-                           fill_value=127, dtype=np.uint8)
+                           fill_value=0, dtype=np.uint8)
 
         if len(self.queue) == 0:
             return view
 
-        view[self.queue[0].time_left_to_start:self.time_window] = 127
+        #view[self.queue[0].time_left_to_start:self.time_window] = 127
 
         for j in self.queue:
             end = j.time_left_to_start + int(j.remaining_time)
-            view[j.time_left_to_start:end] = 255
+            view[j.time_left_to_start:end] = j.color
 
         return view
 
@@ -122,6 +122,10 @@ class ResourceManager:
         self.energy_consumed = 0
         self.max_energy_usage = 0
         self.shape = (time_window, self.nb_resources)
+        colors = 200
+        self.colormap = np.arange(
+            colors/float(time_window+1), colors, colors/float(time_window)).tolist()
+        np.random.shuffle(self.colormap)
 
     @property
     def max_resource_speed(self):
@@ -156,6 +160,7 @@ class ResourceManager:
         return state
 
     def reset(self):
+        np.random.shuffle(self.colormap)
         self.energy_consumed = 0
         self.max_energy_usage = 0
         for _, r in self.resources.items():
@@ -174,7 +179,7 @@ class ResourceManager:
         state = self.get_state()
         for t in range(self.shape[0]-time+1):
             for r in range(self.shape[1]-nb+1):
-                if not np.any(state[t:t+time, r:r+nb] == 255):
+                if not np.any(state[t:t+time, r:r+nb] != 0):
                     return list(range(r, r+nb)), t
 
         raise UnavailableResourcesError(
@@ -196,11 +201,20 @@ class ResourceManager:
 
         return jobs.values()
 
+    def _select_color(self):
+        c = self.colormap.pop(0)
+        self.colormap.append(c)
+        return c
+
     def allocate(self, job):
         res, time = self._select_resources(
             job.requested_resources, job.requested_time)
         job.allocation = res
         job.time_left_to_start = time
+
+        if job.color is None:
+            job.color = self._select_color()
+
         for r in res:
             self.resources[r].reserve(job)
 

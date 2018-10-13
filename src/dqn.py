@@ -35,7 +35,7 @@ class GridProcessor(Processor):
 def build_model(input_shape, output_shape):
     model = Sequential()
     model.add(Permute((2, 3, 1), input_shape=input_shape))
-    model.add(Convolution2D(32, (2, 2), strides=(1, 1),
+    model.add(Convolution2D(64, (2, 2), strides=(1, 1),
                             padding='same', activation='relu', input_shape=input_shape))
     model.add(Flatten())
     model.add(Dense(output_shape, activation='linear'))
@@ -44,9 +44,9 @@ def build_model(input_shape, output_shape):
 
 
 if __name__ == "__main__":
-    train = True
-    weights_nb = 0
-    name = "ddqn_1"
+    train = False
+    weights_nb = "0"
+    name = "ddqn_slowdown_continue"
     seed = 123
     weight_path = "weights/" + name
     log_path = "log/" + name
@@ -60,14 +60,14 @@ if __name__ == "__main__":
     model = build_model(input_shape=(
         WINDOW_LENGTH,) + env.observation_space.shape, output_shape=env.action_space.n)
 
-    memory = SequentialMemory(limit=3000000, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=2000000, window_length=WINDOW_LENGTH)
 
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedyQPolicy(),
                                         attr='eps',
                                         value_max=1.,
                                         value_min=.1,
                                         value_test=.05,
-                                        nb_steps=4e6)
+                                        nb_steps=1e3)#4e6)
 
     dqn = DQNAgent(model=model,
                    nb_actions=env.action_space.n,
@@ -76,13 +76,13 @@ if __name__ == "__main__":
                    memory=memory,
                    dueling_type='max',
                    enable_dueling_network=True,
-                   nb_steps_warmup=100000,
+                   nb_steps_warmup=10000,
                    gamma=.99,
-                   target_model_update=10000,
-                   train_interval=8,
+                   target_model_update=1000,
+                   train_interval=20,
                    delta_clip=1.)
 
-    dqn.compile(Adam(lr=.00001), metrics=['mae', 'mse'])
+    dqn.compile(Adam(lr=.0001), metrics=['mae', 'mse'])
 
     callbacks = [
         ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=5e5),
@@ -96,10 +96,10 @@ if __name__ == "__main__":
                 nb_steps=10e6,
                 log_interval=10000,
                 visualize=False,
-                verbose=2,
+                verbose=1,
                 nb_max_episode_steps=3000)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
     else:
         dqn.load_weights(weight_path+'/weights_'+weights_nb+'.h5f')
-        dqn.test(env, nb_episodes=100, visualize=True)
+        dqn.test(env, nb_episodes=100, visualize=False)
