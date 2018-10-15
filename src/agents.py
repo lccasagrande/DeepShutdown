@@ -2,16 +2,9 @@ import numpy as np
 import csv
 from gym_grid.envs.grid_env import GridEnv
 import gym
-from policies import SJF
+from policies import *
 import utils
 from collections import defaultdict, deque
-
-
-class GLIE():
-    def select_action(self, state):
-        probs = [0.8, 0.2] if state[0] > 18 else [0.2, 0.8]
-        action = np.random.choice(np.arange(2), p=probs)
-        return action
 
 
 class Agent:
@@ -38,11 +31,11 @@ class MCControlAgent(Agent):
         self.Q = defaultdict(lambda: np.zeros(env.action_space.n))
 
     def save(self, output_fn):
-        utils.export_q_values(self.Q, output_fn)
+        np.save(output_fn, dict(self.Q))
 
     def load(self, input_fn):
-        self.Q = defaultdict(lambda: np.zeros(
-            self.env.action_space.n), utils.import_q_values(input_fn))
+        Q = np.load(input_fn+".npy").item()
+        self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _get_trajectory(self, epsilon):
         def select_action(state, epsilon):
@@ -56,7 +49,7 @@ class MCControlAgent(Agent):
         while True:
             action = select_action(state, epsilon)
             next_state, reward, done, info = self.env.step(action)
-            episode.append((state, action, reward))
+            episode.append((tuple(state), action, reward))
             state = next_state
             score += reward
             steps += 1
@@ -100,7 +93,6 @@ class MCControlAgent(Agent):
         policy = dict((k, np.argmax(v)) for k, v in self.Q.items())
         return policy
 
-
 class MCPredictionAgent(Agent):
     def __init__(self, env, policy, metrics=[], gamma=1.0):
         super(MCPredictionAgent, self).__init__(env)
@@ -110,11 +102,11 @@ class MCPredictionAgent(Agent):
         self.metrics = metrics
 
     def save(self, output_fn):
-        utils.export_q_values(self.Q, output_fn)
+        np.save(output_fn, dict(self.Q))
 
     def load(self, input_fn):
-        self.Q = defaultdict(lambda: np.zeros(
-            self.env.action_space.n), utils.import_q_values(input_fn))
+        Q = np.load(input_fn+".npy").item()
+        self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _get_trajectory(self, visualize=False):
         state = self.env.reset()
@@ -125,7 +117,7 @@ class MCPredictionAgent(Agent):
                 self.env.render()
             action = self.policy.select_action(state)
             next_state, reward, done, info = self.env.step(action)
-            episode.append((state, action, reward))
+            episode.append((tuple(state), action, reward))
             state = next_state
             score += reward
             steps += 1
@@ -177,11 +169,11 @@ class QLearningAgent(Agent):
         self.Q = defaultdict(lambda: np.zeros(env.action_space.n))
 
     def save(self, output_fn):
-        utils.export_q_values(self.Q, output_fn)
+        np.save(output_fn, dict(self.Q))
 
     def load(self, input_fn):
-        self.Q = defaultdict(lambda: np.zeros(
-            self.env.action_space.n), utils.import_q_values(input_fn))
+        Q = np.load(input_fn+".npy").item()
+        self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _run(self, select_action, n_episodes, max_steps=None, update=True, visualize=False, verbose=False, save_interval=None):
         tmp_scores = deque(maxlen=100)
@@ -190,14 +182,16 @@ class QLearningAgent(Agent):
         episodic_results = defaultdict(float)
         results = []
         for i in range(1, n_episodes + 1):
-            score, episode_steps, state = 0, 0, self.env.reset()
+            score, episode_steps, state = 0, 0, tuple(self.env.reset())
             while (self.step <= max_steps if max_steps != None else True):
                 if visualize:
                     self.env.render()
 
-                epsilon = self.policy.get_current_value(self.step) if update else self.policy.value_min
+                epsilon = self.policy.get_current_value(
+                    self.step) if update else self.policy.value_min
                 action = select_action(state, epsilon)
                 next_state, reward, done, info = self.env.step(action)
+                next_state = tuple(next_state)
 
                 if update:
                     td_error = reward + self.gamma * \
@@ -258,11 +252,11 @@ class SARSAAgent(Agent):
         self.Q = defaultdict(lambda: np.zeros(env.action_space.n))
 
     def save(self, output_fn):
-        utils.export_q_values(self.Q, output_fn)
+        np.save(output_fn, dict(self.Q))
 
     def load(self, input_fn):
-        self.Q = defaultdict(lambda: np.zeros(
-            self.env.action_space.n), utils.import_q_values(input_fn))
+        Q = np.load(input_fn+".npy").item()
+        self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _run(self, select_action, n_episodes, max_steps=None, update=True, visualize=False, verbose=False, save_interval=None):
         def get_epsilon():
@@ -277,7 +271,7 @@ class SARSAAgent(Agent):
         for i in range(1, n_episodes + 1):
             score = 0
             steps = 0
-            state = self.env.reset()
+            state = tuple(self.env.reset())
             epsilon = get_epsilon()
             action = select_action(state, epsilon)
 
@@ -286,6 +280,7 @@ class SARSAAgent(Agent):
                     self.env.render()
 
                 next_state, reward, done, info = self.env.step(action)
+                next_state = tuple(next_state)
                 self.step += 1
                 steps += 1
                 score += reward
@@ -343,11 +338,13 @@ class SARSAAgent(Agent):
 
 def run():
     env = gym.make('grid-v0')
+    weights_fn = "weights/SJC_MC"
 
-    agent = QLearningAgent(env, .01, 1)
+    agent = MCPredictionAgent(env, SJF())
 
-    avg, _ = agent.train(5000, verbose=True)
-
+    #agent.load(weights_fn)
+    agent.train(1)
+    agent.save(weights_fn)
 
 if __name__ == "__main__":
     run()

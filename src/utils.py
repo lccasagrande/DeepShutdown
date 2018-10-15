@@ -50,18 +50,6 @@ def export_rewards(n_ep, avg_scores, output_dir):
     dt.to_csv(output_dir+'rewards.csv', index=False)
 
 
-def import_q_values(input_fn):
-    df = pd.read_csv(input_fn)
-    df.set_index('state', inplace=True)
-    return dict(zip(df.index, df.values))
-
-
-def export_q_values(Q, output_fn):
-    q_values = pd.DataFrame.from_dict(Q, orient='index')
-    q_values.index.name = "state"
-    q_values.to_csv(output_fn)
-
-
 def export_max_q_values(Q, output_dir):
     hist = {}
     for k, value in Q.items():
