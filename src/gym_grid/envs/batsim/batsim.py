@@ -88,10 +88,9 @@ class BatsimHandler:
         state = np.zeros(shape=(1 + self.job_slots*2), dtype=np.int8)
 
         resource_state = self.get_resource_state()
-        for r in resource_state[0,:]:
+        for r in resource_state[0, :]:
             if r == 0:
                 state[0] += 1
-                
 
         jobs = self.jobs_manager.job_slots
         index = 1
@@ -106,8 +105,7 @@ class BatsimHandler:
                 else:
                     state[index+1] = -127
             index += 2
-            
-        
+
         return state
 
     def lookup(self, idx):
@@ -147,7 +145,7 @@ class BatsimHandler:
         self._wait_state_change()
 
     def _wait_state_change(self):
-        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty):
+        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty or self.resource_manager.is_full()):
             self._update_state()
 
     def _get_ready_jobs(self):

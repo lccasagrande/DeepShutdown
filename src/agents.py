@@ -1,9 +1,9 @@
 import numpy as np
 import csv
-from gym_grid.envs.grid_env import GridEnv
 import gym
-from policies import *
 import utils
+from gym_grid.envs.grid_env import GridEnv
+from multiprocessing import Process, Manager
 from collections import defaultdict, deque
 
 
@@ -37,7 +37,7 @@ class MCControlAgent(Agent):
         Q = np.load(input_fn+".npy").item()
         self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
-    def _get_trajectory(self, epsilon):
+    def _get_trajectory(self, epsilon, max_steps=None):
         def select_action(state, epsilon):
             if np.random.random() <= epsilon:
                 return np.random.choice(np.arange(self.env.action_space.n))
@@ -46,10 +46,11 @@ class MCControlAgent(Agent):
 
         state = self.env.reset()
         episode, score, steps, result = [], 0, 0, dict()
-        while True:
+        while (steps <= max_steps if max_steps != None else True):
+            state = tuple(state)
             action = select_action(state, epsilon)
             next_state, reward, done, info = self.env.step(action)
-            episode.append((tuple(state), action, reward))
+            episode.append((state, action, reward))
             state = next_state
             score += reward
             steps += 1
@@ -61,15 +62,20 @@ class MCControlAgent(Agent):
                 break
         return episode, result
 
-    def train(self, n_episodes, verbose=False):
+    def train(self, n_episodes, verbose=False, save_interval=None, max_steps=None):
         counter = defaultdict(int)
-        for i in range(n_episodes):
-            epsilon = self.policy.get_current_value(i)
-            episode, result = self._get_trajectory(epsilon)
+        tmp_scores = deque(maxlen=100)
+        avg_scores = deque(maxlen=n_episodes)
+        results = []
+        for ep in range(1, n_episodes+1):
+            epsilon = self.policy.get_current_value(ep-1)
+            episode, ep_result = self._get_trajectory(epsilon, max_steps)
+            tmp_scores.append(ep_result['score'])
+            results.append(ep_result)
+
             if verbose:
-                print("\rEpisode {}/{} - Eps {}".format(i +
-                                                        1, n_episodes, epsilon), end="")
-                #utils.print_episode_result("MCControl", i+1, result, epsilon)
+                print("\rEpisode {}/{} - Eps {}".format(ep,
+                                                        n_episodes, epsilon), end="")
 
             states, actions, rewards = zip(*episode)
             visited = {}
@@ -90,8 +96,13 @@ class MCControlAgent(Agent):
 
                     visited[state_action] = True
 
-        policy = dict((k, np.argmax(v)) for k, v in self.Q.items())
-        return policy
+            if save_interval != None and ep % save_interval == 0:
+                self.save("weights/mcontrol-{}".format(ep))
+            if (ep % 100 == 0):
+                avg_scores.append(np.mean(tmp_scores))
+
+        return avg_scores, results
+
 
 class MCPredictionAgent(Agent):
     def __init__(self, env, policy, metrics=[], gamma=1.0):
@@ -217,7 +228,7 @@ class QLearningAgent(Agent):
                     break
 
             if update and save_interval != None and i % save_interval == 0:
-                self.save("qlearning-{}.csv".format(i))
+                self.save("weights/qlearning-{}".format(i))
 
             if (i % 100 == 0):
                 avg_scores.append(np.mean(tmp_scores))
@@ -262,7 +273,7 @@ class SARSAAgent(Agent):
         def get_epsilon():
             return self.policy.get_current_value(self.step) if update else self.policy.value_min
 
-        tmp_scores = deque(maxlen=100)
+        tmp_scores = deque(maxlen=)
         avg_scores = deque(maxlen=n_episodes)
 
         self.step = 0
@@ -305,7 +316,6 @@ class SARSAAgent(Agent):
                     episodic_results['score'] = score
                     episodic_results['steps'] = steps
 
-                    results.append(episodic_results)
                     tmp_scores.append(score)
                     if verbose:
                         utils.print_episode_result(
@@ -313,9 +323,9 @@ class SARSAAgent(Agent):
                     break
 
             if update and save_interval != None and i % save_interval == 0:
-                self.save("sarsa-{}.csv".format(i))
+                self.save("weights/sarsa-{}".format(i))
 
-            if (i % 100 == 0):
+            if (i % 1000 == 0):
                 avg_scores.append(np.mean(tmp_scores))
 
         return avg_scores, results
@@ -336,15 +346,62 @@ class SARSAAgent(Agent):
         return self._run(select_action, n_episodes, visualize=visualize, max_steps=max_steps, verbose=verbose, save_interval=save_interval, update=True)
 
 
-def run():
-    env = gym.make('grid-v0')
-    weights_fn = "weights/SJC_MC"
+def get_worker(agent, episodes, max_steps, save_interval, verbose, results):
+    agent_name = agent.__class__.__name__
+    weights_fn = "weights/"+agent_name
 
-    agent = MCPredictionAgent(env, SJF())
-
-    #agent.load(weights_fn)
-    agent.train(1)
+    avg, _ = agent.train(episodes, verbose=verbose,
+                         save_interval=save_interval, max_steps=max_steps)
     agent.save(weights_fn)
+
+    with open(agent_name+'.avg', 'w') as f:
+        for item in avg:
+            f.write("{}\n".format(item))
+
+    #results[agent_name] = result
+
+
+def get_agents(alpha, eps_steps):
+    ql = QLearningAgent(env=gym.make('grid-v0'),
+                        alpha=alpha,
+                        eps_steps=eps_steps)
+    ql.load("weights/qlearning-13500")
+    s = SARSAAgent(env=gym.make('grid-v0'),
+                   alpha=alpha,
+                   eps_steps=eps_steps)
+    s.load("weights/sarsa-18900")
+    m = MCControlAgent(env=gym.make('grid-v0'),
+                       alpha=alpha,
+                       eps_steps=1)
+    m.load("weights/mcontrol-27900")
+
+    return [ql, s, m]
+
+
+def run():
+    episodes = 50000
+    save_interval = 900
+    verbose = False
+    alpha = 0.01
+    eps_steps = 10000000
+
+    agents = get_agents(alpha, eps_steps)
+
+    manager = Manager()
+    manager_result = manager.dict()
+    process = []
+#
+    for agent in agents:
+        p = Process(target=get_worker, args=(agent, episodes, None,
+                                             save_interval, verbose, manager_result, ))
+        p.start()
+        process.append(p)
+#
+    for p in process:
+        p.join()
+
+    print("Done!")
+
 
 if __name__ == "__main__":
     run()

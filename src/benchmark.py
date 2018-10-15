@@ -106,13 +106,15 @@ def plot_results(data, name):
 
 if __name__ == "__main__":
     output_dir = 'benchmark/'
-    policies = [FirstFit(), Tetris(), Random(), SJF(), LJF()]
+    policies = [FirstFit(), Tetris(), SJF(), LJF()]
     n_episodes = 1
     seed = 123
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
+    utils.create_dir(output_dir)
+    utils.create_dir('results')
 
-    #run_experiment(SJF(), n_episodes, seed, {}, {}, visualize=False)
+    #run_experiment(LJF(), n_episodes, seed, {}, {}, visualize=True)
     run(output_dir, policies, n_episodes, seed, plot=False)
 
 

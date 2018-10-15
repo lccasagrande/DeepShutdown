@@ -57,6 +57,13 @@ class Resource:
         return self.state == Resource.State.SLEEPING
 
     @property
+    def is_reserved(self):
+        if len(self.queue) == 0:
+            return False
+        
+        return self.queue[0].time_left_to_start == 0
+
+    @property
     def is_computing(self):
         return self.state == Resource.State.COMPUTING
 
@@ -145,6 +152,9 @@ class ResourceManager:
                 id += 1
 
         return ResourceManager(resources, time_window)
+
+    def is_full(self):
+        return not any(not r.is_reserved for k, r in self.resources.items())
 
     def is_available(self, resources):
         for r in resources:
