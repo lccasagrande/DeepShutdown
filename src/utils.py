@@ -17,12 +17,10 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-def print_episode_result(name, ep, result, eps):
+def print_episode_result(name, result):
     msg = name
-    msg += " Episode [{}] ".format(ep)
     for k, value in result.items():
-        msg += "{} [{}] ".format(k, value)
-    msg += "Epsilon [{}]".format(eps)
+        msg += " {} [{}] ".format(k, value)
     print(msg)
 
 

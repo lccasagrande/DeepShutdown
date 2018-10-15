@@ -15,7 +15,7 @@ import time as t
 def count_resources_avail(state):
     #resources = state[0:5]
     #res_occuped = np.count_nonzero(resources)
-    return state[0]#len(resources) - res_occuped
+    return state[0]  # len(resources) - res_occuped
 
 
 def get_jobs(state):
@@ -26,11 +26,9 @@ def get_jobs(state):
         slot += 1
         if jobs_state[i] == 0:
             continue
-        job = namedtuple('job', 'requested_resources,requested_time, slot')
-        job.requested_resources = jobs_state[i]
-        job.requested_time = jobs_state[i+1]
-        job.slot = slot
-        jobs.append(job)
+        jobs.append(dict(requested_resources=jobs_state[i],
+                         requested_time=jobs_state[i+1],
+                         slot=slot))
     return jobs
 
 
@@ -59,10 +57,10 @@ class SJF(Policy):
 
         jobs = get_jobs(state)
 
-        for i, job in enumerate(jobs):
-            if job.requested_time < shortest_job and nb_res >= job.requested_resources:
-                shortest_job = job.requested_time
-                action = job.slot
+        for job in jobs:
+            if job['requested_time'] < shortest_job and nb_res >= job['requested_resources']:
+                shortest_job = job['requested_time']
+                action = job['slot']
 
         return action
 
@@ -76,10 +74,10 @@ class LJF(Policy):
 
         jobs = get_jobs(state)
 
-        for i, job in enumerate(jobs):
-            if job.requested_time > largest_job and nb_res >= job.requested_resources:
-                largest_job = job.requested_time
-                action = job.slot
+        for job in jobs:
+            if job['requested_time'] > largest_job and nb_res >= job['requested_resources']:
+                largest_job = job['requested_time']
+                action = job['slot']
 
         return action
 
@@ -93,10 +91,10 @@ class Tetris(Policy):
 
         jobs = get_jobs(state)
 
-        for i, job in enumerate(jobs):
-            if job.requested_resources > score and nb_res >= job.requested_resources:
-                score = job.requested_resources
-                action = job.slot
+        for job in jobs:
+            if job['requested_resources'] > score and nb_res >= job['requested_resources']:
+                score = job['requested_resources']
+                action = job['slot']
 
         return action
 
@@ -110,9 +108,9 @@ class FirstFit(Policy):
 
         jobs = get_jobs(state)
 
-        for i, job in enumerate(jobs):
-            if nb_res >= job.requested_resources:
-                action = job.slot
+        for job in jobs:
+            if nb_res >= job['requested_resources']:
+                action = job['slot']
                 break
 
         return action
