@@ -20,11 +20,11 @@ class GridEnv(gym.Env):
                                        backlog_width=self.backlog_width)
         self.action_space = spaces.Discrete(self.job_slots+1)
         
-        state_shape = self._get_obs()
+        state = self._get_obs()
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=state_shape.shape,
-                                            dtype=np.uint8)
+                                            shape=state.shape,
+                                            dtype=state.dtype)
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
