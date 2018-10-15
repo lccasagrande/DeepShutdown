@@ -12,24 +12,16 @@ import shutil
 import time as t
 
 
-def count_resources_inrow_avail(state):
-    count, res_avail = 0, 0
-    resources = state[0:5]
-    for r in resources:
-        if r == 1:
-            count += 1
-        else:
-            if res_avail < count:
-                res_avail = count
-            count = 0
-
-    return res_avail if res_avail > count else count
+def count_resources_avail(state):
+    #resources = state[0:5]
+    #res_occuped = np.count_nonzero(resources)
+    return state[0]#len(resources) - res_occuped
 
 
 def get_jobs(state):
     jobs = []
     slot = 0
-    jobs_state = state[5:]
+    jobs_state = state[1:]
     for i in range(0, len(jobs_state), 2):
         slot += 1
         if jobs_state[i] == 0:
@@ -61,7 +53,7 @@ class Random(Policy):
 class SJF(Policy):
     def select_action(self, state):
         action, shortest_job = 0, np.inf
-        nb_res = count_resources_inrow_avail(state)
+        nb_res = count_resources_avail(state)
         if nb_res == 0:
             return action
 
@@ -78,7 +70,7 @@ class SJF(Policy):
 class LJF(Policy):
     def select_action(self, state):
         action, largest_job = 0, -1
-        nb_res = count_resources_inrow_avail(state)
+        nb_res = count_resources_avail(state)
         if nb_res == 0:
             return action
 
@@ -95,7 +87,7 @@ class LJF(Policy):
 class Tetris(Policy):
     def select_action(self, state):
         action, score = 0, 0
-        nb_res = count_resources_inrow_avail(state)
+        nb_res = count_resources_avail(state)
         if nb_res == 0:
             return action
 
@@ -112,7 +104,7 @@ class Tetris(Policy):
 class FirstFit(Policy):
     def select_action(self, state):
         action = 0
-        nb_res = count_resources_inrow_avail(state)
+        nb_res = count_resources_avail(state)
         if nb_res == 0:
             return action
 

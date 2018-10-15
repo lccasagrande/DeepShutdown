@@ -84,23 +84,22 @@ class BatsimHandler:
             return self._get_state()
 
     def _get_compact_state(self):
-        nb_res = self.resource_manager.nb_resources
-        state = np.zeros(shape=(nb_res + self.job_slots*2), dtype=np.uint8)
+        #nb_res = self.resource_manager.nb_resources
+        state = np.zeros(shape=(1 + self.job_slots*2), dtype=np.uint8)
 
         resource_state = self.get_resource_state()
-        for i, r in enumerate(resource_state[0,:]):
+        for r in resource_state[0,:]:
             if r == 0:
-                state[i] = 1
+                state[0] += 1
                 
 
         jobs = self.jobs_manager.job_slots
-        index = nb_res - 2
+        index = 1
         for job in jobs:
+            if job is not None:
+                state[index] = job.requested_resources
+                state[index+1] = job.requested_time
             index += 2
-            if job is None:
-                continue
-            state[index] = job.requested_resources
-            state[index+1] = job.requested_time
             
         
         return state
