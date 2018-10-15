@@ -57,13 +57,6 @@ class Resource:
         return self.state == Resource.State.SLEEPING
 
     @property
-    def is_reserved(self):
-        if len(self.queue) == 0:
-            return False
-        
-        return self.queue[0].time_left_to_start == 0
-
-    @property
     def is_computing(self):
         return self.state == Resource.State.COMPUTING
 
@@ -92,11 +85,10 @@ class Resource:
         self.state = Resource.State.COMPUTING
 
     def get_view(self):
-        if self.is_sleeping:  # SLEEP
-            view = np.zeros(shape=self.time_window, dtype=np.uint8)
-        else:
-            view = np.full(shape=self.time_window,
-                           fill_value=0, dtype=np.uint8)
+        #if self.is_sleeping:  # SLEEP
+        view = np.zeros(shape=self.time_window, dtype=np.uint8)
+        #else:
+        #    view = np.full(shape=self.time_window, fill_value=0, dtype=np.uint8)
 
         if len(self.queue) == 0:
             return view
@@ -125,10 +117,10 @@ class ResourceManager:
     def __init__(self, resources, time_window):
         assert isinstance(resources, dict)
         self.nb_resources = len(resources)
+        self.time_window = time_window
         self.resources = resources
         self.energy_consumed = 0
         self.max_energy_usage = 0
-        self.shape = (time_window, self.nb_resources)
         colors = 200
         self.colormap = np.arange(
             colors/float(time_window+1), colors, colors/float(time_window)).tolist()
@@ -154,16 +146,20 @@ class ResourceManager:
         return ResourceManager(resources, time_window)
 
     def is_full(self):
-        return not any(not r.is_reserved for k, r in self.resources.items())
+        return not any(not r.is_computing for k, r in self.resources.items())
 
     def is_available(self, resources):
-        for r in resources:
-            if self.resources[r].is_computing:
-                return False
-        return True
+        return not any(self.resources[r].is_computing for r in resources)
 
-    def get_state(self):
-        state = np.zeros(shape=self.shape, dtype=np.uint8)
+    def nb_avail_resources(self):
+        count = 0
+        for _, r in self.resources.items():
+            if not r.is_computing:
+                count += 1
+        return count
+
+    def get_view(self):
+        state = np.zeros(shape=(self.time_window, self.nb_resources), dtype=np.uint8)
         for k, res in self.resources.items():
             state[:, k] = res.get_view()
 
@@ -186,18 +182,11 @@ class ResourceManager:
         return res
 
     def _select_resources(self, nb_res, time):
-        state = self.get_state()
-        #for t in range(self.shape[0]-time+1):
-            #for r in range(self.shape[1]-nb_res+1):
-                #if not np.any(state[0:time, r:r+nb] != 0):
-                #    return list(range(r, r+nb)), 0
+        avail_resources = [k for k, r in self.resources.items() if not r.is_computing]
+        if len(avail_resources) >= nb_res:
+            return avail_resources[0:nb_res], 0
 
-        res_avail = np.argwhere(state[0,:] == 0).ravel()
-        if len(res_avail) >= nb_res:
-            return res_avail[0:nb_res], 0
-
-        raise UnavailableResourcesError(
-            "There is no resource available for this job.")
+        raise UnavailableResourcesError("There is no resource available.")
 
     def update_state(self, time_passed):
         assert time_passed != 0

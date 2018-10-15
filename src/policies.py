@@ -50,67 +50,58 @@ class Random(Policy):
 
 class SJF(Policy):
     def select_action(self, state):
-        action, shortest_job = 0, np.inf
-        nb_res = count_resources_avail(state)
-        if nb_res == 0:
-            return action
-
-        jobs = get_jobs(state)
-
-        for job in jobs:
-            if job['requested_time'] < shortest_job and nb_res >= job['requested_resources']:
-                shortest_job = job['requested_time']
-                action = job['slot']
+        action, slot, shortest_job = 0, 1, np.inf
+        nb_res = state[0]
+        jobs_state = state[1:]
+        for i in range(0, len(jobs_state), 2):
+            req_res = jobs_state[i]
+            req_time = jobs_state[i+1]
+            if req_res != 0 and req_res <= nb_res and req_time < shortest_job:
+                shortest_job = req_time
+                action = slot
+            slot += 1
 
         return action
 
 
 class LJF(Policy):
     def select_action(self, state):
-        action, largest_job = 0, -1
-        nb_res = count_resources_avail(state)
-        if nb_res == 0:
-            return action
-
-        jobs = get_jobs(state)
-
-        for job in jobs:
-            if job['requested_time'] > largest_job and nb_res >= job['requested_resources']:
-                largest_job = job['requested_time']
-                action = job['slot']
+        action, slot, largest_job = 0, 1, -1
+        nb_res = state[0]
+        jobs_state = state[1:]
+        for i in range(0, len(jobs_state), 2):
+            req_res = jobs_state[i]
+            req_time = jobs_state[i+1]
+            if req_res != 0 and req_res <= nb_res and req_time > largest_job:
+                largest_job = req_time
+                action = slot
+            slot += 1
 
         return action
 
 
 class Tetris(Policy):
     def select_action(self, state):
-        action, score = 0, 0
-        nb_res = count_resources_avail(state)
-        if nb_res == 0:
-            return action
-
-        jobs = get_jobs(state)
-
-        for job in jobs:
-            if job['requested_resources'] > score and nb_res >= job['requested_resources']:
-                score = job['requested_resources']
-                action = job['slot']
-
+        action, score, slot = 0, 0, 1
+        nb_res = state[0]
+        jobs_state = state[1:]
+        for i in range(0, len(jobs_state), 2):
+            req_res = jobs_state[i]
+            if req_res != 0 and req_res <= nb_res and req_res > score:
+                score = req_res
+                action = slot
+            slot += 1
         return action
 
 
 class FirstFit(Policy):
     def select_action(self, state):
-        action = 0
-        nb_res = count_resources_avail(state)
-        if nb_res == 0:
-            return action
-
-        jobs = get_jobs(state)
-
-        for job in jobs:
-            if nb_res >= job['requested_resources']:
-                action = job['slot']
-                break
-
+        action, slot = 0, 1
+        nb_res = state[0]
+        jobs_state = state[1:]
+        for i in range(0, len(jobs_state), 2):
+            req_res = jobs_state[i]
+            if req_res != 0 and req_res <= nb_res:
+                return slot
+            slot += 1
         return action

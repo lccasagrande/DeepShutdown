@@ -86,7 +86,7 @@ class GridEnv(gym.Env):
 
     def _plot(self):
         def plot_resource_state():
-            resource_state = self.simulator.get_resource_state()
+            resource_state = self.simulator.resource_manager.get_view()
             plt.subplot(1, 1 + self.job_slots + 1, 1)
             plt.imshow(resource_state, interpolation='nearest', vmin=0,
                        vmax=255, aspect='auto')

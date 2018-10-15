@@ -27,9 +27,9 @@ class JobSlot():
     def is_full(self):
         return len(self.slots_free) == 0
 
-    # @property
-    # def lenght(self):
-    #    return self.slots.shape[0] - len(self.slots_free)
+    @property
+    def nb_jobs(self):
+       return self.slots.shape[0] - len(self.slots_free)
 
     def clear(self):
         self.slots = np.empty(shape=self.slots.shape, dtype=object)
@@ -69,8 +69,16 @@ class SchedulerManager():
         return self._job_slots.values
 
     @property
+    def nb_jobs_in_slots(self):
+        return self._job_slots.nb_jobs
+
+    @property
     def nb_jobs_running(self):
         return len(self._jobs_running)
+
+    @property
+    def nb_jobs_allocated(self):
+        return len(self._jobs_allocated)
 
     @property
     def nb_jobs_in_backlog(self):
@@ -131,8 +139,7 @@ class SchedulerManager():
     def get_job(self, index):
         job = self._job_slots.at(index)
         if job is None:
-            raise InvalidJobError(
-                "There is no job {} to schedule".format(index))
+            raise InvalidJobError("There is no job at this position to schedule")
         return job
 
     def on_job_allocated(self, index):
@@ -158,8 +165,7 @@ class SchedulerManager():
         job.runtime = job.finish_time - job.start_time
         job.turnaround_time = job.waiting_time + job.runtime
         job.slowdown = job.turnaround_time / job.runtime
-        job.consumed_energy = data['job_consumed_energy']
-        job.state = Job.State[data['job_state']]
+        job.state = Job.State.COMPLETED
         assert job.remaining_time == 0
 
         self._update_stats(job)
@@ -186,16 +192,11 @@ class SchedulerManager():
 
 class Job(object):
     class State(Enum):
-        UNKNOWN = -1
         NOT_SUBMITTED = 0
         SUBMITTED = 1
         RUNNING = 2
-        COMPLETED_SUCCESSFULLY = 3
-        COMPLETED_FAILED = 4
-        COMPLETED_WALLTIME_REACHED = 5
-        COMPLETED_KILLED = 6
-        REJECTED = 7
-        IN_KILLING = 8
+        COMPLETED = 3
+        REJECTED = 4
 
     def __init__(
             self,
@@ -203,9 +204,7 @@ class Job(object):
             subtime,
             walltime,
             res,
-            profile,
-            json_dict,
-            profile_dict):
+            profile):
         self.id = id
         self.submit_time = subtime
         self.requested_time = walltime
@@ -217,16 +216,11 @@ class Job(object):
         self.turnaround_time = -1  # will be set on completion by batsim
         self.waiting_time = 0  # will be set on completion by batsim
         self.runtime = 0  # will be set on completion by batsim
-        self.consumed_energy = -1  # will be set on completion by batsim
         self.slowdown = 0
         self.runtime_slowdown = 0
-        self.state = Job.State.UNKNOWN
-        self.return_code = None
-        self.json_dict = json_dict
-        self.profile_dict = profile_dict
+        self.state = Job.State.NOT_SUBMITTED
         self.allocation = []
         self.color = None
-        self.metadata = None
 
     @property
     def remaining_time(self):
@@ -246,14 +240,12 @@ class Job(object):
         self.runtime_slowdown = runtime_turnaround / self.requested_time
 
     @staticmethod
-    def from_json(json_dict, profile_dict=None):
+    def from_json(json_dict):
         return Job(json_dict["id"],
                    json_dict["subtime"],
                    json_dict.get("walltime", -1),
                    json_dict["res"],
-                   json_dict["profile"],
-                   json_dict,
-                   profile_dict)
+                   json_dict["profile"])
 
 
 class InsufficientResourcesError(Exception):

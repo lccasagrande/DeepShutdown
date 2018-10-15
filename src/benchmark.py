@@ -38,7 +38,7 @@ def get_trajectory(env, policy, metrics, visualize=False, nb_steps=None):
             return result
 
 
-def run_experiment(policy, n_ep, seed, metrics, results, verbose=True, visualize=False):
+def run_experiment(policy, n_ep, seed, metrics, results, verbose=False, visualize=False):
     policy_name = policy.__class__.__name__
     result = defaultdict(list)
     env = gym.make('grid-v0')
@@ -46,20 +46,17 @@ def run_experiment(policy, n_ep, seed, metrics, results, verbose=True, visualize
 
     for i in range(1, n_ep + 1):
         traj_result = get_trajectory(env, policy, metrics, visualize)
+        traj_result['Episode'] = i
 
         for k, v in traj_result.items():
             result[k].append(v)
 
         if verbose:
-            print("\nPolicy {} Episode [{}] Steps [{}] Score: [{}] Energy [{}] Slowdown [Sum {} - Mean {}] Makespan [{}]".format(policy_name, i, traj_result['steps'],
-                                                                                                                                 traj_result['score'], traj_result['energy_consumed'], traj_result['total_slowdown'], traj_result['mean_slowdown'], traj_result['makespan']))
+            utils.print_episode_result(policy_name, traj_result)
     results[policy_name] = result
 
 
-def run(output_dir, policies, n_ep, seed, plot=True, verbose=True, visualize=False):
-    metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
-               "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
-               'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
+def run(output_dir, policies, n_ep, seed, metrics=[], plot=True, verbose=True, visualize=False):
     np.random.seed(seed)
     manager = Manager()
     manager_result = manager.dict()
@@ -105,17 +102,17 @@ def plot_results(data, name):
 
 
 if __name__ == "__main__":
+    metrics = ['total_slowdown', 'makespan', 'energy_consumed']
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), SJF(), LJF()]
-    n_episodes = 1
+    n_episodes = 1000
     seed = 123
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
-
-    #run_experiment(LJF(), n_episodes, seed, {}, {}, visualize=True)
-    run(output_dir, policies, n_episodes, seed, plot=False)
+    #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=False, visualize=False)
+    run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False)
 
 
 # %%
