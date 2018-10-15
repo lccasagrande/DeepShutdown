@@ -175,12 +175,16 @@ class ResourceManager:
 
         return res
 
-    def _select_resources(self, nb, time):
+    def _select_resources(self, nb_res, time):
         state = self.get_state()
-        for t in range(self.shape[0]-time+1):
-            for r in range(self.shape[1]-nb+1):
-                if not np.any(state[t:t+time, r:r+nb] != 0):
-                    return list(range(r, r+nb)), t
+        #for t in range(self.shape[0]-time+1):
+            #for r in range(self.shape[1]-nb_res+1):
+                #if not np.any(state[0:time, r:r+nb] != 0):
+                #    return list(range(r, r+nb)), 0
+
+        res_avail = np.argwhere(state[0,:] == 0).ravel()
+        if len(res_avail) >= nb_res:
+            return res_avail[0:nb_res], 0
 
         raise UnavailableResourcesError(
             "There is no resource available for this job.")

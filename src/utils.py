@@ -9,25 +9,39 @@ import plotly.tools as tools
 import sys
 import time as t
 import csv
-import os, shutil
-#sns.set_style("white")
+import os
+import shutil
+import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-#def plot_action_values(V):
-#	# reshape the state-value function
-#	# plot the state-value function
-#	fig = plt.figure(figsize=(15,5))
-#	ax = fig.add_subplot(111)
-#	_ = ax.imshow(V, cmap='cool')
-#	for (j,i),label in np.ndenumerate(V):
-#	    ax.text(i, j, np.round(label,3), ha='center', va='center', fontsize=14)
-#	plt.tick_params(bottom='off', left='off', labelbottom='off', labelleft='off')
-#	plt.title('State-Value Function')
-#	plt.show()
+
+def print_episode_result(name, ep, result, eps):
+    msg = name
+    msg += " Episode [{}] ".format(ep)
+    for k, value in result.items():
+        msg += "{} [{}] ".format(k, value)
+    msg += "Epsilon [{}]".format(eps)
+    print(msg)
+
+
+class LinearAnnealEpsGreedy():
+    def __init__(self, value_max, value_min, nb_steps):
+        self.value_max = value_max
+        self.value_min = value_min
+        self.nb_steps = nb_steps
+
+    def get_current_value(self, step):
+        a = -float(self.value_max - self.value_min) / float(self.nb_steps)
+        b = float(self.value_max)
+        return max(self.value_min, a * float(step) + b)
 
 
 def create_dir(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)
+
 
 def export_rewards(n_ep, avg_scores, output_dir):
     x, y = np.linspace(0, n_ep, len(avg_scores),
@@ -36,10 +50,16 @@ def export_rewards(n_ep, avg_scores, output_dir):
     dt.to_csv(output_dir+'rewards.csv', index=False)
 
 
-def export_q_values(Q, output_dir):
+def import_q_values(input_fn):
+    df = pd.read_csv(input_fn)
+    df.set_index('state', inplace=True)
+    return dict(zip(df.index, df.values))
+
+
+def export_q_values(Q, output_fn):
     q_values = pd.DataFrame.from_dict(Q, orient='index')
     q_values.index.name = "state"
-    q_values.to_csv(output_dir+"q_values.csv")
+    q_values.to_csv(output_fn)
 
 
 def export_max_q_values(Q, output_dir):
@@ -63,7 +83,8 @@ def plot_reward(avg_scores, n_ep, title, output_dir):
     x, y = np.linspace(0, n_ep, len(avg_scores),
                        endpoint=False), np.asarray(avg_scores)
 
-    dict_to_csv({'ep': list(x), 'avg_reward': list(y)}, output_dir+'rewards.csv')
+    dict_to_csv({'ep': list(x), 'avg_reward': list(y)},
+                output_dir+'rewards.csv')
 
     trace = go.Scatter(x=x, y=y)
     layout = go.Layout(
