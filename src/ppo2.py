@@ -162,7 +162,7 @@ def arg_parser():
     parser.add_argument('--reward_scale', default=.1, type=float)
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument('--save_path', default='weights/ppo_slowdown_200', type=str)
-    parser.add_argument('--load_path', default='weights/ppo_slowdown_200', type=str) #"weights/ppo_slowdown"
+    parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
     parser.add_argument('--train', default=True, action='store_true')
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
