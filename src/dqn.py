@@ -72,11 +72,7 @@ if __name__ == "__main__":
                    memory=memory,
                    dueling_type='max',
                    enable_dueling_network=True,
-                   nb_steps_warmup=10000,
-                   gamma=.99,
-                   target_model_update=5000,
-                   train_interval=1,
-                   delta_clip=1.)
+                   gamma=.99)
 
     dqn.compile(Adam(lr=.0001), metrics=['mae', 'mse'])
 
