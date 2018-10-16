@@ -128,7 +128,6 @@ class BatsimHandler:
             if job.state != Job.State.RUNNING and \
                     job.time_left_to_start == 0 and \
                     self.resource_manager.is_available(job.allocation):
-               # self._wake_up_resources(job.allocation)
                 self._start_job(job)
 
     def _start_job(self, job):
@@ -192,18 +191,12 @@ class BatsimHandler:
         self.simulator.proceed_time(1)
         self.jobs_manager.update_state(1)
         self.resource_manager.update_state(1)
-        # self._shut_down_unused_resources()
+        self.resource_manager.shut_down_unused()
         
     def _update_state(self):
         events = self.simulator.read_events()
         for event in events:
             self._handle_event(event)
-
-    def _wake_up_resources(self, resources):
-        self.resource_manager.wake_up(resources)
-
-    def _shut_down_unused_resources(self):
-        self.resource_manager.shut_down_unused()
 
     def _get_workload(self):
         if len(self._workloads) == self._workload_idx + 1:
@@ -247,7 +240,8 @@ class BatsimHandler:
         return s
 
     def _get_image(self):
-        state = np.zeros(shape=self.state_shape, dtype=np.uint8)
+        shape = (self.time_window, self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width)
+        state = np.zeros(shape=shape, dtype=np.uint8)
 
         # RESOURCES
         resource_end = self.nb_resources
@@ -258,7 +252,7 @@ class BatsimHandler:
         state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
         # BACKLOG
-        state[:, job_slot_end:self.state_shape[1]] = self.get_backlog_state()
+        state[:, job_slot_end:shape[1]] = self.get_backlog_state()
 
         return state
 

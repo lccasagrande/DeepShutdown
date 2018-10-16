@@ -50,7 +50,7 @@ class Resource:
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
-        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, profiles, time_window)
+        return Resource(id, Resource.State.SLEEPING, Resource.PowerState.SHUT_DOWN, name, profiles, time_window)
 
     @property
     def is_sleeping(self):
@@ -81,19 +81,19 @@ class Resource:
         self.pstate = Resource.PowerState.NORMAL
 
     def start_computing(self):
-        assert self.pstate == Resource.PowerState.NORMAL
+        self.pstate = Resource.PowerState.NORMAL
         self.state = Resource.State.COMPUTING
 
     def get_view(self):
-        #if self.is_sleeping:  # SLEEP
-        view = np.zeros(shape=self.time_window, dtype=np.uint8)
-        #else:
-        #    view = np.full(shape=self.time_window, fill_value=0, dtype=np.uint8)
+        if self.is_sleeping:  # SLEEP
+            view = np.zeros(shape=self.time_window, dtype=np.uint8)
+        else:
+            view = np.full(shape=self.time_window, fill_value=127, dtype=np.uint8)
 
         if len(self.queue) == 0:
             return view
 
-        #view[self.queue[0].time_left_to_start:self.time_window] = 127
+        view[self.queue[0].time_left_to_start:self.time_window] = 127
 
         for j in self.queue:
             end = j.time_left_to_start + int(j.remaining_time)
@@ -109,7 +109,7 @@ class Resource:
         self.queue.remove(job)
 
     def reset(self):
-        self.wake_up()
+        self.sleep()
         self.queue.clear()
 
 

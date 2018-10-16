@@ -15,6 +15,8 @@ class GridEnv(gym.Env):
         self.job_slots = 5
         self.time_window = 20
         self.backlog_width = 1
+        self.energy_factor = .5
+        self.slowd_factor = .5
         self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
@@ -29,23 +31,29 @@ class GridEnv(gym.Env):
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
         energy_before = self.simulator.resource_manager.energy_consumption
-        slow_before = self.simulator.jobs_manager.runtime_slowdown
+        #slow_before = self.simulator.jobs_manager.runtime_slowdown
+        mean_slow_before = self.simulator.jobs_manager.runtime_mean_slowdown
 
         try:
             self.simulator.schedule(action-1)
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
-        energy_after = self.simulator.resource_manager.energy_consumption - energy_before
-        slow_after = self.simulator.jobs_manager.runtime_slowdown - slow_before
+        energy = self.simulator.resource_manager.energy_consumption - energy_before
+        #slowdown = self.simulator.jobs_manager.runtime_slowdown - slow_before
+        mean_slowdown = self.simulator.jobs_manager.runtime_mean_slowdown - mean_slow_before
 
         obs = self._get_obs()
-        reward = -1*slow_after
-        #reward = -1*(energy_after / self.simulator.resource_manager.max_energy_usage)
+        reward = self._get_reward(energy, mean_slowdown)
         done = not self.simulator.running_simulation
         info = self._get_info()
 
         return obs, reward, done, info
+
+    def _get_reward(self, energy, slow):
+        assert self.energy_factor + self.slowd_factor == 1
+        e_norm = 0 if energy == 0 else energy / self.simulator.resource_manager.max_energy_usage
+        return -1 * (self.energy_factor * e_norm + self.slowd_factor * slow)
 
     def reset(self):
         self.simulator.close()
