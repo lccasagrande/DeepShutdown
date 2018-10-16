@@ -111,30 +111,25 @@ class SchedulerManager():
         self.runtime_mean_slowdown = 0
 
     def update_state(self, time_passed):
+        slowdown_before = self.runtime_slowdown
         for _, job in self._jobs_running.items():
             job.update_state(time_passed)
-            slowdown = time_passed / job.requested_time
-            self.runtime_slowdown += slowdown
-            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+            self.runtime_slowdown += time_passed / job.requested_time
 
         for _, job in self._jobs_allocated.items():
             job.update_state(time_passed)
-            slowdown = time_passed / job.requested_time
-            self.runtime_slowdown += slowdown
-            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+            self.runtime_slowdown += time_passed / job.requested_time
 
         for job in self._job_slots.values:
             if job != None:
-                slowdown = time_passed / job.requested_time
-                self.runtime_slowdown += slowdown
-                self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+                self.runtime_slowdown += time_passed / job.requested_time
                 job.update_state(time_passed)
 
         for job in self._jobs_queue:
-            slowdown = time_passed / job.requested_time
-            self.runtime_slowdown += slowdown
-            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+            self.runtime_slowdown += time_passed / job.requested_time
             job.update_state(time_passed)
+        
+        self.runtime_mean_slowdown += (self.runtime_slowdown - slowdown_before) / 200
 
     def get_job(self, index):
         job = self._job_slots.at(index)
