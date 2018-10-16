@@ -102,7 +102,7 @@ def plot_results(data, name):
 
 
 if __name__ == "__main__":
-    metrics = ['total_slowdown', 'makespan', 'energy_consumed']
+    metrics = ['total_slowdown', 'makespan', 'energy_consumed', 'mean_slowdown']
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), SJF(), LJF()]
     n_episodes = 1

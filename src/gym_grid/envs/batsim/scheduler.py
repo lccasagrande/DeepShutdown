@@ -108,33 +108,33 @@ class SchedulerManager():
         self.total_slowdown = 0
         self.total_turnaround_time = 0
         self.runtime_slowdown = 0
-        self.runtime_waiting_time = 0
+        self.runtime_mean_slowdown = 0
 
     def update_state(self, time_passed):
-        def update_job_running(job):
-            slow_before = job.runtime_slowdown
-            job.update_state(time_passed)
-            self.runtime_slowdown += job.runtime_slowdown - slow_before
-
-        def update_job_not_running(job):
-            slow_before = job.runtime_slowdown
-            wait_before = job.waiting_time
-            job.update_state(time_passed)
-            self.runtime_slowdown += job.runtime_slowdown - slow_before
-            self.runtime_waiting_time += job.waiting_time - wait_before
-
         for _, job in self._jobs_running.items():
-            update_job_running(job)
+            job.update_state(time_passed)
+            slowdown = time_passed / job.requested_time
+            self.runtime_slowdown += slowdown
+            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
 
         for _, job in self._jobs_allocated.items():
-            update_job_not_running(job)
+            job.update_state(time_passed)
+            slowdown = time_passed / job.requested_time
+            self.runtime_slowdown += slowdown
+            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
 
         for job in self._job_slots.values:
             if job != None:
-                update_job_not_running(job)
+                slowdown = time_passed / job.requested_time
+                self.runtime_slowdown += slowdown
+                self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+                job.update_state(time_passed)
 
         for job in self._jobs_queue:
-            update_job_not_running(job)
+            slowdown = time_passed / job.requested_time
+            self.runtime_slowdown += slowdown
+            self.runtime_mean_slowdown += slowdown / self.nb_jobs_submitted
+            job.update_state(time_passed)
 
     def get_job(self, index):
         job = self._job_slots.at(index)

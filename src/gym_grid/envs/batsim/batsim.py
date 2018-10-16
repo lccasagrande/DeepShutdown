@@ -152,9 +152,10 @@ class BatsimHandler:
             self.simulator.reject_job(data['job_id'])
 
     def _handle_simulation_ends(self, data):
-        self.metrics['energy_consumed'] = self.resource_manager.energy_consumed
+        self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
         self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - self.jobs_manager.first_job.submit_time
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
+        self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
         self._export_metrics()
@@ -272,8 +273,8 @@ class BatsimHandler:
         for job in jobs:
             if job is not None:
                 state[index] = job.requested_resources / self.nb_resources
-                #state[index+1] = job.requested_time
-                state[index+1] = ((job.requested_time + job.waiting_time) / job.requested_time) - 1
+                state[index+1] = job.requested_time
+                #state[index+1] = ((job.requested_time + job.waiting_time) / job.requested_time) - 1
             index += 2
 
         return state

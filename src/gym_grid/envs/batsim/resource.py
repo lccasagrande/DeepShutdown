@@ -65,7 +65,7 @@ class Resource:
         curr_prop = self.profiles[self.pstate]
         return curr_prop['watt_comp'] if self.is_computing else curr_prop['watt_idle']
 
-    def get_energy_consumed(self, time_passed):
+    def get_energy_consumption(self, time_passed):
         return self.current_watt * time_passed
 
     def get_job(self):
@@ -119,7 +119,7 @@ class ResourceManager:
         self.nb_resources = len(resources)
         self.time_window = time_window
         self.resources = resources
-        self.energy_consumed = 0
+        self.energy_consumption = 0
         self.max_energy_usage = 0
         colors = 200
         self.colormap = np.arange(
@@ -167,7 +167,7 @@ class ResourceManager:
 
     def reset(self):
         np.random.shuffle(self.colormap)
-        self.energy_consumed = 0
+        self.energy_consumption = 0
         self.max_energy_usage = 0
         for _, r in self.resources.items():
             r.reset()
@@ -192,7 +192,7 @@ class ResourceManager:
         assert time_passed != 0
         self.max_energy_usage = 0
         for _, r in self.resources.items():
-            self.energy_consumed += r.get_energy_consumed(time_passed)
+            self.energy_consumption += r.get_energy_consumption(time_passed)
             self.max_energy_usage += r.max_watt * time_passed
 
     def get_jobs(self):
