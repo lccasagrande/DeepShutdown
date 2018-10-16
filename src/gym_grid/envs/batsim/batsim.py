@@ -263,23 +263,17 @@ class BatsimHandler:
 
     def _get_compact_state(self):
         #nb_res = self.resource_manager.nb_resources
-        state = np.zeros(shape=(1 + self.job_slots*2), dtype=np.int8)
+        state = np.zeros(shape=(1 + self.job_slots*2), dtype=np.float)
 
-        state[0] = self.resource_manager.nb_avail_resources()
+        state[0] = self.resource_manager.nb_avail_resources() / self.nb_resources
 
         jobs = self.jobs_manager.job_slots
         index = 1
         for job in jobs:
             if job is not None:
-                state[index] = job.requested_resources
-                state[index+1] = job.requested_time
-                #slowdown = job.requested_time - job.waiting_time
-                #if slowdown < 128 and slowdown > -128:
-                #    state[index+1] = slowdown
-                #elif slowdown > -128:
-                #    state[index+1] = 127
-                #else:
-                #    state[index+1] = -127
+                state[index] = job.requested_resources / self.nb_resources
+                #state[index+1] = job.requested_time
+                state[index+1] = ((job.requested_time + job.waiting_time) / job.requested_time) - 1
             index += 2
 
         return state

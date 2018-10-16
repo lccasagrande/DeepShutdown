@@ -14,6 +14,7 @@ from baselines.common.tf_util import get_session
 from baselines import bench, logger
 from baselines.acer import acer
 from baselines.a2c import a2c
+from baselines.acer import acer
 from baselines.ppo2 import ppo2
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lnlstm, lstm
@@ -66,7 +67,8 @@ def ann(unscaled_images, **conv_kwargs):
     activ = tf.nn.relu
     h = activ(conv(scaled_images, 'c1', nf=64, rf=4, stride=2, init_scale=np.sqrt(2),
                    **conv_kwargs))
-    h3 = activ(conv(h, 'c2', nf=64, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+    h3 = activ(conv(h, 'c2', nf=64, rf=2, stride=1,
+                    init_scale=np.sqrt(2), **conv_kwargs))
     h3 = conv_to_fc(h3)
     return activ(fc(h3, 'fc1', nh=128, init_scale=np.sqrt(2)))
 
@@ -74,12 +76,12 @@ def ann(unscaled_images, **conv_kwargs):
 def build_env(args):
     nenv = args.num_env or multiprocessing.cpu_count()
 
-    #get_session(tf.ConfigProto(allow_soft_placement=True,
+    # get_session(tf.ConfigProto(allow_soft_placement=True,
     #                           intra_op_parallelism_threads=1,
     #                           inter_op_parallelism_threads=1))
 
-    env = VecFrameStack(make_vec_env(args.env, nenv, args.seed,
-                                     reward_scale=args.reward_scale), args.frames)
+    env = make_vec_env(args.env, nenv, args.seed,
+                       reward_scale=args.reward_scale)
 
     return env
 
@@ -107,31 +109,40 @@ def make_vec_env(env_id, nenv, seed, reward_scale):
 def train(args):
     total_timesteps = int(args.num_timesteps)
     seed = int(args.seed)
-    network = ann
+    network = "lstm"
     env = build_env(args)
 
     print('Training with PPO2')
+
+    # model = a2c.learn(env=env,
+    #                  network=network,
+    #                  seed=seed,
+    #                  nsteps=5,
+    #                  total_timesteps=total_timesteps,
+    #                  lr=2.5e-3,
+    #                  load_path=args.load_path)
 
     model = ppo2.learn(
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
-        nsteps=128,
+        nsteps=1,
         lam=0.95,
         gamma=0.99,
         network=network,
-        lr=lambda f: f * 2.5e-4,
+        lr=2.5e-3,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
-        cliprange=lambda f: f * 0.1,
+        cliprange=0.2,  # lambda f: f * 0.1,
         load_path=args.load_path)
 
     return model, env
 
 
 def train_model(args):
+    load_path = args.load_path
     args.load_path = None
     # configure logger, disable logging in child MPI processes (with rank > 0)
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
@@ -148,6 +159,8 @@ def train_model(args):
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
 
+    args.load_path = load_path
+
 
 def test_model(args):
     def initialize_placeholders(nlstm=128, **kwargs):
@@ -159,7 +172,7 @@ def test_model(args):
 
     assert args.load_path != None
     args.num_timesteps = 0
-    args.num_env = 1
+    #args.num_env = 1
     result = defaultdict(list)
     model, env = train(args)
     env.close()
@@ -181,10 +194,8 @@ def test_model(args):
             score += rew[0] * (1/args.reward_scale)
 
             if done:
-                print("\nPPO Steps {} - Episode {:7}, Score: {:7} - Slowdown Sum {:7} Mean {:3} - Makespan {:7}".format(
-                    steps, i, score, info[0]['total_slowdown'], info[0]['mean_slowdown'], info[0]['makespan']))
-                for metric in metrics:
-                    result[metric].append(info[0][metric])
+                print("\nPPO Steps {} - Episode {:7}, Score: {:7} - Slowdown {:7} - Makespan {:7}".format(
+                    steps, i, score, info[0]['total_slowdown'], info[0]['makespan']))
                 result['score'].append(score)
                 result['steps'].append(steps)
                 break
@@ -201,16 +212,16 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=25e6),
-    parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--frames', default=20, type=int)
+    parser.add_argument('--num_timesteps', type=float, default=2000000),
+    parser.add_argument('--num_env', default=12, type=int)
+    parser.add_argument('--frames', default=1, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--save_path', default='weights/ppo_grid_e', type=str)
     parser.add_argument('--network', help='Network', default='cnn', type=str)
     parser.add_argument('--load_path', default="weights/ppo_grid_e", type=str)
-    parser.add_argument('--train', default=True, action='store_true')
+    parser.add_argument('--train', default=False, action='store_true')
     parser.add_argument('--plot', default=False, action='store_true')
-    parser.add_argument('--test', default=False, action='store_true')
+    parser.add_argument('--test', default=True, action='store_true')
     parser.add_argument('--test_ep', default=1, type=int)
     args = parser.parse_args()
     return args

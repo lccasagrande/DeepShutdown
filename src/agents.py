@@ -22,9 +22,10 @@ class Agent:
 
 
 class MCControlAgent(Agent):
-    def __init__(self, env, eps_steps, alpha=None, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
+    def __init__(self, env, eps_episodes, alpha=None, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
         super(MCControlAgent, self).__init__(env)
-        self.policy = utils.LinearAnnealEpsGreedy(eps_max, eps_min, eps_steps)
+        self.policy = utils.LinearAnnealEpsGreedy(
+            eps_max, eps_min, eps_episodes)
         self.gamma = gamma
         self.alpha = alpha
         self.metrics = metrics
@@ -37,13 +38,7 @@ class MCControlAgent(Agent):
         Q = np.load(input_fn+".npy").item()
         self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
-    def _get_trajectory(self, epsilon, max_steps=None):
-        def select_action(state, epsilon):
-            if np.random.random() <= epsilon:
-                return np.random.choice(np.arange(self.env.action_space.n))
-            else:
-                return np.argmax(self.Q[state])
-
+    def _get_trajectory(self, select_action, epsilon, max_steps=None):
         state = self.env.reset()
         episode, score, steps, result = [], 0, 0, dict()
         while (steps <= max_steps if max_steps != None else True):
@@ -57,26 +52,14 @@ class MCControlAgent(Agent):
             if done:
                 result['score'] = score
                 result['steps'] = steps
+                result['Epsilon'] = epsilon
                 for metric in self.metrics:
                     result[metric] = info[metric]
                 break
         return episode, result
 
-    def train(self, n_episodes, verbose=False, save_interval=None, max_steps=None):
-        counter = defaultdict(int)
-        tmp_scores = deque(maxlen=100)
-        avg_scores = deque(maxlen=n_episodes)
-        results = []
-        for ep in range(1, n_episodes+1):
-            epsilon = self.policy.get_current_value(ep-1)
-            episode, ep_result = self._get_trajectory(epsilon, max_steps)
-            tmp_scores.append(ep_result['score'])
-            results.append(ep_result)
-
-            if verbose:
-                print("\rEpisode {}/{} - Eps {}".format(ep,
-                                                        n_episodes, epsilon), end="")
-
+    def _run(self, select_action, n_episodes, update, save_interval=None, visualize=False, verbose=False, max_steps=None):
+        def update_q(episode):
             states, actions, rewards = zip(*episode)
             visited = {}
             for i, state in enumerate(states):
@@ -88,20 +71,50 @@ class MCControlAgent(Agent):
                     summ = sum(rewards[i:] * discount)
 
                     if self.alpha is None:
-                        self.Q[state][actions[i]
-                                      ] += (summ - self.Q[state][actions[i]]) / counter[state_action]
+                        error = (
+                            summ - self.Q[state][actions[i]]) / counter[state_action]
                     else:
-                        self.Q[state][actions[i]] += self.alpha * \
-                            (summ - self.Q[state][actions[i]])
+                        error = self.alpha * (summ - self.Q[state][actions[i]])
 
+                    self.Q[state][actions[i]] += error
                     visited[state_action] = True
 
+        counter = defaultdict(int)
+        tmp_scores = deque(maxlen=1000)
+        avg_scores = deque(maxlen=n_episodes)
+        for ep in range(1, n_episodes+1):
+            epsilon = self.policy.get_current_value(ep)
+            episode, episodic_results = self._get_trajectory(select_action, epsilon, max_steps)
+            episodic_results['Episode'] = ep
+            tmp_scores.append(episodic_results['score'])
+
+            if update:
+                update_q(episode)
+
             if save_interval != None and ep % save_interval == 0:
-                self.save("weights/mcontrol-{}".format(ep))
-            if (ep % 100 == 0):
+                self.save("weights/mcontrol-"+str(ep))
+
+            if (ep % tmp_scores.maxlen == 0):
+                if verbose:
+                    utils.print_episode_result("MCControl", episodic_results)
                 avg_scores.append(np.mean(tmp_scores))
 
-        return avg_scores, results
+        return avg_scores
+
+    def test(self, n_episodes, visualize=False, max_steps=None, verbose=False):
+        def select_action(state, epsilon):
+            return np.argmax(self.Q[state])
+
+        return self._run(select_action, n_episodes, update=False, visualize=visualize, verbose=verbose, max_steps=max_steps)
+
+    def train(self, n_episodes, verbose=False, save_interval=None, max_steps=None, visualize=False):
+        def select_action(state, epsilon):
+            if np.random.random() <= epsilon:
+                return np.random.choice(np.arange(self.env.action_space.n))
+            else:
+                return np.argmax(self.Q[state])
+
+        return self._run(select_action, n_episodes, update=True, visualize=visualize, save_interval=save_interval, verbose=verbose, max_steps=max_steps)
 
 
 class MCPredictionAgent(Agent):
@@ -166,16 +179,12 @@ class MCPredictionAgent(Agent):
 
 
 class QLearningAgent(Agent):
-    def __init__(self, env, alpha, eps_steps, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
+    def __init__(self, env, alpha, eps_episodes, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
         super(QLearningAgent, self).__init__(env)
         self.policy = utils.LinearAnnealEpsGreedy(
-            eps_max, eps_min, eps_steps)
+            eps_max, eps_min, eps_episodes)
         self.gamma = gamma
         self.alpha = alpha
-        self.eps_max = eps_max
-        self.eps_min = eps_min
-        self.step = 0
-        self.eps_steps = eps_steps
         self.metrics = metrics
         self.Q = defaultdict(lambda: np.zeros(env.action_space.n))
 
@@ -187,19 +196,20 @@ class QLearningAgent(Agent):
         self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _run(self, select_action, n_episodes, max_steps=None, update=True, visualize=False, verbose=False, save_interval=None):
-        tmp_scores = deque(maxlen=100)
+        def get_epsilon(epi):
+            return self.policy.get_current_value(epi) if update else self.policy.value_min
+
+        tmp_scores = deque(maxlen=1000)
         avg_scores = deque(maxlen=n_episodes)
-        self.step = 0
         episodic_results = defaultdict(float)
-        results = []
+        total_steps = 0
         for i in range(1, n_episodes + 1):
             score, episode_steps, state = 0, 0, tuple(self.env.reset())
-            while (self.step <= max_steps if max_steps != None else True):
+            while (total_steps <= max_steps if max_steps != None else True):
                 if visualize:
                     self.env.render()
 
-                epsilon = self.policy.get_current_value(
-                    self.step) if update else self.policy.value_min
+                epsilon = get_epsilon(i)
                 action = select_action(state, epsilon)
                 next_state, reward, done, info = self.env.step(action)
                 next_state = tuple(next_state)
@@ -210,30 +220,30 @@ class QLearningAgent(Agent):
                             self.Q[next_state])] - self.Q[state][action]
                     self.Q[state][action] += self.alpha * td_error
 
-                self.step += 1
+                state = next_state
+                total_steps += 1
                 episode_steps += 1
                 score += reward
-                state = next_state
 
                 if done:
                     for metric in self.metrics:
                         episodic_results[metric] = info[metric]
                     episodic_results['score'] = score
                     episodic_results['steps'] = episode_steps
+                    episodic_results['Episode'] = i
+                    episodic_results['Epsilon'] = epsilon
                     tmp_scores.append(score)
-                    results.append(episodic_results)
-                    if verbose:
-                        utils.print_episode_result(
-                            "QLearning", i, episodic_results, epsilon)
                     break
 
             if update and save_interval != None and i % save_interval == 0:
                 self.save("weights/qlearning-{}".format(i))
 
-            if (i % 100 == 0):
+            if (i % 1000 == 0):
+                if verbose:
+                    utils.print_episode_result("QLearning", episodic_results)
                 avg_scores.append(np.mean(tmp_scores))
 
-        return avg_scores, results
+        return avg_scores
 
     def test(self, n_episodes, visualize=False, max_steps=None, verbose=False):
         def select_action(state, epsilon):
@@ -252,13 +262,12 @@ class QLearningAgent(Agent):
 
 
 class SARSAAgent(Agent):
-    def __init__(self, env, alpha, eps_steps, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
+    def __init__(self, env, alpha, eps_episodes, gamma=1., eps_max=1, eps_min=.1, metrics=[]):
         super(SARSAAgent, self).__init__(env)
         self.policy = utils.LinearAnnealEpsGreedy(
-            eps_max, eps_min, eps_steps)
+            eps_max, eps_min, eps_episodes)
         self.gamma = gamma
         self.alpha = alpha
-        self.step = 0
         self.metrics = metrics
         self.Q = defaultdict(lambda: np.zeros(env.action_space.n))
 
@@ -270,20 +279,18 @@ class SARSAAgent(Agent):
         self.Q = defaultdict(lambda: np.zeros(self.env.action_space.n), Q)
 
     def _run(self, select_action, n_episodes, max_steps=None, update=True, visualize=False, verbose=False, save_interval=None):
-        def get_epsilon():
-            return self.policy.get_current_value(self.step) if update else self.policy.value_min
+        def get_epsilon(epi):
+            return self.policy.get_current_value(epi) if update else self.policy.value_min
 
-        tmp_scores = deque(maxlen=)
+        tmp_scores = deque(maxlen=1000)
         avg_scores = deque(maxlen=n_episodes)
 
-        self.step = 0
         episodic_results = defaultdict(float)
-        results = []
+        self.step = 0
         for i in range(1, n_episodes + 1):
-            score = 0
-            steps = 0
+            score, steps = 0, 0
             state = tuple(self.env.reset())
-            epsilon = get_epsilon()
+            epsilon = get_epsilon(i)
             action = select_action(state, epsilon)
 
             while (self.step <= max_steps if max_steps != None else True):
@@ -297,7 +304,6 @@ class SARSAAgent(Agent):
                 score += reward
 
                 if not done:
-                    epsilon = get_epsilon()
                     next_action = select_action(next_state, epsilon)
                     if update:
                         td_error = reward + self.gamma * \
@@ -315,20 +321,21 @@ class SARSAAgent(Agent):
 
                     episodic_results['score'] = score
                     episodic_results['steps'] = steps
+                    episodic_results['Episode'] = i
+                    episodic_results['Epsilon'] = epsilon
 
                     tmp_scores.append(score)
-                    if verbose:
-                        utils.print_episode_result(
-                            "SARSA", i, episodic_results, epsilon)
                     break
 
             if update and save_interval != None and i % save_interval == 0:
                 self.save("weights/sarsa-{}".format(i))
 
             if (i % 1000 == 0):
+                if verbose:
+                    utils.print_episode_result("SARSA", episodic_results)
                 avg_scores.append(np.mean(tmp_scores))
 
-        return avg_scores, results
+        return avg_scores
 
     def test(self, n_episodes, visualize=False, max_steps=None, verbose=False):
         def select_action(state, epsilon):
@@ -361,18 +368,18 @@ def get_worker(agent, episodes, max_steps, save_interval, verbose, results):
     #results[agent_name] = result
 
 
-def get_agents(alpha, eps_steps):
+def get_agents(alpha, eps_episodes):
     ql = QLearningAgent(env=gym.make('grid-v0'),
                         alpha=alpha,
-                        eps_steps=eps_steps)
+                        eps_episodes=eps_episodes)
     ql.load("weights/qlearning-13500")
     s = SARSAAgent(env=gym.make('grid-v0'),
                    alpha=alpha,
-                   eps_steps=eps_steps)
+                   eps_episodes=eps_episodes)
     s.load("weights/sarsa-18900")
     m = MCControlAgent(env=gym.make('grid-v0'),
                        alpha=alpha,
-                       eps_steps=1)
+                       eps_episodes=eps_episodes)
     m.load("weights/mcontrol-27900")
 
     return [ql, s, m]
@@ -382,25 +389,41 @@ def run():
     episodes = 50000
     save_interval = 900
     verbose = False
-    alpha = 0.01
-    eps_steps = 10000000
+    alpha = 0.9
+    eps_episodes = 10000
 
-    agents = get_agents(alpha, eps_steps)
+    agent = QLearningAgent(env=gym.make('grid-v0'),
+                           alpha=alpha,
+                           eps_episodes=eps_episodes)
+    import time as t
+    t1 = t.time()
+    avg = agent.train(episodes, verbose=True)
+    print(t.time() - t1)
 
-    manager = Manager()
-    manager_result = manager.dict()
-    process = []
+    #utils.plot_reward(avg, episodes, "Training", "train")
 #
-    for agent in agents:
-        p = Process(target=get_worker, args=(agent, episodes, None,
-                                             save_interval, verbose, manager_result, ))
-        p.start()
-        process.append(p)
+    #agent.save("weights/qlearning")
 #
-    for p in process:
-        p.join()
+    #avg = agent.test(1000, verbose=True)
 
-    print("Done!")
+    #utils.plot_reward(avg, 500, "Testing", "test")
+
+    #agents = get_agents(alpha, eps_steps)
+#
+    #manager = Manager()
+    #manager_result = manager.dict()
+    #process = []
+##
+    # for agent in agents:
+    #    p = Process(target=get_worker, args=(agent, episodes, None,
+    #                                         save_interval, verbose, manager_result, ))
+    #    p.start()
+    #    process.append(p)
+##
+    # for p in process:
+    #    p.join()
+#
+    # print("Done!")
 
 
 if __name__ == "__main__":

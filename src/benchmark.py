@@ -105,14 +105,14 @@ if __name__ == "__main__":
     metrics = ['total_slowdown', 'makespan', 'energy_consumed']
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), SJF(), LJF()]
-    n_episodes = 1000
+    n_episodes = 1
     seed = 123
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
     #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=False, visualize=False)
-    run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False)
+    run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
 
 
 # %%

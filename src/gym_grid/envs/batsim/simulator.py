@@ -52,7 +52,7 @@ class GridSimulator:
     def get_job_completed_event(self, time, job):
         data = dict(
             job_id=job.id,
-            job_state=Job.State.COMPLETED_SUCCESSFULLY,
+            job_state=Job.State.COMPLETED,
             return_code=0,
             kill_reason="",
             alloc=job.allocation)

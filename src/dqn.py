@@ -19,34 +19,31 @@ from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 
-WINDOW_LENGTH = 20
+WINDOW_LENGTH = 1
 
 
 class GridProcessor(Processor):
     def process_observation(self, observation):
-        assert observation.ndim == 2  # (height, width)
-        return observation.astype('uint8')
+        assert observation.ndim == 1  # (height, width)
+        return observation
 
     def process_state_batch(self, batch):
-        processed_batch = batch.astype('float32') / 255.
+        processed_batch = np.squeeze(batch, axis=1)
         return processed_batch
 
 
 def build_model(input_shape, output_shape):
     model = Sequential()
-    model.add(Permute((2, 3, 1), input_shape=input_shape))
-    model.add(Convolution2D(64, (2, 2), strides=(1, 1),
-                            padding='same', activation='relu', input_shape=input_shape))
-    model.add(Flatten())
+    model.add(Dense(64, activation='relu', input_shape=input_shape))
     model.add(Dense(output_shape, activation='linear'))
     print(model.summary())
     return model
 
 
 if __name__ == "__main__":
-    train = False
+    train = True
     weights_nb = "0"
-    name = "ddqn_slowdown_continue"
+    name = "ddqn_slowdown_small"
     seed = 123
     weight_path = "weights/" + name
     log_path = "log/" + name
@@ -57,17 +54,16 @@ if __name__ == "__main__":
     np.random.seed(seed)
     env.seed(seed)
 
-    model = build_model(input_shape=(
-        WINDOW_LENGTH,) + env.observation_space.shape, output_shape=env.action_space.n)
+    model = build_model(input_shape=env.observation_space.shape, output_shape=env.action_space.n)
 
-    memory = SequentialMemory(limit=2000000, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
 
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedyQPolicy(),
                                         attr='eps',
                                         value_max=1.,
                                         value_min=.1,
                                         value_test=.05,
-                                        nb_steps=1e3)#4e6)
+                                        nb_steps=3000000)
 
     dqn = DQNAgent(model=model,
                    nb_actions=env.action_space.n,
@@ -78,14 +74,14 @@ if __name__ == "__main__":
                    enable_dueling_network=True,
                    nb_steps_warmup=10000,
                    gamma=.99,
-                   target_model_update=1000,
-                   train_interval=20,
+                   target_model_update=5000,
+                   train_interval=1,
                    delta_clip=1.)
 
     dqn.compile(Adam(lr=.0001), metrics=['mae', 'mse'])
 
     callbacks = [
-        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=5e5),
+        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=500000),
         FileLogger(log_path+'/log.json', interval=100),
         TensorBoard(log_dir=log_path,
                     write_graph=True, write_images=True)
@@ -93,13 +89,13 @@ if __name__ == "__main__":
     if train:
         dqn.fit(env=env,
                 callbacks=callbacks,
-                nb_steps=10e6,
+                nb_steps=9000000,
                 log_interval=10000,
                 visualize=False,
                 verbose=1,
-                nb_max_episode_steps=3000)
+                nb_max_episode_steps=500)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
     else:
         dqn.load_weights(weight_path+'/weights_'+weights_nb+'.h5f')
-        dqn.test(env, nb_episodes=100, visualize=False)
+        dqn.test(env, nb_episodes=1, visualize=True)
