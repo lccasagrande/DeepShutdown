@@ -2,7 +2,6 @@
 .vscode
 results/*
 log/
-weights/
 benchmark
 tmp
 src/test.py

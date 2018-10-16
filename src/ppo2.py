@@ -9,6 +9,7 @@ import os
 import argparse
 import pandas as pd
 import benchmark
+import utils
 from collections import defaultdict
 from baselines.common.tf_util import get_session
 from baselines import bench, logger
@@ -31,54 +32,12 @@ except ImportError:
     MPI = None
 
 
-@register("ann_lstm")
-def ann_lstm(nlstm=256, layer_norm=True, **conv_kwargs):
-    def network_fn(X, nenv=1):
-        nbatch = X.shape[0]
-        nsteps = nbatch // nenv
-
-        h = ann(X, **conv_kwargs)
-
-        M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
-        S = tf.placeholder(tf.float32, [nenv, 2*nlstm])  # states
-
-        xs = batch_to_seq(h, nenv, nsteps)
-        ms = batch_to_seq(M, nenv, nsteps)
-
-        if layer_norm:
-            h5, snew = lnlstm(xs, ms, S, scope='lnlstm', nh=nlstm)
-        else:
-            h5, snew = lstm(xs, ms, S, scope='lstm', nh=nlstm)
-
-        h = seq_to_batch(h5)
-        initial_state = np.zeros(S.shape.as_list(), dtype=float)
-
-        return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
-
-    return network_fn
-
-
-def ann(unscaled_images, **conv_kwargs):
-    """
-    CNN from Nature paper.
-    """
-
-    scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
-    activ = tf.nn.relu
-    h = activ(conv(scaled_images, 'c1', nf=64, rf=4, stride=2, init_scale=np.sqrt(2),
-                   **conv_kwargs))
-    h3 = activ(conv(h, 'c2', nf=64, rf=2, stride=1,
-                    init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = conv_to_fc(h3)
-    return activ(fc(h3, 'fc1', nh=128, init_scale=np.sqrt(2)))
-
-
 def build_env(args):
     nenv = args.num_env or multiprocessing.cpu_count()
 
-    # get_session(tf.ConfigProto(allow_soft_placement=True,
-    #                           intra_op_parallelism_threads=1,
-    #                           inter_op_parallelism_threads=1))
+    get_session(tf.ConfigProto(allow_soft_placement=True,
+                               intra_op_parallelism_threads=1,
+                               inter_op_parallelism_threads=1))
 
     env = make_vec_env(args.env, nenv, args.seed,
                        reward_scale=args.reward_scale)
@@ -107,12 +66,8 @@ def make_vec_env(env_id, nenv, seed, reward_scale):
 
 
 def train(args):
-    total_timesteps = int(args.num_timesteps)
-    seed = int(args.seed)
-    network = "lstm"
-    env = build_env(args)
-
     print('Training with PPO2')
+    env = build_env(args)
 
     # model = a2c.learn(env=env,
     #                  network=network,
@@ -124,34 +79,35 @@ def train(args):
 
     model = ppo2.learn(
         env=env,
-        seed=seed,
-        total_timesteps=total_timesteps,
-        nsteps=1,
+        seed=args.seed,
+        total_timesteps=args.num_timesteps,
+        nsteps=256,
         lam=0.95,
         gamma=0.99,
-        network=network,
-        lr=2.5e-3,
+        network=args.network,
+        lr=1.e-3,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
-        cliprange=0.2,  # lambda f: f * 0.1,
+        cliprange=0.2,
         load_path=args.load_path)
 
     return model, env
 
 
 def train_model(args):
-    load_path = args.load_path
-    args.load_path = None
-    # configure logger, disable logging in child MPI processes (with rank > 0)
-    if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
-        rank = 0
-        logger.configure()
-    else:
-        logger.configure(format_strs=[])
-        rank = MPI.COMM_WORLD.Get_rank()
+    def config_log():
+        # configure logger, disable logging in child MPI processes (with rank > 0)
+        if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+            rank = 0
+            logger.configure()
+        else:
+            logger.configure(format_strs=[])
+            rank = MPI.COMM_WORLD.Get_rank()
+        return rank
 
+    rank = config_log()
     model, env = train(args)
     env.close()
 
@@ -159,70 +115,56 @@ def train_model(args):
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
 
-    args.load_path = load_path
-
 
 def test_model(args):
     def initialize_placeholders(nlstm=128, **kwargs):
         return np.zeros((args.num_env or 1, 2*nlstm)), np.zeros((1))
 
-    metrics = ["nb_jobs", "nb_jobs_finished", "nb_jobs_killed", "success_rate", "makespan",
-               "mean_waiting_time", "mean_turnaround_time", "mean_slowdown", "energy_consumed",
-               'total_slowdown', 'total_turnaround_time', 'total_waiting_time']
-
     assert args.load_path != None
     args.num_timesteps = 0
-    #args.num_env = 1
-    result = defaultdict(list)
+    args.num_env = 1
+    result = defaultdict(float)
+
     model, env = train(args)
     env.close()
-
     env = build_env(args)
     env.close()
-
     state, dones = initialize_placeholders()
+    obs = env.reset()
+    steps, score = 0, 0
+    while True:
+        if args.render:
+            env.render(mode='image')
 
-    for i in range(1, args.test_ep + 1):
-        obs = env.reset()
-        steps, score = 0, 0
-        while True:
-            # env.render(mode='image')
-            actions, _, state, _ = model.step(obs, S=state, M=dones)
-            obs, rew, done, info = env.step(actions)
-            done = done.any() if isinstance(done, np.ndarray) else done
-            steps += 1
-            score += rew[0] * (1/args.reward_scale)
+        actions, _, state, _ = model.step(obs, S=state, M=dones)
+        obs, rew, done, info = env.step(actions)
+        done = done.any() if isinstance(done, np.ndarray) else done
 
-            if done:
-                print("\nPPO Steps {} - Episode {:7}, Score: {:7} - Slowdown {:7} - Makespan {:7}".format(
-                    steps, i, score, info[0]['total_slowdown'], info[0]['makespan']))
-                result['score'].append(score)
-                result['steps'].append(steps)
-                break
+        result['score'] += rew[0] * (1/args.reward_scale)
+        result['steps'] += 1
 
-    # PRINT
-    for metric in metrics:
-        if args.plot:
-            benchmark.plot_results(result[metric], metric)
-        pd.DataFrame.from_dict(result[metric]).to_csv(
-            "benchmark/ppo_"+metric+".csv", index=False)
+        if done:
+            result['Episode'] = 1
+            result['Slowdown'] = info[0]['total_slowdown']
+            result['Makespan'] = info[0]['makespan']
+            utils.print_episode_result("PPO2", result)
+            break
+
+   #pd.DataFrame.from_dict(result).to_csv("benchmark/ppo.csv", index='Episode')
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
-    parser.add_argument('--seed', help='RNG seed', type=int, default=123)
-    parser.add_argument('--num_timesteps', type=float, default=2000000),
-    parser.add_argument('--num_env', default=12, type=int)
-    parser.add_argument('--frames', default=1, type=int)
-    parser.add_argument('--reward_scale', default=1., type=float)
-    parser.add_argument('--save_path', default='weights/ppo_grid_e', type=str)
-    parser.add_argument('--network', help='Network', default='cnn', type=str)
-    parser.add_argument('--load_path', default="weights/ppo_grid_e", type=str)
-    parser.add_argument('--train', default=False, action='store_true')
-    parser.add_argument('--plot', default=False, action='store_true')
-    parser.add_argument('--test', default=True, action='store_true')
-    parser.add_argument('--test_ep', default=1, type=int)
+    parser.add_argument('--network', help='Network', default='mlp', type=str)
+    parser.add_argument('--num_timesteps', type=int, default=10e6)
+    parser.add_argument('--num_env', default=None, type=int)
+    parser.add_argument('--reward_scale', default=.1, type=float)
+    parser.add_argument('--seed', type=int, default=123)
+    parser.add_argument('--save_path', default='weights/ppo_slowdown_2', type=str)
+    parser.add_argument('--load_path', default="weights/ppo_slowdown", type=str)
+    parser.add_argument('--train', default=True, action='store_true')
+    parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -230,11 +172,11 @@ def arg_parser():
 def main(args):
     if args.train:
         train_model(args)
-
-    if args.test:
+    else:
         test_model(args)
+
+    print("Done!")
 
 
 if __name__ == '__main__':
-    args = arg_parser()
-    main(args)
+    main(arg_parser())
