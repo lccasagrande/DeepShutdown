@@ -386,13 +386,13 @@ def get_agents(alpha, eps_episodes):
 
 
 def run():
-    episodes = 50000
+    episodes = 100000
     save_interval = 900
     verbose = False
-    alpha = 0.9
-    eps_episodes = 10000
+    alpha = 0.1
+    eps_episodes = 50000
 
-    agent = QLearningAgent(env=gym.make('grid-v0'),
+    agent = MCControlAgent(env=gym.make('grid-v0'),
                            alpha=alpha,
                            eps_episodes=eps_episodes)
     import time as t
@@ -400,7 +400,7 @@ def run():
     avg = agent.train(episodes, verbose=True)
     print(t.time() - t1)
 
-    #utils.plot_reward(avg, episodes, "Training", "train")
+    utils.plot_reward(avg, episodes, "Training", "train")
 #
     #agent.save("weights/qlearning")
 #

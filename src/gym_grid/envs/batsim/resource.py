@@ -94,16 +94,16 @@ class Resource:
         self.state = Resource.State.COMPUTING
 
     def get_view(self):
-        if self.is_sleeping:  # SLEEP
-            view = np.zeros(shape=self.time_window, dtype=np.uint8)
-        else:
-            view = np.full(shape=self.time_window,
-                           fill_value=127, dtype=np.uint8)
+        #if self.is_sleeping:  # SLEEP
+        view = np.zeros(shape=self.time_window, dtype=np.float)
+        #else:
+        #    view = np.full(shape=self.time_window,
+        #                   fill_value=127, dtype=np.uint8)
 
         if len(self.queue) == 0:
             return view
 
-        view[self.queue[0].time_left_to_start:self.time_window] = 127
+        #view[self.queue[0].time_left_to_start:self.time_window] = 127
 
         for j in self.queue:
             end = j.time_left_to_start + int(j.remaining_time)
@@ -132,9 +132,8 @@ class ResourceManager:
         self.resources = resources
         self.energy_consumption = 0
         self.max_energy_usage = 0
-        colors = 200
-        self.colormap = np.arange(
-            colors/float(time_window+1), colors, colors/float(time_window)).tolist()
+
+        self.colormap = np.arange(1 / 40., 1, 1 / 40.).tolist()
         np.random.shuffle(self.colormap)
 
     @property
@@ -175,7 +174,7 @@ class ResourceManager:
 
     def get_view(self):
         state = np.zeros(
-            shape=(self.time_window, self.nb_resources), dtype=np.uint8)
+            shape=(self.time_window, self.nb_resources), dtype=np.float)
         for k, res in self.resources.items():
             state[:, k] = res.get_view()
 

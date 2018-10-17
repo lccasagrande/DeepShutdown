@@ -23,7 +23,7 @@ class GridEnv(gym.Env):
         self.action_space = spaces.Discrete(self.job_slots+1)
         state = self._get_obs()
         self.observation_space = spaces.Box(low=0,
-                                            high=np.inf,
+                                            high=1,
                                             shape=state.shape,
                                             dtype=state.dtype)
 
@@ -77,7 +77,7 @@ class GridEnv(gym.Env):
     def _get_info(self):
         return dict() if self.simulator.running_simulation else self.simulator.metrics
 
-    def _get_obs(self, type='compact', reshape=False):
+    def _get_obs(self, type='image', reshape=False):
         state = self.simulator.get_state(type)
         if reshape:
             state = state.reshape(state.shape + (1,))
@@ -94,9 +94,8 @@ class GridEnv(gym.Env):
     def _plot(self):
         def plot_resource_state():
             resource_state = self.simulator.resource_manager.get_view()
-            plt.subplot(1, 1 + self.job_slots + 1, 1)
-            plt.imshow(resource_state, interpolation='nearest', vmin=0,
-                       vmax=255, aspect='auto')
+            plt.subplot(1, 1 + self.job_slots + 2, 1)
+            plt.imshow(resource_state, interpolation='nearest', vmin=0, vmax=1, aspect='auto')
             ax = plt.gca()
             ax.set_xticks(range(self.simulator.nb_resources))
             ax.set_yticks(range(self.time_window))
@@ -116,9 +115,8 @@ class GridEnv(gym.Env):
             for start_idx in range(0, jobs.shape[1], self.simulator.nb_resources):
                 job_state = jobs[:, start_idx:start_idx +
                                  self.simulator.nb_resources]
-                plt.subplot(1, 1 + self.job_slots + 1, slot + 1)
-                plt.imshow(job_state, interpolation='nearest', vmin=0,
-                           vmax=255, aspect='auto')
+                plt.subplot(1, 1 + self.job_slots + 2, slot + 1)
+                plt.imshow(job_state, interpolation='nearest', vmin=0, vmax=1, aspect='auto')
                 ax = plt.gca()
                 ax.set_xticks([], [])
                 ax.set_yticks([], [])
@@ -131,10 +129,9 @@ class GridEnv(gym.Env):
 
         def plot_backlog():
             backlog_state = self.simulator.get_backlog_state()
-            plt.subplot(1, 1 + self.job_slots + 1, self.job_slots + 2)
+            plt.subplot(1, 1 + self.job_slots + 2, self.job_slots + 2)
 
-            plt.imshow(backlog_state, interpolation='nearest', vmin=0,
-                       vmax=255,  aspect='auto')
+            plt.imshow(backlog_state, interpolation='nearest', vmin=0, vmax=1,  aspect='auto')
             ax = plt.gca()
             ax.set_xticks(range(self.backlog_width))
             ax.set_yticks([], [])
@@ -143,9 +140,23 @@ class GridEnv(gym.Env):
             ax.set_title("Queue")
             ax.grid(which='minor', color='w', linestyle='-', linewidth=1)
 
+        def plot_last_time():
+            last_state = self.simulator.get_time_state().reshape(-1, 1)
+            plt.subplot(1, 1 + self.job_slots + 2, self.job_slots + 3)
+
+            plt.imshow(last_state, interpolation='nearest', vmin=0, vmax=1,  aspect='auto')
+            ax = plt.gca()
+            ax.set_xticks([], [])
+            ax.set_yticks([], [])
+            ax.set_yticks(np.arange(.5, self.time_window, 1), minor=True)
+            ax.set_title("Time")
+            ax.grid(which='minor', color='w', linestyle='-', linewidth=1)
+
+
         plt.figure("screen", figsize=(20, 5))
         plot_resource_state()
         plot_job_state()
         plot_backlog()
+        plot_last_time()
         plt.tight_layout()
         plt.pause(0.01)

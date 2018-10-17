@@ -104,14 +104,14 @@ def plot_results(data, name):
 if __name__ == "__main__":
     metrics = ['total_slowdown', 'makespan', 'energy_consumed', 'mean_slowdown']
     output_dir = 'benchmark/'
-    policies = [FirstFit(), Tetris(), SJF(), LJF()]
+    policies = [FirstFit(), Tetris(), SJF(), LJF(), Random()]
     n_episodes = 1
     seed = 123
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
-    run_experiment(User(), n_episodes, seed, metrics, {}, verbose=True, visualize=True)
+    run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=True)
     #run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
 
 

@@ -214,26 +214,29 @@ class BatsimHandler:
             if job != None:
                 start_idx = i * self.nb_resources
                 end_idx = start_idx + job.requested_resources
-                s[0:job.requested_time, start_idx:end_idx] = 255
+                s[0:job.requested_time, start_idx:end_idx] = 1
         return s
 
     def get_backlog_state(self):
-        s = np.zeros(shape=(self.time_window, self.backlog_width),
-                     dtype=np.uint8)
+        s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
         t, i = 0, 0
         nb_jobs = min(self.backlog_width*self.time_window,
                       self.jobs_manager.nb_jobs_in_backlog)
         for _ in range(nb_jobs):
-            s[t, i] = 255
+            s[t, i] = 1
             i += 1
             if i == self.backlog_width:
                 i = 0
                 t += 1
         return s
 
+    def get_time_state(self):
+        v = self.simulator.time_since_last_new_job / float(self.simulator.max_tracking_time_since_last_job)
+        return np.full(shape=self.time_window, fill_value= v, dtype=np.float)
+
     def _get_image(self):
-        shape = (self.time_window, self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width)
-        state = np.zeros(shape=shape, dtype=np.uint8)
+        shape = (self.time_window, self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width + 1)
+        state = np.zeros(shape=shape, dtype=np.float)
 
         # RESOURCES
         resource_end = self.nb_resources
@@ -245,6 +248,8 @@ class BatsimHandler:
 
         # BACKLOG
         state[:, job_slot_end:shape[1]] = self.get_backlog_state()
+
+        state[:, -1] = self.get_time_state()
 
         return state
 

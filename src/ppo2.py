@@ -179,7 +179,7 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--network', help='Network', default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=1000000)
+    parser.add_argument('--num_timesteps', type=int, default=1500000)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
@@ -187,7 +187,7 @@ def arg_parser():
     parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
     parser.add_argument('--train', default=True, action='store_true')
     parser.add_argument('--test_ep', default=1, type=int)
-    parser.add_argument('--render', default=True, action='store_true')
+    parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
     return args
 

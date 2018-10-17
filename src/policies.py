@@ -44,12 +44,12 @@ class User(Policy):
 
 class Random(Policy):
     def select_action(self, state):
-        return choice(list(range(0, len(state[2:])+1)))
+        return choice(list(range(7)))
 
 
 def get_available_res(state):
     count = 0
-    for i in range(1,10,2):
+    for i in range(10):
         if state[i] == 0:
             count+=1
     return count / 5
@@ -76,7 +76,7 @@ class LJF(Policy):
     def select_action(self, state):
         action, slot, largest_job = 0, 1, -1
         nb_res = get_available_res(state)
-        jobs_state = state[5:]
+        jobs_state = state[10:-1]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             req_time = jobs_state[i+1]
@@ -93,7 +93,7 @@ class Tetris(Policy):
         action, score, slot = 0, 0, 1
         
         nb_res = get_available_res(state)
-        jobs_state = state[5:]
+        jobs_state = state[10:-1]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             if req_res != 0 and req_res <= nb_res and req_res >= score:
@@ -109,7 +109,7 @@ class FirstFit(Policy):
         action, slot = 0, 1
         
         nb_res = get_available_res(state)
-        jobs_state = state[5:]
+        jobs_state = state[10:-1]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             if req_res != 0 and req_res <= nb_res:
