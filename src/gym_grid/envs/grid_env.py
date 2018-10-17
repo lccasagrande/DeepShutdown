@@ -21,17 +21,16 @@ class GridEnv(gym.Env):
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
         self.action_space = spaces.Discrete(self.job_slots+1)
-        
         state = self._get_obs()
         self.observation_space = spaces.Box(low=0,
-                                            high=255,
+                                            high=np.inf,
                                             shape=state.shape,
                                             dtype=state.dtype)
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
         energy_before = self.simulator.resource_manager.energy_consumption
-        #slow_before = self.simulator.jobs_manager.runtime_slowdown
+        slow_before = self.simulator.jobs_manager.runtime_slowdown
         mean_slow_before = self.simulator.jobs_manager.runtime_mean_slowdown
 
         try:
@@ -40,11 +39,11 @@ class GridEnv(gym.Env):
             self.simulator.schedule(-1)
 
         energy = self.simulator.resource_manager.energy_consumption - energy_before
-        #slowdown = self.simulator.jobs_manager.runtime_slowdown - slow_before
+        slowdown = self.simulator.jobs_manager.runtime_slowdown - slow_before
         mean_slowdown = self.simulator.jobs_manager.runtime_mean_slowdown - mean_slow_before
 
         obs = self._get_obs()
-        reward = self._get_reward(energy, mean_slowdown)
+        reward = -1*slowdown #self._get_reward(energy, mean_slowdown)
         done = not self.simulator.running_simulation
         info = self._get_info()
 

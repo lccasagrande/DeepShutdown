@@ -33,13 +33,12 @@ class BatsimHandler:
         self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
         workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD_DIR)
         self._workloads = [workloads_path + "/" + w for w in os.listdir(workloads_path) if w.endswith('.json')]
-        self._workload_idx = -1        
         self.nb_simulation = 0
         self.time_window = time_window
         self.job_slots = job_slots
         self.resource_manager = ResourceManager.from_xml(self._platform, time_window)
         self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
-        self.simulator = GridSimulator(self._get_workload(), self.jobs_manager)
+        self.simulator = GridSimulator(self._workloads[0], self.jobs_manager)
         self.backlog_width = backlog_width
         self._reset()
 
@@ -102,7 +101,7 @@ class BatsimHandler:
 
         self._start_ready_jobs()
 
-        self._wait_state_change()
+        self._update_state()
 
     def _wait_state_change(self):
         self._update_state()
@@ -191,19 +190,12 @@ class BatsimHandler:
         self.simulator.proceed_time(1)
         self.jobs_manager.update_state(1)
         self.resource_manager.update_state(1)
-        self.resource_manager.shut_down_unused()
+        #self.resource_manager.shut_down_unused()
         
     def _update_state(self):
         events = self.simulator.read_events()
         for event in events:
             self._handle_event(event)
-
-    def _get_workload(self):
-        if len(self._workloads) == self._workload_idx + 1:
-            self._workload_idx = -1
-
-        self._workload_idx += 1
-        return self._workloads[self._workload_idx]
 
     def _make_random_dir(self, path):
         num = 1
@@ -258,18 +250,31 @@ class BatsimHandler:
 
     def _get_compact_state(self):
         #nb_res = self.resource_manager.nb_resources
-        state = np.zeros(shape=(1 + self.job_slots*2), dtype=np.float)
+        state = np.zeros(shape=(self.nb_resources + self.job_slots*2 + 1), dtype=np.float)
+        #_, idle, sleeping = self.resource_manager.nb_resources_state()
 
-        state[0] = self.resource_manager.nb_avail_resources() / self.nb_resources
+
+        index = 0
+        for res in self.resource_manager.get_resources():
+            #state[index] = int(not res.is_sleeping)
+            state[index] = res.get_reserved_time() / self.time_window
+            index += 1
+
+        #state[0] = idle / self.nb_resources
+        #state[1] = sleeping / self.nb_resources
 
         jobs = self.jobs_manager.job_slots
-        index = 1
+        #print(self.simulator.time_since_last_new_job)
+        #max_waiting_time = self.jobs_manager.get_max_waiting_time()
+        #max_slowdown = self.jobs_manager.get_max_slowdown()
         for job in jobs:
             if job is not None:
                 state[index] = job.requested_resources / self.nb_resources
-                state[index+1] = job.requested_time
-                #state[index+1] = ((job.requested_time + job.waiting_time) / job.requested_time) - 1
+                state[index+1] = min(job.requested_time, self.time_window) / self.time_window
+                #state[index+2] = job.waiting_time / max_waiting_time if max_waiting_time != 0 else 0#job.estimate_slowdown() / max_slowdown if max_slowdown != 0 else 0
             index += 2
+        
+        state[-1] = self.simulator.time_since_last_new_job / float(self.simulator.max_tracking_time_since_last_job)
 
         return state
 

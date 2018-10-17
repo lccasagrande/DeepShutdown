@@ -9,6 +9,7 @@ class GridSimulator:
         self.jobs_manager = jobs_manager
         self.workload = self._get_workload(workload_fn)
         self.workload_nb_jobs = len(self.workload)
+        self.max_tracking_time_since_last_job = 10
         self.close()
 
     def close(self):
@@ -17,6 +18,7 @@ class GridSimulator:
         self.jobs_completed = -1
         self.running = False
         self.current_time = -1
+        self.time_since_last_new_job = -1
 
     def _get_workload(self, workload_fn):
         with open(workload_fn, 'r') as f:
@@ -70,12 +72,15 @@ class GridSimulator:
 
     def proceed_time(self, t):
         self.current_time += t
+        if self.time_since_last_new_job < self.max_tracking_time_since_last_job:
+            self.time_since_last_new_job += 1
 
     def start(self):
         self.curr_workload = self.workload.copy()
         self.current_time = 0
         self.jobs_submmited = 0
         self.jobs_completed = 0
+        self.time_since_last_new_job = 0
         self.running = True
 
     def read_events(self):
@@ -83,6 +88,7 @@ class GridSimulator:
         events = []
 
         for j in self.get_jobs_submmited(self.current_time):
+            self.time_since_last_new_job = 0
             self.jobs_submmited += 1
             events.append(self.get_job_submitted_event(self.current_time, j))
 

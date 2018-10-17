@@ -32,6 +32,22 @@ except ImportError:
     MPI = None
 
 
+
+@register("mlp_small")
+def mlp(num_layers=1, num_hidden=20, activation=tf.nn.relu, layer_norm=False):
+    def network_fn(X):
+        h = tf.layers.flatten(X)
+        for i in range(num_layers):
+            h = fc(h, 'mlp_fc{}'.format(i), nh=num_hidden, init_scale=np.sqrt(2))
+            if layer_norm:
+                h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
+            h = activation(h)
+
+        return h
+
+    return network_fn
+
+
 def build_env(args):
     nenv = args.num_env or multiprocessing.cpu_count()
 
@@ -69,19 +85,19 @@ def train(args):
     print('Training with PPO2')
     env = build_env(args)
 
-    # model = a2c.learn(env=env,
-    #                  network=network,
-    #                  seed=seed,
-    #                  nsteps=5,
-    #                  total_timesteps=total_timesteps,
-    #                  lr=2.5e-3,
-    #                  load_path=args.load_path)
+    #model = a2c.learn(env=env,
+    #                 network=args.network,
+    #                 seed=args.seed,
+    #                 nsteps=5,
+    #                 total_timesteps=int(args.num_timesteps),
+    #                 lr=1.e-3,
+    #                 load_path=args.load_path)
 
     model = ppo2.learn(
         env=env,
         seed=args.seed,
         total_timesteps=args.num_timesteps,
-        nsteps=256,
+        nsteps=32,
         lam=0.95,
         gamma=0.99,
         network=args.network,
@@ -92,7 +108,7 @@ def train(args):
         ent_coef=.01,
         cliprange=0.2,
         load_path=args.load_path)
-
+#
     return model, env
 
 
@@ -115,56 +131,63 @@ def train_model(args):
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
 
+def play(model, env, n_ep=1, render=False, reward_scale=1.):
+    def initialize_placeholders(nlstm=128, **kwargs):
+        return np.zeros((1, 2*nlstm)), np.zeros((1))
+
+    result = defaultdict(float)
+    state, dones = initialize_placeholders()
+    env.close()
+    obs = env.reset()
+    for i in range(1, n_ep+1):        
+        score, steps = 0, 0
+        while True:
+            if render:
+                env.render(mode='image')
+
+            actions, _, state, _ = model.step(obs, S=state, M=dones)
+            obs, rew, done, info = env.step(actions)
+            done = done.any() if isinstance(done, np.ndarray) else done
+
+            score += rew[0] * (1/reward_scale)
+            steps += 1
+
+            if done:
+                result['total_slowdown'] = info[0]['total_slowdown']
+                result['makespan'] = info[0]['makespan']
+                result['energy_consumed'] = info[0]['energy_consumed']
+                result['mean_slowdown'] = info[0]['mean_slowdown']
+                result['score'] = score
+                result['steps'] = steps
+                result['Episode'] = i
+                utils.print_episode_result("PPO2", result)
+                break
 
 def test_model(args):
-    def initialize_placeholders(nlstm=128, **kwargs):
-        return np.zeros((args.num_env or 1, 2*nlstm)), np.zeros((1))
-
-    assert args.load_path != None
+    args.load_path = args.save_path if args.load_path == None else args.load_path
+    args.save_path = None
     args.num_timesteps = 0
     args.num_env = 1
-    result = defaultdict(float)
 
     model, env = train(args)
     env.close()
     env = build_env(args)
-    env.close()
-    state, dones = initialize_placeholders()
-    obs = env.reset()
-    steps, score = 0, 0
-    while True:
-        if args.render:
-            env.render(mode='image')
-
-        actions, _, state, _ = model.step(obs, S=state, M=dones)
-        obs, rew, done, info = env.step(actions)
-        done = done.any() if isinstance(done, np.ndarray) else done
-
-        result['score'] += rew[0] * (1/args.reward_scale)
-        result['steps'] += 1
-
-        if done:
-            result['Episode'] = 1
-            result['Slowdown'] = info[0]['total_slowdown']
-            result['Makespan'] = info[0]['makespan']
-            utils.print_episode_result("PPO2", result)
-            break
-
-   #pd.DataFrame.from_dict(result).to_csv("benchmark/ppo.csv", index='Episode')
+    play(model, env, args.test_ep, args.render, args.reward_scale)
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
-    parser.add_argument('--network', help='Network', default='mlp', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=50e6)
-    parser.add_argument('--num_env', default=None, type=int)
-    parser.add_argument('--reward_scale', default=.1, type=float)
+    parser.add_argument('--network', help='Network', default='mlp_small', type=str)
+    parser.add_argument('--num_timesteps', type=int, default=1000000)
+    parser.add_argument('--num_env', default=12, type=int)
+    parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/ppo_slowdown_200', type=str)
+    parser.add_argument('--save_path', default='weights/a2c', type=str)
     parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
     parser.add_argument('--train', default=True, action='store_true')
-    parser.add_argument('--render', default=False, action='store_true')
+    parser.add_argument('--test_ep', default=1, type=int)
+    parser.add_argument('--render', default=True, action='store_true')
     args = parser.parse_args()
     return args
 

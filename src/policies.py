@@ -44,19 +44,27 @@ class User(Policy):
 
 class Random(Policy):
     def select_action(self, state):
-        jobs = get_jobs(state)
-        return choice(list(range(0, len(jobs)+1)))
+        return choice(list(range(0, len(state[2:])+1)))
+
+
+def get_available_res(state):
+    count = 0
+    for i in range(1,10,2):
+        if state[i] == 0:
+            count+=1
+    return count / 5
 
 
 class SJF(Policy):
     def select_action(self, state):
         action, slot, shortest_job = 0, 1, np.inf
-        nb_res = state[0]
-        jobs_state = state[1:]
+
+        nb_res = get_available_res(state)
+        jobs_state = state[10:-1]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             req_time = jobs_state[i+1]
-            if req_res != 0 and req_res <= nb_res and req_time < shortest_job:
+            if req_res != 0 and req_res <= nb_res and req_time <= shortest_job:
                 shortest_job = req_time
                 action = slot
             slot += 1
@@ -67,12 +75,12 @@ class SJF(Policy):
 class LJF(Policy):
     def select_action(self, state):
         action, slot, largest_job = 0, 1, -1
-        nb_res = state[0]
-        jobs_state = state[1:]
+        nb_res = get_available_res(state)
+        jobs_state = state[5:]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             req_time = jobs_state[i+1]
-            if req_res != 0 and req_res <= nb_res and req_time > largest_job:
+            if req_res != 0 and req_res <= nb_res and req_time >= largest_job:
                 largest_job = req_time
                 action = slot
             slot += 1
@@ -83,22 +91,25 @@ class LJF(Policy):
 class Tetris(Policy):
     def select_action(self, state):
         action, score, slot = 0, 0, 1
-        nb_res = state[0]
-        jobs_state = state[1:]
+        
+        nb_res = get_available_res(state)
+        jobs_state = state[5:]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
-            if req_res != 0 and req_res <= nb_res and req_res > score:
+            if req_res != 0 and req_res <= nb_res and req_res >= score:
                 score = req_res
                 action = slot
             slot += 1
+
         return action
 
 
 class FirstFit(Policy):
     def select_action(self, state):
         action, slot = 0, 1
-        nb_res = state[0]
-        jobs_state = state[1:]
+        
+        nb_res = get_available_res(state)
+        jobs_state = state[5:]
         for i in range(0, len(jobs_state), 2):
             req_res = jobs_state[i]
             if req_res != 0 and req_res <= nb_res:

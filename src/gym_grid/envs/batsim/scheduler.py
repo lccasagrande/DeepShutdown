@@ -137,6 +137,22 @@ class SchedulerManager():
             raise InvalidJobError("There is no job at this position to schedule")
         return job
 
+    def get_max_slowdown(self):
+        slowdown = 0
+        for j in self.job_slots:
+            if j is not None:
+                j_s = j.estimate_slowdown()
+                if j_s > slowdown:
+                    slowdown = j_s
+        return slowdown
+
+    def get_max_waiting_time(self):
+        waiting_time = 0
+        for j in self.job_slots:
+            if j is not None and j.waiting_time > waiting_time:
+                waiting_time = j.waiting_time
+        return waiting_time
+
     def on_job_allocated(self, index):
         job = self._job_slots.remove_at(index)
         self._jobs_allocated[job.id] = job
@@ -233,6 +249,9 @@ class Job(object):
 
         runtime_turnaround = self.waiting_time + self.runtime
         self.runtime_slowdown = runtime_turnaround / self.requested_time
+
+    def estimate_slowdown(self):
+        return ((self.requested_time + self.waiting_time) / self.requested_time)  - 1
 
     @staticmethod
     def from_json(json_dict):

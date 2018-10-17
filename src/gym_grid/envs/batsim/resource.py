@@ -27,6 +27,7 @@ class Resource:
         self.name = name
         self.id = id
         self.profiles = profiles
+        self.energy_to_turn_on = 0
         self.max_watt = self.profiles[Resource.PowerState.NORMAL]['watt_comp']
         self.min_watt = self.profiles[Resource.PowerState.SHUT_DOWN]['watt_idle']
         self.max_speed = self.profiles[Resource.PowerState.NORMAL]['speed']
@@ -50,7 +51,7 @@ class Resource:
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
-        return Resource(id, Resource.State.SLEEPING, Resource.PowerState.SHUT_DOWN, name, profiles, time_window)
+        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, profiles, time_window)
 
     @property
     def is_sleeping(self):
@@ -65,8 +66,13 @@ class Resource:
         curr_prop = self.profiles[self.pstate]
         return curr_prop['watt_comp'] if self.is_computing else curr_prop['watt_idle']
 
+    def get_reserved_time(self):
+        return 0 if len(self.queue) == 0 else self.queue[0].remaining_time
+
     def get_energy_consumption(self, time_passed):
-        return self.current_watt * time_passed
+        energy = (self.current_watt * time_passed) + self.energy_to_turn_on
+        self.energy_to_turn_on = 0
+        return energy
 
     def get_job(self):
         return min(self.queue, key=(lambda j: j.time_left_to_start)) if self.queue else None
@@ -77,10 +83,13 @@ class Resource:
         self.pstate = Resource.PowerState.SHUT_DOWN
 
     def wake_up(self):
+        if self.is_sleeping:
+            self.energy_to_turn_on += self.min_watt * 2
         self.state = Resource.State.IDLE
         self.pstate = Resource.PowerState.NORMAL
 
     def start_computing(self):
+        self.wake_up()
         self.pstate = Resource.PowerState.NORMAL
         self.state = Resource.State.COMPUTING
 
@@ -88,7 +97,8 @@ class Resource:
         if self.is_sleeping:  # SLEEP
             view = np.zeros(shape=self.time_window, dtype=np.uint8)
         else:
-            view = np.full(shape=self.time_window, fill_value=127, dtype=np.uint8)
+            view = np.full(shape=self.time_window,
+                           fill_value=127, dtype=np.uint8)
 
         if len(self.queue) == 0:
             return view
@@ -109,7 +119,8 @@ class Resource:
         self.queue.remove(job)
 
     def reset(self):
-        self.sleep()
+        self.energy_to_turn_on = 0
+        self.wake_up()
         self.queue.clear()
 
 
@@ -151,15 +162,20 @@ class ResourceManager:
     def is_available(self, resources):
         return not any(self.resources[r].is_computing for r in resources)
 
-    def nb_avail_resources(self):
-        count = 0
+    def nb_resources_state(self):
+        computing, idle, sleeping = 0, 0, 0
         for _, r in self.resources.items():
-            if not r.is_computing:
-                count += 1
-        return count
+            if r.is_sleeping:
+                sleeping += 1
+            elif r.is_computing:
+                computing += 1
+            else:
+                idle += 1
+        return computing, idle, sleeping
 
     def get_view(self):
-        state = np.zeros(shape=(self.time_window, self.nb_resources), dtype=np.uint8)
+        state = np.zeros(
+            shape=(self.time_window, self.nb_resources), dtype=np.uint8)
         for k, res in self.resources.items():
             state[:, k] = res.get_view()
 
@@ -182,7 +198,8 @@ class ResourceManager:
         return res
 
     def _select_resources(self, nb_res, time):
-        avail_resources = [k for k, r in self.resources.items() if not r.is_computing]
+        avail_resources = [
+            k for k, r in self.resources.items() if not r.is_computing]
         if len(avail_resources) >= nb_res:
             return avail_resources[0:nb_res], 0
 

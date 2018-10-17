@@ -34,14 +34,14 @@ class GridProcessor(Processor):
 
 def build_model(input_shape, output_shape):
     model = Sequential()
-    model.add(Dense(64, activation='relu', input_shape=input_shape))
+    model.add(Dense(32, activation='relu', input_shape=input_shape))
     model.add(Dense(output_shape, activation='linear'))
     print(model.summary())
     return model
 
 
 if __name__ == "__main__":
-    train = True
+    train = False
     weights_nb = "0"
     name = "ddqn_slowdown_small"
     seed = 123
@@ -63,7 +63,7 @@ if __name__ == "__main__":
                                         value_max=1.,
                                         value_min=.1,
                                         value_test=.05,
-                                        nb_steps=3000000)
+                                        nb_steps=75000)
 
     dqn = DQNAgent(model=model,
                    nb_actions=env.action_space.n,
@@ -72,12 +72,13 @@ if __name__ == "__main__":
                    memory=memory,
                    dueling_type='max',
                    enable_dueling_network=True,
+                   target_model_update=1000,
                    gamma=.99)
 
     dqn.compile(Adam(lr=.0001), metrics=['mae', 'mse'])
 
     callbacks = [
-        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=500000),
+        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=300000),
         FileLogger(log_path+'/log.json', interval=100),
         TensorBoard(log_dir=log_path,
                     write_graph=True, write_images=True)
@@ -85,13 +86,13 @@ if __name__ == "__main__":
     if train:
         dqn.fit(env=env,
                 callbacks=callbacks,
-                nb_steps=9000000,
+                nb_steps=300000,
                 log_interval=10000,
                 visualize=False,
                 verbose=1,
-                nb_max_episode_steps=500)
+                nb_max_episode_steps=60)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
     else:
         dqn.load_weights(weight_path+'/weights_'+weights_nb+'.h5f')
-        dqn.test(env, nb_episodes=1, visualize=True)
+        dqn.test(env, nb_episodes=1, visualize=False)
