@@ -44,7 +44,7 @@ class User(Policy):
 
 class Random(Policy):
     def select_action(self, state):
-        return choice(list(range(7)))
+        return choice(list(range(11)))
 
 
 def get_available_res(state):
@@ -52,7 +52,7 @@ def get_available_res(state):
     for i in range(10):
         if state[i] == 0:
             count+=1
-    return count / 5
+    return count
 
 
 class SJF(Policy):

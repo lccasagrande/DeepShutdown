@@ -111,7 +111,7 @@ if __name__ == "__main__":
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
-    run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=True)
+    run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=False)
     #run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
 
 

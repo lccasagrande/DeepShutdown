@@ -262,7 +262,7 @@ class BatsimHandler:
         index = 0
         for res in self.resource_manager.get_resources():
             #state[index] = int(not res.is_sleeping)
-            state[index] = res.get_reserved_time() / self.time_window
+            state[index] = res.get_reserved_time()# / self.time_window
             index += 1
 
         #state[0] = idle / self.nb_resources
@@ -274,8 +274,8 @@ class BatsimHandler:
         #max_slowdown = self.jobs_manager.get_max_slowdown()
         for job in jobs:
             if job is not None:
-                state[index] = job.requested_resources / self.nb_resources
-                state[index+1] = min(job.requested_time, self.time_window) / self.time_window
+                state[index] = job.requested_resources# / self.nb_resources
+                state[index+1] = min(job.requested_time, self.time_window)# / self.time_window
                 #state[index+2] = job.waiting_time / max_waiting_time if max_waiting_time != 0 else 0#job.estimate_slowdown() / max_slowdown if max_slowdown != 0 else 0
             index += 2
         

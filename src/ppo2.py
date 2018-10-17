@@ -33,6 +33,18 @@ except ImportError:
 
 
 
+@register("cnn_1")
+def cnn_small(**conv_kwargs):
+    def network_fn(X):
+        #h = tf.cast(X, tf.float32) / 255.
+
+        activ = tf.nn.relu
+        h = activ(conv(X, 'c1', nf=16, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+        h = conv_to_fc(h)
+        #h = activ(fc(h, 'fc1', nh=20, init_scale=np.sqrt(2)))
+        return h
+    return network_fn
+
 @register("mlp_small")
 def mlp(num_layers=1, num_hidden=20, activation=tf.nn.relu, layer_norm=False):
     def network_fn(X):
@@ -97,16 +109,17 @@ def train(args):
         env=env,
         seed=args.seed,
         total_timesteps=args.num_timesteps,
-        nsteps=32,
+        nsteps=64,
         lam=0.95,
         gamma=0.99,
         network=args.network,
-        lr=1.e-3,
+        lr=1.e-3, # f * 2.5e-4,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
-        cliprange=0.2,
+        value_network='copy',
+        cliprange=0.2, #lambda f : f * 0.1 value_network='copy' normalize_observations=True estimate_q=True
         load_path=args.load_path)
 #
     return model, env
@@ -179,13 +192,13 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--network', help='Network', default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=1500000)
+    parser.add_argument('--num_timesteps', type=int, default=3000000)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument('--save_path', default='weights/a2c', type=str)
     parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
-    parser.add_argument('--train', default=True, action='store_true')
+    parser.add_argument('--train', default=False, action='store_true')
     parser.add_argument('--test_ep', default=1, type=int)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
