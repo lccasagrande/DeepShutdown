@@ -118,8 +118,9 @@ def train(args):
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
+        normalize_observations=True,
         value_network='copy',
-        cliprange=0.2, #lambda f : f * 0.1 value_network='copy' normalize_observations=True estimate_q=True
+        cliprange=0.4, #0.2 value_network='copy' normalize_observations=True estimate_q=True
         load_path=args.load_path)
 #
     return model, env
@@ -196,9 +197,9 @@ def arg_parser():
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/a2c', type=str)
+    parser.add_argument('--save_path', default='weights/ppo', type=str)
     parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
-    parser.add_argument('--train', default=False, action='store_true')
+    parser.add_argument('--train', default=True, action='store_true')
     parser.add_argument('--test_ep', default=1, type=int)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
