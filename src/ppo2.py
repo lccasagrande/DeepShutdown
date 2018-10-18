@@ -109,7 +109,7 @@ def train(args):
         env=env,
         seed=args.seed,
         total_timesteps=args.num_timesteps,
-        nsteps=64,
+        nsteps=256,
         lam=0.95,
         gamma=0.99,
         network=args.network,
@@ -193,13 +193,13 @@ def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--network', help='Network', default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=5000000)
-    parser.add_argument('--num_env', default=12, type=int)
+    parser.add_argument('--num_timesteps', type=int, default=800000000)
+    parser.add_argument('--num_env', default=None, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/ppo', type=str)
-    parser.add_argument('--load_path', default=None, type=str) #"weights/ppo_slowdown"
-    parser.add_argument('--train', default=False, action='store_true')
+    parser.add_argument('--save_path', default='weights/ppo_1000', type=str)
+    parser.add_argument('--load_path', default=None, type=str)
+    parser.add_argument('--train', default=True, action='store_true')
     parser.add_argument('--test_ep', default=1, type=int)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
