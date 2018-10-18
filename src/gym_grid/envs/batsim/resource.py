@@ -51,7 +51,7 @@ class Resource:
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
-        return Resource(id, Resource.State.IDLE, Resource.PowerState.NORMAL, name, profiles, time_window)
+        return Resource(id, Resource.State.SLEEPING, Resource.PowerState.SHUT_DOWN, name, profiles, time_window)
 
     @property
     def is_sleeping(self):
@@ -120,7 +120,7 @@ class Resource:
 
     def reset(self):
         self.energy_to_turn_on = 0
-        self.wake_up()
+        self.sleep()
         self.queue.clear()
 
 

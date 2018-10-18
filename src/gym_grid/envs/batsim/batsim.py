@@ -190,7 +190,7 @@ class BatsimHandler:
         self.simulator.proceed_time(1)
         self.jobs_manager.update_state(1)
         self.resource_manager.update_state(1)
-        #self.resource_manager.shut_down_unused()
+        self.resource_manager.shut_down_unused()
         
     def _update_state(self):
         events = self.simulator.read_events()
