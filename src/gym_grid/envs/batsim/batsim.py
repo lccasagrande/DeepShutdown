@@ -38,7 +38,7 @@ class BatsimHandler:
         self.job_slots = job_slots
         self.resource_manager = ResourceManager.from_xml(self._platform, time_window)
         self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
-        self.simulator = GridSimulator(self._workloads[0], self.jobs_manager)
+        self.simulator = GridSimulator(self._workloads, self.jobs_manager)
         self.backlog_width = backlog_width
         self._reset()
 
@@ -247,7 +247,8 @@ class BatsimHandler:
         state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
         # BACKLOG
-        state[:, job_slot_end:shape[1]] = self.get_backlog_state()
+        backlog_end = self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width
+        state[:, job_slot_end:backlog_end] = self.get_backlog_state()
 
         state[:, -1] = self.get_time_state()
 

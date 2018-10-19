@@ -1,33 +1,48 @@
 import json
+import numpy as np
 from sortedcontainers import SortedList
 from .scheduler import Job
 from .network import BatsimEvent
 
 
 class GridSimulator:
-    def __init__(self, workload_fn, jobs_manager):
+    def __init__(self, workloads, jobs_manager):
         self.jobs_manager = jobs_manager
-        self.workload = self._get_workload(workload_fn)
-        self.workload_nb_jobs = len(self.workload)
+        self.workloads = self._load_workloads(workloads)
+        self.workload_idx = 0
+        self.workload_nb_jobs = -1
         self.max_tracking_time_since_last_job = 10
         self.close()
 
     def close(self):
         self.curr_workload = None
+        self.curr_workload_name = None
+        self.workload_nb_jobs = -1
         self.jobs_submmited = -1
         self.jobs_completed = -1
         self.running = False
         self.current_time = -1
         self.time_since_last_new_job = -1
 
-    def _get_workload(self, workload_fn):
-        with open(workload_fn, 'r') as f:
-            data = json.load(f)
-            jobs = SortedList(key=lambda f: f.submit_time)
-            for j in data['jobs']:
-                jobs.add(Job.from_json(j))
+    def _load_workloads(self, workloads):
+        def get_jobs(fn):
+            with open(fn, 'r') as f:
+                data = json.load(f)
+                jobs = SortedList(key=lambda f: f.submit_time)
+                for j in data['jobs']:
+                    jobs.add(Job.from_json(j))
+            return jobs
 
-        return jobs
+        return [(get_jobs(w), w) for w in workloads]
+
+    def select_workload(self):
+        if len(self.workloads) == self.workload_idx:
+            self.workload_idx = 0
+            np.random.shuffle(self.workloads)
+
+        w = self.workloads[self.workload_idx]
+        self.workload_idx += 1
+        return w[0].copy(), w[1]
 
     def get_jobs_completed(self, time):
         jobs_running = self.jobs_manager.jobs_running
@@ -76,7 +91,8 @@ class GridSimulator:
             self.time_since_last_new_job += 1
 
     def start(self):
-        self.curr_workload = self.workload.copy()
+        self.curr_workload, self.curr_workload_name = self.select_workload()
+        self.workload_nb_jobs = len(self.curr_workload)
         self.current_time = 0
         self.jobs_submmited = 0
         self.jobs_completed = 0

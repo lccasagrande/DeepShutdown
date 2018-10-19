@@ -7,6 +7,8 @@ import gym
 import csv
 import numpy as np
 import pandas as pd
+import ppo2 as ppo
+from shutil import copyfile
 
 import plotly.plotly as py
 import plotly.graph_objs as go
@@ -25,7 +27,6 @@ def get_trajectory(env, policy, metrics, visualize=False, nb_steps=None):
 
         action = policy.select_action(state)
         state, reward, done, info = env.step(action)
-
 
         steps += 1
         score += reward
@@ -100,9 +101,37 @@ def plot_results(data, name):
     fig = go.Figure(data=get_bar_plot(data), layout=go.Layout(title=name))
     plot(fig, filename=name+'.html')
 
+import subprocess
+
+def run_ppo():
+    workloads = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    w_dest = "src/gym_grid/envs/batsim/files/workload"
+    for w in workloads:
+        # CLEAN
+        shutil.rmtree(w_dest)
+        utils.create_dir(w_dest)
+
+        # CPY
+        w_path = "src/gym_grid/envs/batsim/files/{}/{}.json".format(w, w)
+        copyfile(w_path, w_dest + "/{}.json".format(w))
+
+        # RUN
+        results = "tests/{}".format(w)
+        utils.create_dir(results)
+
+        log_fn = results + "/log"
+        weight_fn = results + "/ppo.hdf5"
+        timesteps = 1500000 * int(w)
+        #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=False)
+
+        cmd = "python src/ppo2.py --num_timesteps {} --save_path {} > {}".format(timesteps,weight_fn,log_fn)
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+        process.wait()
+
 
 if __name__ == "__main__":
-    metrics = ['total_slowdown', 'makespan', 'energy_consumed', 'mean_slowdown']
+    metrics = ['total_slowdown', 'makespan',
+               'energy_consumed', 'mean_slowdown']
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), SJF(), LJF(), Random()]
     n_episodes = 1
@@ -111,8 +140,9 @@ if __name__ == "__main__":
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
+    run_ppo()
     #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=False)
-    run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
+    #run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
 
 
 # %%

@@ -14,7 +14,7 @@ class GridEnv(gym.Env):
     def __init__(self):
         self.job_slots = 5
         self.time_window = 20
-        self.backlog_width = 1
+        self.backlog_width = 3
         self.energy_factor = .5
         self.slowd_factor = .5
         self.simulator = BatsimHandler(job_slots=self.job_slots,
