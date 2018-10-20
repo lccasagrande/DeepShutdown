@@ -35,6 +35,11 @@ class LinearAnnealEpsGreedy():
         return max(self.value_min, a * float(step) + b)
 
 
+def overwrite_dir(dir):
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    create_dir(dir)
+
 def create_dir(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)

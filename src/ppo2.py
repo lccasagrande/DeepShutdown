@@ -113,16 +113,16 @@ def train(args):
         total_timesteps=args.num_timesteps,
         nsteps=64,
         lam=0.95,
-        gamma=0.99,
+        gamma=1,
         network=args.network,
-        lr=7.e-4,  # 1.e-3,#1.e-3, # f * 2.5e-4,
+        lr=5.e-4,  # 1.e-3,#1.e-3, # f * 2.5e-4,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
         ent_coef=.01,
         # normalize_observations=True,
         value_network='copy',
-        cliprange=0.3,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
+        cliprange=0.1,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
         load_path=args.load_path)
     return model, env
 
@@ -176,7 +176,7 @@ def play(model, env, n_ep=1, render=False, reward_scale=1., metrics=[]):
                 results['Episode'].append(i)
                 utils.print_episode_result("PPO2", results)
                 break
-    
+
     return results
 
 
@@ -201,13 +201,13 @@ def arg_parser():
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--network', help='Network',
                         default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=5000000)
+    parser.add_argument('--num_timesteps', type=int, default=1e6)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/ppo_train', type=str)
+    parser.add_argument('--save_path', default='weights/ppo', type=str)
     parser.add_argument('--load_path', default=None, type=str)
-    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--test', default=False, action='store_true')
     parser.add_argument('--test_outputfn', default=None, type=str)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
@@ -215,8 +215,8 @@ def arg_parser():
 
 
 def main(args):
-    metrics = ['total_slowdown', 'makespan',
-               'energy_consumed', 'mean_slowdown']
+    metrics = ['total_slowdown', 'makespan', 'energy_consumed',
+               'mean_slowdown', 'total_turnaround_time', 'total_waiting_time']
     if args.test:
         test_model(args, metrics)
     else:

@@ -19,9 +19,8 @@ from .simulator import GridSimulator
 
 
 class BatsimHandler:
-    PLATFORM = "platform_hg_10.xml"
-    CONFIG = "cfg.json"
-    WORKLOAD_DIR = "workload"
+    PLATFORM = "platforms/platform_hg_10.xml"
+    WORKLOAD_DIR = "workloads"
     OUTPUT_DIR = "results/batsim"
 
     def __init__(self, job_slots, time_window, backlog_width):

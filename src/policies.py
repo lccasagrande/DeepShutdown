@@ -54,9 +54,9 @@ def get_avail_res_from_img(state):
 
 def get_jobs_from_img(state):
     slot = 1
-    jobs_state = state[:, 10:60]
+    jobs_state = state[:, 10:110]
     jobs = []
-    for i in range(0, 50, 10):
+    for i in range(0, 100, 10):
         if jobs_state[0,i] != 0:
             res = np.count_nonzero(jobs_state[0,i:i+10])
             time = np.count_nonzero(jobs_state[:,i])
