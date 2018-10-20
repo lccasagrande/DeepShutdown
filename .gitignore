@@ -2,6 +2,7 @@
 .vscode
 results/*
 log/
+tests/
 benchmark
 tmp
 src/test.py

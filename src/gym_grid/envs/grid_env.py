@@ -43,7 +43,7 @@ class GridEnv(gym.Env):
         mean_slowdown = self.simulator.jobs_manager.runtime_mean_slowdown - mean_slow_before
 
         obs = self._get_obs()
-        reward = -1*slowdown #self._get_reward(energy, mean_slowdown)
+        reward = -1*mean_slowdown #self._get_reward(energy, mean_slowdown)
         done = not self.simulator.running_simulation
         info = self._get_info()
 

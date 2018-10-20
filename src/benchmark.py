@@ -1,6 +1,13 @@
 from gym_grid.envs.grid_env import GridEnv
 from collections import deque
 from policies import Tetris, SJF, LJF, Random, FirstFit, User
+from shutil import copyfile
+from plotly.offline import plot
+from multiprocessing import Process, Manager
+from collections import defaultdict
+import plotly.plotly as py
+import plotly.graph_objs as go
+import plotly.tools as tls
 import utils
 import shutil
 import gym
@@ -8,14 +15,7 @@ import csv
 import numpy as np
 import pandas as pd
 import ppo2 as ppo
-from shutil import copyfile
-
-import plotly.plotly as py
-import plotly.graph_objs as go
-import plotly.tools as tls
-from plotly.offline import plot
-from multiprocessing import Process, Manager
-from collections import defaultdict
+import subprocess
 
 
 def get_trajectory(env, policy, metrics, visualize=False, nb_steps=None):
@@ -41,48 +41,40 @@ def get_trajectory(env, policy, metrics, visualize=False, nb_steps=None):
 
 def run_experiment(policy, n_ep, seed, metrics, results, verbose=False, visualize=False):
     policy_name = policy.__class__.__name__
-    result = defaultdict(list)
     env = gym.make('grid-v0')
     env.seed(seed)
 
-    for i in range(1, n_ep + 1):
-        traj_result = get_trajectory(env, policy, metrics, visualize)
-        traj_result['Episode'] = i
+    traj_result = get_trajectory(env, policy, metrics, visualize)
+    traj_result['Episode'] = 1
+    if verbose:
+        utils.print_episode_result(policy_name, traj_result)
 
-        for k, v in traj_result.items():
-            result[k].append(v)
-
-        if verbose:
-            utils.print_episode_result(policy_name, traj_result)
-    results[policy_name] = result
+    results[policy_name] = traj_result
 
 
-def run(output_dir, policies, n_ep, seed, metrics=[], plot=True, verbose=True, visualize=False):
+def run_heuristics(output_dir, policies, n_ep, seed, results, workloads, metrics=[], plot=True, verbose=False, visualize=False):
     np.random.seed(seed)
     manager = Manager()
-    manager_result = manager.dict()
-    process = []
+    for w in workloads:
+        process = []
+        manager_result = manager.dict()
+        load_workload(w)
 
-    for policy in policies:
-        p = Process(target=run_experiment, args=(
-            policy, n_ep, seed, metrics, manager_result, verbose, visualize, ))
-        p.start()
-        process.append(p)
+        for policy in policies:
+            p = Process(target=run_experiment, args=(
+                policy, n_ep, seed, metrics, manager_result, verbose, visualize, ))
+            p.start()
+            process.append(p)
 
-    for p in process:
-        p.join()
+        for p in process:
+            p.join()
 
-    # PRINT
-    for metric in metrics:
-        tmp = dict()
-        for key, value in manager_result.items():
-            tmp[key] = value[metric]
-
-        if plot:
-            plot_results(tmp, metric)
-
-        dt = pd.DataFrame.from_dict(tmp)
-        dt.to_csv(output_dir+metric+".csv", index=False)
+        # PRINT
+        for pol, res in manager_result.items():
+            results['policy'].append(pol)
+            results['workload'].append(w)
+            for met, val in res.items():
+                results[met].append(val)
 
 
 def plot_results(data, name):
@@ -101,48 +93,73 @@ def plot_results(data, name):
     fig = go.Figure(data=get_bar_plot(data), layout=go.Layout(title=name))
     plot(fig, filename=name+'.html')
 
-import subprocess
 
-def run_ppo():
-    workloads = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
-    w_dest = "src/gym_grid/envs/batsim/files/workload"
-    for w in workloads:
-        # CLEAN
-        shutil.rmtree(w_dest)
-        utils.create_dir(w_dest)
+def load_workload(workload):
+    dest = "src/gym_grid/envs/batsim/files/workload"
+    shutil.rmtree(dest)
+    utils.create_dir(dest)
+    w_path = "src/gym_grid/envs/batsim/files/{}/{}.json".format(
+        workload, workload)
+    copyfile(w_path, dest + "/{}.json".format(workload))
 
-        # CPY
-        w_path = "src/gym_grid/envs/batsim/files/{}/{}.json".format(w, w)
-        copyfile(w_path, w_dest + "/{}.json".format(w))
 
-        # RUN
-        results = "tests/{}".format(w)
-        utils.create_dir(results)
+def run_ppo(output_dir, workloads, timesteps, metrics, results):
+    def exec_ppo(workload, timesteps, metrics):
+        def train(timesteps, weight_fn, log):
+            args = "--num_timesteps {} --save_path {}".format(
+                int(timesteps), weight_fn)
+            cmd = "python src/ppo2.py {} > {}".format(args, log)
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            process.wait()
 
-        log_fn = results + "/log"
-        weight_fn = results + "/ppo.hdf5"
-        timesteps = 1500000 * int(w)
-        #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=False)
+        def test(weight_fn, output_fn):
+            args = "--save_path {} --test --test_outputfn {}".format(
+                weight_fn, output_fn)
+            cmd = "python src/ppo2.py {}".format(args)
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            process.wait()
 
-        cmd = "python src/ppo2.py --num_timesteps {} --save_path {} > {}".format(timesteps,weight_fn,log_fn)
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-        process.wait()
+        output_dir = "tests/{}".format(workload)
+        utils.create_dir(output_dir)
+        weight_fn = output_dir+"/ppo.hdf5"
+        result_fn = output_dir+"/results.csv"
+
+        train(timesteps, weight_fn, output_dir+"/log")
+        test(weight_fn, result_fn)
+        return pd.read_csv(result_fn).to_dict(orient='records')[0]
+
+    for i, workload in enumerate(workloads):
+        load_workload(workload)
+        result = exec_ppo(workload, timesteps[i], metrics)
+
+        result['policy'] = "PPO"
+        result['workload'] = workload
+        for metric, value in result.items():
+            results[metric].append(value)
 
 
 if __name__ == "__main__":
-    metrics = ['total_slowdown', 'makespan',
-               'energy_consumed', 'mean_slowdown']
+    metrics = ['total_slowdown', 'makespan','energy_consumed', 'mean_slowdown']
+    workloads = ['10']#, '3', '4', '5', '6', '7', '8', '9', '10']
+    timesteps = [5e6]#, 2.5e6, 3e6, 3.5e6, 4e6, 6e6, 7e6, 8e6]
     output_dir = 'benchmark/'
     policies = [FirstFit(), Tetris(), SJF(), LJF(), Random()]
     n_episodes = 1
     seed = 123
+    results = defaultdict(list)
+
     shutil.rmtree(output_dir, ignore_errors=True)
     shutil.rmtree('results', ignore_errors=True)
     utils.create_dir(output_dir)
     utils.create_dir('results')
-    run_ppo()
-    #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=False)
-    #run(output_dir, policies, n_episodes, seed, metrics=metrics, plot=False, verbose=True)
+
+    run_ppo(output_dir, workloads, timesteps, metrics, results)
+
+    run_heuristics(output_dir, policies, n_episodes, seed, results, workloads, metrics=metrics, plot=False, verbose=False)
+
+    dt = pd.DataFrame.from_dict(results)
+    dt.to_csv(output_dir+"ppo_benchmark.csv", index=False)
+    #run_experiment(SJF(), n_episodes, seed, metrics, {}, verbose=True, visualize=True)
 
 
 # %%

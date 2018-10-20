@@ -173,8 +173,7 @@ class ResourceManager:
         return computing, idle, sleeping
 
     def get_view(self):
-        state = np.zeros(
-            shape=(self.time_window, self.nb_resources), dtype=np.float)
+        state = np.zeros(shape=(self.time_window, self.nb_resources), dtype=np.float)
         for k, res in self.resources.items():
             state[:, k] = res.get_view()
 

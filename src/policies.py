@@ -47,6 +47,23 @@ class Random(Policy):
         return choice(list(range(11)))
 
 
+def get_avail_res_from_img(state):
+    res = state[0,0:10]
+    occuped = np.count_nonzero(res)
+    return len(res) - occuped
+
+def get_jobs_from_img(state):
+    slot = 1
+    jobs_state = state[:, 10:60]
+    jobs = []
+    for i in range(0, 50, 10):
+        if jobs_state[0,i] != 0:
+            res = np.count_nonzero(jobs_state[0,i:i+10])
+            time = np.count_nonzero(jobs_state[:,i])
+            jobs.append((res, time, slot))
+        slot += 1
+    return jobs
+
 def get_available_res(state):
     count = 0
     for i in range(10):
@@ -57,62 +74,53 @@ def get_available_res(state):
 
 class SJF(Policy):
     def select_action(self, state):
-        action, slot, shortest_job = 0, 1, np.inf
-
-        nb_res = get_available_res(state)
-        jobs_state = state[10:-1]
-        for i in range(0, len(jobs_state), 2):
-            req_res = jobs_state[i]
-            req_time = jobs_state[i+1]
-            if req_res != 0 and req_res <= nb_res and req_time <= shortest_job:
-                shortest_job = req_time
-                action = slot
-            slot += 1
+        action, shortest_job = 0, np.inf
+        nb_res = get_avail_res_from_img(state)
+        jobs = get_jobs_from_img(state)
+        for j in jobs:
+            if j[0] <= nb_res and j[1] < shortest_job:
+                shortest_job = j[1]
+                action = j[2]
 
         return action
 
 
 class LJF(Policy):
     def select_action(self, state):
-        action, slot, largest_job = 0, 1, -1
-        nb_res = get_available_res(state)
-        jobs_state = state[10:-1]
-        for i in range(0, len(jobs_state), 2):
-            req_res = jobs_state[i]
-            req_time = jobs_state[i+1]
-            if req_res != 0 and req_res <= nb_res and req_time >= largest_job:
-                largest_job = req_time
-                action = slot
-            slot += 1
+        action, largest_job = 0,-1
+
+        nb_res = get_avail_res_from_img(state)
+        jobs = get_jobs_from_img(state)
+        for j in jobs:
+            if j[0] <= nb_res and j[1] > largest_job:
+                largest_job = j[1]
+                action = j[2]
 
         return action
 
 
 class Tetris(Policy):
     def select_action(self, state):
-        action, score, slot = 0, 0, 1
-        
-        nb_res = get_available_res(state)
-        jobs_state = state[10:-1]
-        for i in range(0, len(jobs_state), 2):
-            req_res = jobs_state[i]
-            if req_res != 0 and req_res <= nb_res and req_res >= score:
-                score = req_res
-                action = slot
-            slot += 1
+        action, score, = 0, 0
+
+        nb_res = get_avail_res_from_img(state)
+        jobs = get_jobs_from_img(state)
+        for j in jobs:
+            if j[0] <= nb_res and j[0] > score:
+                score = j[0]
+                action = j[2]
 
         return action
 
 
 class FirstFit(Policy):
     def select_action(self, state):
-        action, slot = 0, 1
+        action = 0
         
-        nb_res = get_available_res(state)
-        jobs_state = state[10:-1]
-        for i in range(0, len(jobs_state), 2):
-            req_res = jobs_state[i]
-            if req_res != 0 and req_res <= nb_res:
-                return slot
-            slot += 1
+        nb_res = get_avail_res_from_img(state)
+        jobs = get_jobs_from_img(state)
+        for j in jobs:
+            if j[0] <= nb_res:
+                return j[2]
+
         return action

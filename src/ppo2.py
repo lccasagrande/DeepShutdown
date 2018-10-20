@@ -32,25 +32,27 @@ except ImportError:
     MPI = None
 
 
-
 @register("cnn_1")
 def cnn_small(**conv_kwargs):
     def network_fn(X):
         #h = tf.cast(X, tf.float32) / 255.
 
         activ = tf.nn.relu
-        h = activ(conv(X, 'c1', nf=16, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
+        h = activ(conv(X, 'c1', nf=16, rf=2, stride=1,
+                       init_scale=np.sqrt(2), **conv_kwargs))
         h = conv_to_fc(h)
         #h = activ(fc(h, 'fc1', nh=20, init_scale=np.sqrt(2)))
         return h
     return network_fn
+
 
 @register("mlp_small")
 def mlp(num_layers=1, num_hidden=20, activation=tf.nn.relu, layer_norm=False):
     def network_fn(X):
         h = tf.layers.flatten(X)
         for i in range(num_layers):
-            h = fc(h, 'mlp_fc{}'.format(i), nh=num_hidden, init_scale=np.sqrt(2))
+            h = fc(h, 'mlp_fc{}'.format(i),
+                   nh=num_hidden, init_scale=np.sqrt(2))
             if layer_norm:
                 h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
             h = activation(h)
@@ -63,9 +65,9 @@ def mlp(num_layers=1, num_hidden=20, activation=tf.nn.relu, layer_norm=False):
 def build_env(args):
     nenv = args.num_env or multiprocessing.cpu_count()
 
-    get_session(tf.ConfigProto(allow_soft_placement=True,
-                               intra_op_parallelism_threads=1,
-                               inter_op_parallelism_threads=1))
+    # get_session(tf.ConfigProto(allow_soft_placement=True,
+    #                           intra_op_parallelism_threads=1,
+    #                           inter_op_parallelism_threads=1))
 
     env = make_vec_env(args.env, nenv, args.seed,
                        reward_scale=args.reward_scale)
@@ -97,7 +99,7 @@ def train(args):
     print('Training with PPO2')
     env = build_env(args)
 
-    #model = a2c.learn(env=env,
+    # model = a2c.learn(env=env,
     #                 network=args.network,
     #                 seed=args.seed,
     #                 nsteps=5,
@@ -113,14 +115,14 @@ def train(args):
         lam=0.95,
         gamma=0.99,
         network=args.network,
-        lr= 1.e-3, #1.e-3,#1.e-3, # f * 2.5e-4,
+        lr=7.e-4,  # 1.e-3,#1.e-3, # f * 2.5e-4,
         noptepochs=4,
         log_interval=1,
         nminibatches=4,
-        ent_coef=.02,
-        normalize_observations=True,
+        ent_coef=.01,
+        # normalize_observations=True,
         value_network='copy',
-        cliprange=0.4, #0.2 value_network='copy' normalize_observations=True estimate_q=True
+        cliprange=0.3,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
         load_path=args.load_path)
     return model, env
 
@@ -144,15 +146,16 @@ def train_model(args):
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
 
-def play(model, env, n_ep=1, render=False, reward_scale=1.):
+
+def play(model, env, n_ep=1, render=False, reward_scale=1., metrics=[]):
     def initialize_placeholders(nlstm=128, **kwargs):
         return np.zeros((1, 2*nlstm)), np.zeros((1))
 
-    result = defaultdict(float)
+    results = defaultdict(list)
     state, dones = initialize_placeholders()
     env.close()
     obs = env.reset()
-    for i in range(1, n_ep+1):        
+    for i in range(1, n_ep+1):
         score, steps = 0, 0
         while True:
             if render:
@@ -166,17 +169,18 @@ def play(model, env, n_ep=1, render=False, reward_scale=1.):
             steps += 1
 
             if done:
-                result['total_slowdown'] = info[0]['total_slowdown']
-                result['makespan'] = info[0]['makespan']
-                result['energy_consumed'] = info[0]['energy_consumed']
-                result['mean_slowdown'] = info[0]['mean_slowdown']
-                result['score'] = score
-                result['steps'] = steps
-                result['Episode'] = i
-                utils.print_episode_result("PPO2", result)
+                for m in metrics:
+                    results[m].append(info[0][m])
+                results['score'].append(score)
+                results['steps'].append(steps)
+                results['Episode'].append(i)
+                utils.print_episode_result("PPO2", results)
                 break
+    
+    return results
 
-def test_model(args):
+
+def test_model(args, metrics=[]):
     args.load_path = args.save_path if args.load_path == None else args.load_path
     args.save_path = None
     args.num_timesteps = 0
@@ -185,32 +189,38 @@ def test_model(args):
     model, env = train(args)
     env.close()
     env = build_env(args)
-    play(model, env, args.test_ep, args.render, args.reward_scale)
+    results = play(model, env, render=args.render,
+                   reward_scale=args.reward_scale, metrics=metrics)
+    if args.test_outputfn is not None:
+        dt = pd.DataFrame.from_dict(results)
+        dt.to_csv(args.test_outputfn, index=False)
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
-    parser.add_argument('--network', help='Network', default='mlp_small', type=str)
+    parser.add_argument('--network', help='Network',
+                        default='mlp_small', type=str)
     parser.add_argument('--num_timesteps', type=int, default=5000000)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/ppo_5100', type=str)
+    parser.add_argument('--save_path', default='weights/ppo_train', type=str)
     parser.add_argument('--load_path', default=None, type=str)
-    parser.add_argument('--train', default=True, action='store_true')
-    parser.add_argument('--test_ep', default=1, type=int)
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--test_outputfn', default=None, type=str)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()
     return args
 
 
 def main(args):
-    if args.train:
-        train_model(args)
+    metrics = ['total_slowdown', 'makespan',
+               'energy_consumed', 'mean_slowdown']
+    if args.test:
+        test_model(args, metrics)
     else:
-        test_model(args)
-
+        train_model(args)
     print("Done!")
 
 

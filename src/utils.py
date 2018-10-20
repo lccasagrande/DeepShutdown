@@ -13,11 +13,13 @@ import os
 import shutil
 import numpy as np
 
-
 def print_episode_result(name, result):
     msg = name
     for k, value in result.items():
-        msg += " {} [{}] ".format(k, value)
+        if isinstance(value, list):
+            msg += " {} [{}] ".format(k, value[-1])
+        else:
+            msg += " {} [{}] ".format(k, value)
     print(msg)
 
 
