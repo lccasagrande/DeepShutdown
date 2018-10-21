@@ -196,12 +196,20 @@ class ResourceManager:
         return res
 
     def _select_resources(self, nb_res, time):
-        avail_resources = [
-            k for k, r in self.resources.items() if not r.is_computing]
-        if len(avail_resources) >= nb_res:
-            return avail_resources[0:nb_res], 0
+        state = self.get_view()
+        for t in range(self.time_window-time+1):
+            avail_resources = [r for r in range(self.nb_resources) if np.count_nonzero(state[t:t+time, r]) == 0]
+            if len(avail_resources) >= nb_res:
+                return avail_resources[0:nb_res], t
 
         raise UnavailableResourcesError("There is no resource available.")
+
+    #def _select_resources(self, nb_res, time):
+    #    avail_resources = [k for k, r in self.resources.items() if not r.is_computing]
+    #    if len(avail_resources) >= nb_res:
+    #        return avail_resources[0:nb_res], 0
+#
+    #    raise UnavailableResourcesError("There is no resource available.")
 
     def update_state(self, time_passed):
         assert time_passed != 0

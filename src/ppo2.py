@@ -199,8 +199,7 @@ def test_model(args, metrics=[]):
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
-    parser.add_argument('--network', help='Network',
-                        default='mlp_small', type=str)
+    parser.add_argument('--network', help='Network',default='mlp_small', type=str)
     parser.add_argument('--num_timesteps', type=int, default=1e6)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)

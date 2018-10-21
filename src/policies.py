@@ -48,27 +48,29 @@ class Random(Policy):
 
 
 def get_avail_res_from_img(state):
-    res = state[0,0:10]
+    res = state[0, 0:10]
     occuped = np.count_nonzero(res)
     return len(res) - occuped
+
 
 def get_jobs_from_img(state):
     slot = 1
     jobs_state = state[:, 10:110]
     jobs = []
     for i in range(0, 100, 10):
-        if jobs_state[0,i] != 0:
-            res = np.count_nonzero(jobs_state[0,i:i+10])
-            time = np.count_nonzero(jobs_state[:,i])
+        if jobs_state[0, i] != 0:
+            res = np.count_nonzero(jobs_state[0, i:i+10])
+            time = np.count_nonzero(jobs_state[:, i])
             jobs.append((res, time, slot))
         slot += 1
     return jobs
+
 
 def get_available_res(state):
     count = 0
     for i in range(10):
         if state[i] == 0:
-            count+=1
+            count += 1
     return count
 
 
@@ -87,7 +89,7 @@ class SJF(Policy):
 
 class LJF(Policy):
     def select_action(self, state):
-        action, largest_job = 0,-1
+        action, largest_job = 0, -1
 
         nb_res = get_avail_res_from_img(state)
         jobs = get_jobs_from_img(state)
@@ -99,7 +101,7 @@ class LJF(Policy):
         return action
 
 
-class Tetris(Policy):
+class Packer(Policy):
     def select_action(self, state):
         action, score, = 0, 0
 
@@ -113,10 +115,33 @@ class Tetris(Policy):
         return action
 
 
+class Tetris(Policy):
+    def __init__(self, knob=0.5):
+        self.knob = knob
+
+    def select_action(self, state):
+        action, score, = 0, 0
+
+        nb_res = get_avail_res_from_img(state)
+        jobs = get_jobs_from_img(state)
+        for j in jobs:
+            if j[0] <= nb_res:
+                sjf_score = 1 / float(j[1])
+                align_score = j[0]
+
+                combined_score = (self.knob * align_score) + \
+                    ((1-self.knob) * sjf_score)
+                if combined_score > score:
+                    score = combined_score
+                    action = j[2]
+
+        return action
+
+
 class FirstFit(Policy):
     def select_action(self, state):
         action = 0
-        
+
         nb_res = get_avail_res_from_img(state)
         jobs = get_jobs_from_img(state)
         for j in jobs:
