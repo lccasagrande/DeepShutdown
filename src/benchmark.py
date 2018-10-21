@@ -127,12 +127,12 @@ def run_benchmark(input_dir, timesteps, metrics, policies):
         workloads_path = os.path.join(input_dir, test, "workloads")
         workloads = os.listdir(workloads_path)
         assert len(workloads) == len(timesteps)
-        for i, workload in enumerate(workloads):
+        for workload in workloads:
             workload_path = os.path.join(workloads_path, workload)
             load_workloads(workload_path)
 
             print("*** PPO *** test {} - workload {} *** START ***".format(test, workload))
-            get_ppo_results(timesteps[i], metrics, workload_path, test, workload, results)
+            get_ppo_results(timesteps[workload], metrics, workload_path, test, workload, results)
             print("*** PPO *** test {} - workload {} *** END ***".format(test, workload))
 
             print("*** HEURISTIC *** test {} - workload {}  *** START ***".format(test, workload))
@@ -146,7 +146,7 @@ def run_benchmark(input_dir, timesteps, metrics, policies):
 
 if __name__ == "__main__":
     metrics = ['total_slowdown', 'makespan','energy_consumed', 'mean_slowdown','total_turnaround_time','total_waiting_time']
-    timesteps = [5e5, 1e6, 2e6, 4e6, 7e6, 9e6, 11e6, 13e6, 15e6, 19e6]
+    timesteps = {'1':5e5, '2':1e6, '3':2e6, '4':4e6, '5':7e6, '6':9e6, '7':11e6, '8':13e6, '9':15e6, '10':19e6}
     input_dir = 'Benchmark'
     policies = [FirstFit(), Tetris(), SJF(), Random(), Packer()]
     utils.overwrite_dir('results')
