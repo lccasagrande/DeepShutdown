@@ -12,7 +12,7 @@ import numpy as np
 
 class GridEnv(gym.Env):
     def __init__(self):
-        self.job_slots = 5
+        self.job_slots = 10
         self.time_window = 20
         self.backlog_width = 3
         self.energy_factor = .5

@@ -1,0 +1,2 @@
+total_slowdown,makespan,energy_consumed,mean_slowdown,total_turnaround_time,total_waiting_time,score,steps,Episode
+14.666666666666668,107.0,122280.0,0.07333333333333339,86.0,2,-0.07333333362475969,121,1
