@@ -12,41 +12,6 @@ import shutil
 import time as t
 
 
-def count_resources_avail(state):
-    #resources = state[0:5]
-    #res_occuped = np.count_nonzero(resources)
-    return state[0]  # len(resources) - res_occuped
-
-
-def get_jobs(state):
-    jobs = []
-    slot = 0
-    jobs_state = state[1:]
-    for i in range(0, len(jobs_state), 2):
-        slot += 1
-        if jobs_state[i] == 0:
-            continue
-        jobs.append(dict(requested_resources=jobs_state[i],
-                         requested_time=jobs_state[i+1],
-                         slot=slot))
-    return jobs
-
-
-class Policy(object):
-    def select_action(self, **kwargs):
-        raise NotImplementedError()
-
-
-class User(Policy):
-    def select_action(self, state):
-        return int(input("Action: "))
-
-
-class Random(Policy):
-    def select_action(self, state):
-        return choice(list(range(11)))
-
-
 def get_avail_res_from_img(state):
     res = state[0, 0:10]
     occuped = np.count_nonzero(res)
@@ -63,22 +28,30 @@ def get_jobs_from_img(state):
             time = np.count_nonzero(jobs_state[:, i])
             jobs.append((res, time, slot))
         slot += 1
-    return jobs
+    return jobs, slot
 
 
-def get_available_res(state):
-    count = 0
-    for i in range(10):
-        if state[i] == 0:
-            count += 1
-    return count
+class Policy(object):
+    def select_action(self, **kwargs):
+        raise NotImplementedError()
+
+
+class User(Policy):
+    def select_action(self, state):
+        return int(input("Action: "))
+
+
+class Random(Policy):
+    def select_action(self, state):
+        _, slots = get_jobs_from_img(state)
+        return np.random.randint(slots+1)
 
 
 class SJF(Policy):
     def select_action(self, state):
         action, shortest_job = 0, np.inf
         nb_res = get_avail_res_from_img(state)
-        jobs = get_jobs_from_img(state)
+        jobs, _ = get_jobs_from_img(state)
         for j in jobs:
             if j[0] <= nb_res and j[1] < shortest_job:
                 shortest_job = j[1]
@@ -92,7 +65,7 @@ class LJF(Policy):
         action, largest_job = 0, -1
 
         nb_res = get_avail_res_from_img(state)
-        jobs = get_jobs_from_img(state)
+        jobs, _ = get_jobs_from_img(state)
         for j in jobs:
             if j[0] <= nb_res and j[1] > largest_job:
                 largest_job = j[1]
@@ -106,7 +79,7 @@ class Packer(Policy):
         action, score, = 0, 0
 
         nb_res = get_avail_res_from_img(state)
-        jobs = get_jobs_from_img(state)
+        jobs, _ = get_jobs_from_img(state)
         for j in jobs:
             if j[0] <= nb_res and j[0] > score:
                 score = j[0]
@@ -123,7 +96,7 @@ class Tetris(Policy):
         action, score, = 0, 0
 
         nb_res = get_avail_res_from_img(state)
-        jobs = get_jobs_from_img(state)
+        jobs, _ = get_jobs_from_img(state)
         for j in jobs:
             if j[0] <= nb_res:
                 sjf_score = 1 / float(j[1])
@@ -143,7 +116,7 @@ class FirstFit(Policy):
         action = 0
 
         nb_res = get_avail_res_from_img(state)
-        jobs = get_jobs_from_img(state)
+        jobs, _ = get_jobs_from_img(state)
         for j in jobs:
             if j[0] <= nb_res:
                 return j[2]
