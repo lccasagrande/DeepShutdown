@@ -90,7 +90,7 @@ def train_ppo(workload_path, timesteps, save_path, log_fn):
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     process.wait()
 
-def run_benchmark(workloads_path, weight_fn, policies, metrics, output_fn):    
+def run_benchmark(workload_path, weight_fn, policies, metrics, output_fn):    
     def get_ppo_results(weight_fn, metrics, episodes, output_dir, workload_name, results):
         result_fn = output_dir+"/ppo_results.csv"
         args = "--load_path {} --test --test_outputfn {} --test_epi {}".format(weight_fn, result_fn, episodes)        
@@ -115,21 +115,21 @@ def run_benchmark(workloads_path, weight_fn, policies, metrics, output_fn):
                 results[met].append(val)
 
     results = defaultdict(list)
-    workloads = [t for t in os.listdir(workloads_path) if os.path.isdir(os.path.join(workloads_path, t))]
+    #workloads = [t for t in os.listdir(workloads_path) if os.path.isdir(os.path.join(workloads_path, t))]
+    nb_workloads = load_workloads(workload_path)
+
     print("*** BENCHMARK *** Starting")
     start_time = t.time()
+    #for workload in workloads:
+        #workload_path = os.path.join(workloads_path, workload)
 
-    for workload in workloads:
-        workload_path = os.path.join(workloads_path, workload)
-        nb_workloads = load_workloads(workload_path)
+    print("*** PPO *** TEST *** START ***")
+    #get_ppo_results(weight_fn, metrics, nb_workloads, workload_path, 1, results)
+    print("*** PPO *** TEST *** END ***")
 
-        print("*** PPO *** workload {} *** START ***".format(workload))
-        get_ppo_results(weight_fn, metrics, nb_workloads, workload_path, workload, results)
-        print("*** PPO *** workload {} *** END ***".format(workload))
-
-        print("*** HEU *** workload {} *** START ***".format(workload))
-        get_heur_results(policies, metrics, nb_workloads, workload, results)
-        print("*** HEU *** workload {} *** END ***".format(workload))
+    print("*** HEU *** TEST *** START ***")
+    get_heur_results(policies, metrics, nb_workloads, 1, results)
+    print("*** HEU *** TEST *** END ***")
 
     print("*** BENCHMARK *** Done in {} s.".format(round(t.time() - start_time, 4)))
     dt = pd.DataFrame.from_dict(results)
@@ -138,7 +138,7 @@ def run_benchmark(workloads_path, weight_fn, policies, metrics, output_fn):
 
 if __name__ == "__main__":
     metrics = ['total_slowdown', 'makespan','energy_consumed', 'mean_slowdown','total_turnaround_time','total_waiting_time']
-    test_workloads = 'Benchmark/train'
+    test_workloads = 'Benchmark/test'
     train_workloads = 'Benchmark/train'
     weight_fn = "Benchmark/ppo.hdf5"
     log_fn = "Benchmark/log.txt"
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     utils.overwrite_dir('results')
     results = defaultdict(list)
 
-    #train_ppo(train_workloads, 100e6, weight_fn, log_fn)
+    train_ppo(train_workloads, 60e6, weight_fn, log_fn)
 
     run_benchmark(test_workloads, weight_fn, policies, metrics, output_fn)
     #run_experiment(Random(), metrics,{}, episodes=100, verbose=True, visualize=False)
