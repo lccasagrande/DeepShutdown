@@ -124,7 +124,7 @@ def run_benchmark(workload_path, weight_fn, policies, metrics, output_fn):
         #workload_path = os.path.join(workloads_path, workload)
 
     print("*** PPO *** TEST *** START ***")
-    #get_ppo_results(weight_fn, metrics, nb_workloads, workload_path, 1, results)
+    get_ppo_results(weight_fn, metrics, nb_workloads, workload_path, 1, results)
     print("*** PPO *** TEST *** END ***")
 
     print("*** HEU *** TEST *** START ***")
