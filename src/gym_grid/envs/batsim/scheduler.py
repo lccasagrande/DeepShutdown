@@ -128,7 +128,7 @@ class SchedulerManager():
             job.update_state(time_passed)
             self.runtime_slowdown += time_passed / job.requested_time
 
-        self.runtime_mean_slowdown = self.runtime_slowdown / float(self.nb_jobs_submitted)
+        self.runtime_mean_slowdown = self.runtime_slowdown / max(1, float(self.nb_jobs_submitted))
 
     def get_job(self, index):
         job = self._job_slots.at(index)

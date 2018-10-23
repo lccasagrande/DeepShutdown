@@ -1,0 +1,80 @@
+{
+    "description": "this workload had been automatically generated following a bernoulli process",
+    "date": "2018-10-22 21:17:17.417967",
+    "nb_jobs": 7,
+    "nb_profiles": 4,
+    "nb_res": 9,
+    "jobs": [
+        {
+            "id": 1,
+            "res": 7,
+            "subtime": 6,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 2,
+            "res": 1,
+            "subtime": 18,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 3,
+            "res": 1,
+            "subtime": 33,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 4,
+            "res": 9,
+            "subtime": 35,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 5,
+            "res": 7,
+            "subtime": 60,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 6,
+            "res": 2,
+            "subtime": 75,
+            "walltime": 14,
+            "profile": "14000000"
+        },
+        {
+            "id": 7,
+            "res": 2,
+            "subtime": 94,
+            "walltime": 3,
+            "profile": "3000000"
+        }
+    ],
+    "profiles": {
+        "1000000": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "3000000": {
+            "cpu": 3000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "2000000": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "14000000": {
+            "cpu": 14000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        }
+    }
+}

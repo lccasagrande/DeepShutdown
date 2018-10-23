@@ -1,0 +1,305 @@
+{
+    "description": "this workload had been automatically generated following a bernoulli process",
+    "date": "2018-10-22 21:17:17.819211",
+    "nb_jobs": 37,
+    "nb_profiles": 7,
+    "nb_res": 10,
+    "jobs": [
+        {
+            "id": 1,
+            "res": 2,
+            "subtime": 1,
+            "walltime": 13,
+            "profile": "13000000"
+        },
+        {
+            "id": 2,
+            "res": 2,
+            "subtime": 2,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 3,
+            "res": 2,
+            "subtime": 5,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 4,
+            "res": 2,
+            "subtime": 9,
+            "walltime": 12,
+            "profile": "12000000"
+        },
+        {
+            "id": 5,
+            "res": 10,
+            "subtime": 10,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 6,
+            "res": 6,
+            "subtime": 11,
+            "walltime": 13,
+            "profile": "13000000"
+        },
+        {
+            "id": 7,
+            "res": 2,
+            "subtime": 13,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 8,
+            "res": 8,
+            "subtime": 17,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 9,
+            "res": 2,
+            "subtime": 18,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 10,
+            "res": 1,
+            "subtime": 19,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 11,
+            "res": 2,
+            "subtime": 21,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 12,
+            "res": 8,
+            "subtime": 22,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 13,
+            "res": 5,
+            "subtime": 23,
+            "walltime": 12,
+            "profile": "12000000"
+        },
+        {
+            "id": 14,
+            "res": 10,
+            "subtime": 24,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 15,
+            "res": 2,
+            "subtime": 25,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 16,
+            "res": 2,
+            "subtime": 29,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 17,
+            "res": 8,
+            "subtime": 31,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 18,
+            "res": 8,
+            "subtime": 39,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 19,
+            "res": 8,
+            "subtime": 40,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 20,
+            "res": 6,
+            "subtime": 44,
+            "walltime": 10,
+            "profile": "10000000"
+        },
+        {
+            "id": 21,
+            "res": 5,
+            "subtime": 48,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 22,
+            "res": 1,
+            "subtime": 51,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 23,
+            "res": 8,
+            "subtime": 55,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 24,
+            "res": 1,
+            "subtime": 57,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 25,
+            "res": 1,
+            "subtime": 58,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 26,
+            "res": 5,
+            "subtime": 67,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 27,
+            "res": 6,
+            "subtime": 71,
+            "walltime": 12,
+            "profile": "12000000"
+        },
+        {
+            "id": 28,
+            "res": 2,
+            "subtime": 72,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 29,
+            "res": 1,
+            "subtime": 73,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 30,
+            "res": 1,
+            "subtime": 74,
+            "walltime": 15,
+            "profile": "15000000"
+        },
+        {
+            "id": 31,
+            "res": 1,
+            "subtime": 75,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 32,
+            "res": 2,
+            "subtime": 77,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 33,
+            "res": 2,
+            "subtime": 78,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 34,
+            "res": 1,
+            "subtime": 81,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 35,
+            "res": 2,
+            "subtime": 82,
+            "walltime": 12,
+            "profile": "12000000"
+        },
+        {
+            "id": 36,
+            "res": 2,
+            "subtime": 96,
+            "walltime": 15,
+            "profile": "15000000"
+        },
+        {
+            "id": 37,
+            "res": 2,
+            "subtime": 97,
+            "walltime": 1,
+            "profile": "1000000"
+        }
+    ],
+    "profiles": {
+        "13000000": {
+            "cpu": 13000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "3000000": {
+            "cpu": 3000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "12000000": {
+            "cpu": 12000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "1000000": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "2000000": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "10000000": {
+            "cpu": 10000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "15000000": {
+            "cpu": 15000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        }
+    }
+}

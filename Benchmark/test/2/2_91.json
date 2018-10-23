@@ -1,0 +1,183 @@
+{
+    "description": "this workload had been automatically generated following a bernoulli process",
+    "date": "2018-10-22 21:17:17.523575",
+    "nb_jobs": 21,
+    "nb_profiles": 5,
+    "nb_res": 9,
+    "jobs": [
+        {
+            "id": 1,
+            "res": 9,
+            "subtime": 0,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 2,
+            "res": 1,
+            "subtime": 3,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 3,
+            "res": 5,
+            "subtime": 15,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 4,
+            "res": 5,
+            "subtime": 27,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 5,
+            "res": 9,
+            "subtime": 35,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 6,
+            "res": 2,
+            "subtime": 39,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 7,
+            "res": 9,
+            "subtime": 41,
+            "walltime": 15,
+            "profile": "15000000"
+        },
+        {
+            "id": 8,
+            "res": 7,
+            "subtime": 42,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 9,
+            "res": 2,
+            "subtime": 51,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 10,
+            "res": 2,
+            "subtime": 53,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 11,
+            "res": 8,
+            "subtime": 58,
+            "walltime": 12,
+            "profile": "12000000"
+        },
+        {
+            "id": 12,
+            "res": 6,
+            "subtime": 65,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 13,
+            "res": 9,
+            "subtime": 68,
+            "walltime": 1,
+            "profile": "1000000"
+        },
+        {
+            "id": 14,
+            "res": 2,
+            "subtime": 69,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 15,
+            "res": 2,
+            "subtime": 71,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 16,
+            "res": 1,
+            "subtime": 76,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 17,
+            "res": 1,
+            "subtime": 77,
+            "walltime": 15,
+            "profile": "15000000"
+        },
+        {
+            "id": 18,
+            "res": 1,
+            "subtime": 78,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 19,
+            "res": 7,
+            "subtime": 79,
+            "walltime": 2,
+            "profile": "2000000"
+        },
+        {
+            "id": 20,
+            "res": 5,
+            "subtime": 83,
+            "walltime": 3,
+            "profile": "3000000"
+        },
+        {
+            "id": 21,
+            "res": 8,
+            "subtime": 88,
+            "walltime": 2,
+            "profile": "2000000"
+        }
+    ],
+    "profiles": {
+        "3000000": {
+            "cpu": 3000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "2000000": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "15000000": {
+            "cpu": 15000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "1000000": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        },
+        "12000000": {
+            "cpu": 12000000,
+            "com": 0,
+            "type": "msg_par_hg"
+        }
+    }
+}

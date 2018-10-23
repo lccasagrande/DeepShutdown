@@ -147,66 +147,71 @@ def train_model(args):
         model.save(save_path)
 
 
-def play(model, env, n_ep=1, render=False, reward_scale=1., metrics=[]):
-    def initialize_placeholders(nlstm=128, **kwargs):
-        return np.zeros((1, 2*nlstm)), np.zeros((1))
+def test_model(args, metrics=[], verbose=True):
+    def get_trajectory(env, results, metrics, visualize=False):
+        def initialize_placeholders(nlstm=128, **kwargs):
+            return np.zeros((1, 2*nlstm)), np.zeros((1))
 
-    results = defaultdict(list)
-    state, dones = initialize_placeholders()
-    env.close()
-    obs = env.reset()
-    for i in range(1, n_ep+1):
-        score, steps = 0, 0
+        state, dones = initialize_placeholders()
+        score, steps, obs = 0, 0, env.reset()
         while True:
-            if render:
-                env.render(mode='image')
+            if visualize:
+                env.render()
 
             actions, _, state, _ = model.step(obs, S=state, M=dones)
             obs, rew, done, info = env.step(actions)
             done = done.any() if isinstance(done, np.ndarray) else done
 
-            score += rew[0] * (1/reward_scale)
             steps += 1
+            score += rew[0]
 
             if done:
                 for m in metrics:
-                    results[m].append(info[0][m])
-                results['score'].append(score)
-                results['steps'].append(steps)
-                results['Episode'].append(i)
-                utils.print_episode_result("PPO2", results)
-                break
+                    results[m] += info[0][m]
+                results['score'] += score
+                results['steps'] += steps
+                return
 
-    return results
-
-
-def test_model(args, metrics=[]):
     args.load_path = args.save_path if args.load_path == None else args.load_path
     args.save_path = None
     args.num_timesteps = 0
     args.num_env = 1
 
+    # PREP
     model, env = train(args)
     env.close()
     env = build_env(args)
-    results = play(model, env, render=args.render,
-                   reward_scale=args.reward_scale, metrics=metrics)
+    results = defaultdict(float)
+    env.close()
+
+    for _ in range(args.test_epi):
+        get_trajectory(env, results, metrics, args.render)
+    
+    for k in results.keys():
+        results[k] = results[k] / args.test_epi
+    
+    if verbose:
+        utils.print_episode_result("PPO2", results)
+
     if args.test_outputfn is not None:
-        dt = pd.DataFrame.from_dict(results)
+        dt = pd.DataFrame([results])
         dt.to_csv(args.test_outputfn, index=False)
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='grid-v0')
-    parser.add_argument('--network', help='Network',default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=1e6)
+    parser.add_argument('--network', help='Network',
+                        default='mlp_small', type=str)
+    parser.add_argument('--num_timesteps', type=int, default=5e6)
     parser.add_argument('--num_env', default=12, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--save_path', default='weights/ppo', type=str)
+    parser.add_argument(
+        '--save_path', default='weights/ppo_training', type=str)
     parser.add_argument('--load_path', default=None, type=str)
     parser.add_argument('--test', default=False, action='store_true')
+    parser.add_argument('--test_epi', default=1, type=int)
     parser.add_argument('--test_outputfn', default=None, type=str)
     parser.add_argument('--render', default=False, action='store_true')
     args = parser.parse_args()

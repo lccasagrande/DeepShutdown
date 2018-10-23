@@ -155,7 +155,7 @@ class BatsimHandler:
         self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
-        self._export_metrics()
+        #self._export_metrics()
 
     def _handle_event(self, event):
         if event.type == "SIMULATION_ENDS":
