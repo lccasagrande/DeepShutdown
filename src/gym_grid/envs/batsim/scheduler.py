@@ -29,7 +29,7 @@ class JobSlot():
 
     @property
     def nb_jobs(self):
-       return self.slots.shape[0] - len(self.slots_free)
+        return self.slots.shape[0] - len(self.slots_free)
 
     def clear(self):
         self.slots = np.empty(shape=self.slots.shape, dtype=object)
@@ -46,7 +46,7 @@ class JobSlot():
         return job
 
     def at(self, slot):
-        if slot >= len(self.slots): 
+        if slot >= len(self.slots):
             return None
 
         return self.slots[slot]
@@ -107,11 +107,10 @@ class SchedulerManager():
         self.total_waiting_time = 0
         self.total_slowdown = 0
         self.total_turnaround_time = 0
-        self.runtime_slowdown = 0
-        self.runtime_mean_slowdown = 0
+        self.runtime_slowdown = 0.0
+        self.runtime_mean_slowdown = 0.0
 
     def update_state(self, time_passed):
-        slowdown_before = self.runtime_slowdown
         for _, job in self._jobs_running.items():
             job.update_state(time_passed)
             self.runtime_slowdown += time_passed / job.requested_time
@@ -122,19 +121,20 @@ class SchedulerManager():
 
         for job in self._job_slots.values:
             if job != None:
-                self.runtime_slowdown += time_passed / job.requested_time
                 job.update_state(time_passed)
+                self.runtime_slowdown += time_passed / job.requested_time
 
         for job in self._jobs_queue:
-            self.runtime_slowdown += time_passed / job.requested_time
             job.update_state(time_passed)
-        
-        self.runtime_mean_slowdown += (self.runtime_slowdown - slowdown_before) / 200
+            self.runtime_slowdown += time_passed / job.requested_time
+
+        self.runtime_mean_slowdown = self.runtime_slowdown / float(self.nb_jobs_submitted)
 
     def get_job(self, index):
         job = self._job_slots.at(index)
         if job is None:
-            raise InvalidJobError("There is no job at this position to schedule")
+            raise InvalidJobError(
+                "There is no job at this position to schedule")
         return job
 
     def get_max_slowdown(self):
@@ -251,7 +251,7 @@ class Job(object):
         self.runtime_slowdown = runtime_turnaround / self.requested_time
 
     def estimate_slowdown(self):
-        return ((self.requested_time + self.waiting_time) / self.requested_time)  - 1
+        return ((self.requested_time + self.waiting_time) / self.requested_time) - 1
 
     @staticmethod
     def from_json(json_dict):

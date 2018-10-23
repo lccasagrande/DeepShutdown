@@ -29,8 +29,6 @@ class GridEnv(gym.Env):
 
     def step(self, action):
         assert self.simulator.running_simulation, "Simulation is not running."
-        energy_before = self.simulator.resource_manager.energy_consumption
-        slow_before = self.simulator.jobs_manager.runtime_slowdown
         mean_slow_before = self.simulator.jobs_manager.runtime_mean_slowdown
 
         try:
@@ -38,21 +36,12 @@ class GridEnv(gym.Env):
         except (UnavailableResourcesError, InvalidJobError):
             self.simulator.schedule(-1)
 
-        energy = self.simulator.resource_manager.energy_consumption - energy_before
-        slowdown = self.simulator.jobs_manager.runtime_slowdown - slow_before
-        mean_slowdown = self.simulator.jobs_manager.runtime_mean_slowdown - mean_slow_before
-
         obs = self._get_obs()
-        reward = -1*mean_slowdown #self._get_reward(energy, mean_slowdown)
+        reward = -1 * (self.simulator.jobs_manager.runtime_mean_slowdown - mean_slow_before)
         done = not self.simulator.running_simulation
         info = self._get_info()
 
         return obs, reward, done, info
-
-    def _get_reward(self, energy, slow):
-        assert self.energy_factor + self.slowd_factor == 1
-        e_norm = 0 if energy == 0 else energy / self.simulator.resource_manager.max_energy_usage
-        return -1 * (self.energy_factor * e_norm + self.slowd_factor * slow)
 
     def reset(self):
         self.simulator.close()
