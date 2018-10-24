@@ -18,7 +18,337 @@ from .network import BatsimProtocolHandler
 from .simulator import GridSimulator
 
 
+import os
+import json
+import zmq
+import time
+import itertools
+import shutil
+import pandas as pd
+import subprocess
+import numpy as np
+import random
+import math
+from enum import Enum
+from copy import deepcopy
+from collections import deque
+from .resource import Resource, ResourceManager
+from .scheduler import SchedulerManager, Job
+from .network import BatsimProtocolHandler
+
+
 class BatsimHandler:
+    PLATFORM = "platforms/platform_hg_10.xml"
+    WORKLOAD_DIR = "workloads"
+    OUTPUT_DIR = "results/batsim"
+
+    def __init__(self, job_slots, time_window, backlog_width, verbose='information'):
+        fullpath = os.path.join(os.path.dirname(__file__), "files")
+        if not os.path.exists(fullpath):
+            raise IOError("File %s does not exist" % fullpath)
+
+        self._output_dir = self._make_random_dir(BatsimHandler.OUTPUT_DIR)
+        self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
+        workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD_DIR)
+        self._workloads = [workloads_path + "/" +
+                           w for w in os.listdir(workloads_path) if w.endswith('.json')]
+        self._workload_idx = 0
+        self.max_tracking_time_since_last_job = 10
+        self._simulator_process = None
+        self.running_simulation = False
+        self.nb_simulation = 0
+        self._verbose = verbose
+        self.time_window = time_window
+        self.job_slots = job_slots
+        self.protocol_manager = BatsimProtocolHandler()
+        self.resource_manager = ResourceManager.from_xml(self._platform, time_window)
+        self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
+        self.backlog_width = backlog_width
+        self.state_shape = (self.time_window, self.nb_resources +
+                            (self.nb_resources*self.job_slots) + backlog_width)
+        self._reset()
+
+    @property
+    def nb_jobs_waiting(self):
+        return self.jobs_manager.nb_jobs_in_backlog + self.jobs_manager.job_slots.lenght
+
+    @property
+    def nb_jobs_running(self):
+        return self.jobs_manager.nb_jobs_running
+
+    @property
+    def nb_jobs_submitted(self):
+        return self.jobs_manager.nb_jobs_submitted
+
+    @property
+    def nb_jobs_completed(self):
+        return self.jobs_manager.nb_jobs_completed
+
+    @property
+    def nb_resources(self):
+        return self.resource_manager.nb_resources
+
+    @property
+    def current_time(self):
+        return self.protocol_manager.current_time
+
+    def get_state(self):
+        return self._get_image()
+
+    def close(self):
+        self.protocol_manager.close()
+        self.running_simulation = False
+        if self._simulator_process is not None:
+            self._simulator_process.terminate()
+            self._simulator_process.wait()
+            self._simulator_process = None
+
+    def start(self):
+        assert not self.running_simulation, "A simulation is already running."
+        self._reset()
+        self._simulator_process = self._start_simulator()
+        self.protocol_manager.start()
+        self._wait_state_change()
+        assert self.running_simulation, "An error ocurred during simulator starting."
+        self.nb_simulation += 1
+
+    def schedule(self, job_pos):
+        assert self.running_simulation, "Simulation is not running."
+        if job_pos != -1:  # Try to schedule job
+            job = self.jobs_manager.get_job(job_pos)
+            self.resource_manager.allocate(job)
+            self.jobs_manager.on_job_allocated(job_pos)
+        elif not self._alarm_is_set:  # Handle VOID Action
+            self.protocol_manager.set_alarm(self.current_time + 1)
+            self._alarm_is_set = True
+
+        self._start_ready_jobs()
+
+        self._wait_state_change()
+
+    def _wait_state_change(self):
+        self._update_state()
+        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty or self.resource_manager.is_full()):
+            self._update_state()
+
+    def _get_ready_jobs(self):
+        ready_jobs = []
+        jobs = self.resource_manager.get_jobs()
+        for job in jobs:
+            if job is not None and \
+                    job.state != Job.State.RUNNING and \
+                    job.time_left_to_start == 0 and \
+                    job not in ready_jobs and \
+                    self.resource_manager.is_available(job.allocation):
+                ready_jobs.append(job)
+        return ready_jobs
+
+    def _start_ready_jobs(self):
+        jobs = self.resource_manager.get_jobs()
+        for job in jobs:
+            if job.state != Job.State.RUNNING and \
+                    job.time_left_to_start == 0 and \
+                    self.resource_manager.is_available(job.allocation):
+                self._start_job(job)
+
+    def _start_job(self, job):
+        r = self.resource_manager.start_job(job)
+        self.jobs_manager.on_job_started(job.id, self.current_time)
+        if len(r) != 0:
+            self.protocol_manager.set_resource_pstate(r, Resource.PowerState.NORMAL)
+        self.protocol_manager.start_job(job.id,  job.allocation)
+
+    def _select_workload(self):
+        if len(self._workloads) == self._workload_idx:
+            self._workload_idx = 0
+            np.random.shuffle(self._workloads)
+
+        x = self._workloads[self._workload_idx]
+        self._workload_idx += 1
+        return x
+
+    def _start_simulator(self):
+        output_path = self._output_dir + "/" + str(self.nb_simulation)
+        cmd = "batsim -s {} -p {} -w {} -v {} -E -e {}".format(self.protocol_manager.socket_endpoint,
+                                                               self._platform,
+                                                               self._select_workload(),
+                                                               self._verbose,
+                                                               output_path)
+
+        return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
+
+    def _reset(self):
+        self.metrics = {}
+        self.time_since_last_new_job = 0
+        self._alarm_is_set = False
+        self.jobs_manager.reset()
+        self.protocol_manager.reset()
+        self.resource_manager.reset()
+
+    def _handle_requested_call(self, timestamp):
+        self._alarm_is_set = False
+
+    def _handle_job_completed(self, timestamp, data):
+        job = self.jobs_manager.on_job_completed(timestamp, data)
+        self.resource_manager.release(job)
+        self._start_ready_jobs()
+
+    def _handle_job_submitted(self, timestamp, data):
+        if data['job']['res'] > self.resource_manager.nb_resources:
+            self.protocol_manager.reject_job(data['job_id'])
+        else:
+            self.time_since_last_new_job = timestamp
+            self.jobs_manager.on_job_submitted(timestamp, data['job'])
+
+    def _handle_simulation_ends(self, data):
+        self.protocol_manager.acknowledge()
+        self.protocol_manager.send_events()
+        self.running_simulation = False
+        self.metrics["batsim_scheduling_time"] = float(data["scheduling_time"])
+        self.metrics["batsim_nb_jobs"] = int(data["nb_jobs"])
+        self.metrics["batsim_nb_jobs_finished"] = int(data["nb_jobs_finished"])
+        self.metrics["batsim_nb_jobs_success"] = int(data["nb_jobs_success"])
+        self.metrics["batsim_nb_jobs_killed"] = int(data["nb_jobs_killed"])
+        self.metrics["batsim_success_rate"] = float(data["success_rate"])
+        self.metrics["batsim_makespan"] = float(data["makespan"])
+        self.metrics["batsim_mean_waiting_time"] = float(
+            data["mean_waiting_time"])
+        self.metrics["batsim_mean_turnaround_time"] = float(
+            data["mean_turnaround_time"])
+        self.metrics["batsim_mean_slowdown"] = float(data["mean_slowdown"])
+        self.metrics["batsim_max_waiting_time"] = float(
+            data["max_waiting_time"])
+        self.metrics["batsim_max_turnaround_time"] = float(
+            data["max_turnaround_time"])
+        self.metrics["batsim_max_slowdown"] = float(data["max_slowdown"])
+        self.metrics["batsim_energy_consumed"] = float(data["consumed_joules"])
+        self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
+        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - \
+            self.jobs_manager.first_job.submit_time
+        self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
+        self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
+        self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
+        self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
+        self._export_metrics()
+
+    def _handle_event(self, event):
+        if event.type == "SIMULATION_BEGINS":
+            assert not self.running_simulation, "A simulation is already running (is more than one instance of Batsim active?!)"
+            self.running_simulation = True
+        elif event.type == "SIMULATION_ENDS":
+            assert self.running_simulation, "No simulation is currently running"
+            self._handle_simulation_ends(event.data)
+        elif event.type == "JOB_SUBMITTED":
+            self._handle_job_submitted(event.timestamp, event.data)
+        elif event.type == "JOB_COMPLETED":
+            self._handle_job_completed(event.timestamp, event.data)
+        elif event.type == "REQUESTED_CALL":
+            self._handle_requested_call(event.timestamp)
+        elif event.type == "NOTIFY":
+            if event.data['type'] == 'no_more_static_job_to_submit':
+                return
+            else:
+                raise Exception(
+                    "Unknown NOTIFY event type {}".format(event.type))
+        else:
+            return
+
+    def _export_metrics(self):
+        data = pd.DataFrame(self.metrics, index=[0])
+        fn = "{}/{}_{}.csv".format(
+            self._output_dir,
+            self.nb_simulation,
+            "schedule_metrics")
+        data.to_csv(fn, index=False)
+
+    def _update_state(self):
+        self.protocol_manager.send_events()
+
+        old_time = self.current_time
+        events = self.protocol_manager.read_events(
+            blocking=not self.running_simulation)
+
+        # New jobs does not need to be updated in this timestep
+        # Update jobs if no time has passed does not make sense.
+        time_passed = self.current_time - old_time
+        if time_passed != 0:
+            self.jobs_manager.update_state(time_passed)
+            self.resource_manager.update_state(time_passed)
+            res = self.resource_manager.shut_down_unused()
+            if len(res) != 0:
+                self.protocol_manager.set_resource_pstate(res, Resource.PowerState.SHUT_DOWN)
+
+        for event in events:
+            self._handle_event(event)
+
+        # Remember to always ack
+        if self.running_simulation:
+            self.protocol_manager.acknowledge()
+
+    def get_job_slot_state(self):
+        s = np.zeros(
+            shape=(self.time_window, self.nb_resources*self.job_slots), dtype=np.uint8)
+
+        for i, job in enumerate(self.jobs_manager.job_slots):
+            if job != None:
+                start_idx = i * self.nb_resources
+                end_idx = start_idx + job.requested_resources
+                s[0:job.requested_time, start_idx:end_idx] = 1
+        return s
+
+    def get_backlog_state(self):
+        s = np.zeros(shape=(self.time_window, self.backlog_width),
+                     dtype=np.uint8)
+        t, i = 0, 0
+        nb_jobs = min(self.backlog_width*self.time_window,
+                      self.jobs_manager.nb_jobs_in_backlog)
+        for _ in range(nb_jobs):
+            s[t, i] = 1
+            i += 1
+            if i == self.backlog_width:
+                i = 0
+                t += 1
+        return s
+
+    def get_time_state(self):
+        diff = min(self.max_tracking_time_since_last_job,
+                   self.current_time - self.time_since_last_new_job)
+        v = diff / float(self.max_tracking_time_since_last_job)
+        return np.full(shape=self.time_window, fill_value=v, dtype=np.float)
+
+    def _get_image(self):
+        shape = (self.time_window, self.nb_resources +
+                 self.job_slots*self.nb_resources + self.backlog_width + 1)
+        state = np.zeros(shape=shape, dtype=np.float)
+
+        # RESOURCES
+        resource_end = self.nb_resources
+        state[:, 0:resource_end] = self.resource_manager.get_view()
+
+        # JOB SLOTS
+        job_slot_end = self.nb_resources * self.job_slots + self.nb_resources
+        state[:, resource_end:job_slot_end] = self.get_job_slot_state()
+
+        # BACKLOG
+        backlog_end = self.nb_resources + self.job_slots * \
+            self.nb_resources + self.backlog_width
+        state[:, job_slot_end:backlog_end] = self.get_backlog_state()
+
+        state[:, -1] = self.get_time_state()
+
+        return state
+
+    def _make_random_dir(self, path):
+        num = 1
+        while os.path.exists(path + str(num)):
+            num += 1
+
+        output_dir = path + str(num)
+        os.makedirs(output_dir)
+        return output_dir
+
+
+class GridSimulatorHandler:
     PLATFORM = "platforms/platform_hg_10.xml"
     WORKLOAD_DIR = "workloads"
     OUTPUT_DIR = "results/batsim"
@@ -28,14 +358,17 @@ class BatsimHandler:
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
 
-        self._output_dir = self._make_random_dir(BatsimHandler.OUTPUT_DIR)
-        self._platform = os.path.join(fullpath, BatsimHandler.PLATFORM)
-        workloads_path = os.path.join(fullpath, BatsimHandler.WORKLOAD_DIR)
-        self._workloads = [workloads_path + "/" + w for w in os.listdir(workloads_path) if w.endswith('.json')]
+        #self._output_dir = self._make_random_dir(BatsimHandler.OUTPUT_DIR)
+        self._platform = os.path.join(fullpath, GridSimulatorHandler.PLATFORM)
+        workloads_path = os.path.join(
+            fullpath, GridSimulatorHandler.WORKLOAD_DIR)
+        self._workloads = [workloads_path + "/" +
+                           w for w in os.listdir(workloads_path) if w.endswith('.json')]
         self.nb_simulation = 0
         self.time_window = time_window
         self.job_slots = job_slots
-        self.resource_manager = ResourceManager.from_xml(self._platform, time_window)
+        self.resource_manager = ResourceManager.from_xml(
+            self._platform, time_window)
         self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
         self.simulator = GridSimulator(self._workloads, self.jobs_manager)
         self.backlog_width = backlog_width
@@ -69,13 +402,8 @@ class BatsimHandler:
     def running_simulation(self):
         return self.simulator.running
 
-    def get_state(self, type):
-        if type == 'image':
-            return self._get_image()
-        elif type == 'compact':
-            return self._get_compact_state()
-        else:
-            return self._get_state()
+    def get_state(self):
+        return self._get_image()
 
     def close(self):
         self.simulator.close()
@@ -150,12 +478,13 @@ class BatsimHandler:
 
     def _handle_simulation_ends(self, data):
         self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
-        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - self.jobs_manager.first_job.submit_time
+        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - \
+            self.jobs_manager.first_job.submit_time
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
         self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
-        #self._export_metrics()
+        # self._export_metrics()
 
     def _handle_event(self, event):
         if event.type == "SIMULATION_ENDS":
@@ -177,33 +506,16 @@ class BatsimHandler:
                 resources.append(int(nodes[0]))
         return resources
 
-    def _export_metrics(self):
-        data = pd.DataFrame(self.metrics, index=[0])
-        fn = "{}/{}_{}.csv".format(
-            self._output_dir,
-            self.nb_simulation,
-            "schedule_metrics")
-        data.to_csv(fn, index=False)
-
     def _proceed_time(self):
         self.simulator.proceed_time(1)
         self.jobs_manager.update_state(1)
         self.resource_manager.update_state(1)
         self.resource_manager.shut_down_unused()
-        
+
     def _update_state(self):
         events = self.simulator.read_events()
         for event in events:
             self._handle_event(event)
-
-    def _make_random_dir(self, path):
-        num = 1
-        while os.path.exists(path + str(num)):
-            num += 1
-
-        output_dir = path + str(num)
-        os.makedirs(output_dir)
-        return output_dir
 
     def get_job_slot_state(self):
         s = np.zeros(
@@ -217,7 +529,8 @@ class BatsimHandler:
         return s
 
     def get_backlog_state(self):
-        s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
+        s = np.zeros(shape=(self.time_window, self.backlog_width),
+                     dtype=np.uint8)
         t, i = 0, 0
         nb_jobs = min(self.backlog_width*self.time_window,
                       self.jobs_manager.nb_jobs_in_backlog)
@@ -230,11 +543,13 @@ class BatsimHandler:
         return s
 
     def get_time_state(self):
-        v = self.simulator.time_since_last_new_job / float(self.simulator.max_tracking_time_since_last_job)
-        return np.full(shape=self.time_window, fill_value= v, dtype=np.float)
+        v = self.simulator.time_since_last_new_job / \
+            float(self.simulator.max_tracking_time_since_last_job)
+        return np.full(shape=self.time_window, fill_value=v, dtype=np.float)
 
     def _get_image(self):
-        shape = (self.time_window, self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width + 1)
+        shape = (self.time_window, self.nb_resources +
+                 self.job_slots*self.nb_resources + self.backlog_width + 1)
         state = np.zeros(shape=shape, dtype=np.float)
 
         # RESOURCES
@@ -246,47 +561,10 @@ class BatsimHandler:
         state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
         # BACKLOG
-        backlog_end = self.nb_resources + self.job_slots*self.nb_resources + self.backlog_width
+        backlog_end = self.nb_resources + self.job_slots * \
+            self.nb_resources + self.backlog_width
         state[:, job_slot_end:backlog_end] = self.get_backlog_state()
 
         state[:, -1] = self.get_time_state()
 
-        return state
-
-    def _get_compact_state(self):
-        #nb_res = self.resource_manager.nb_resources
-        state = np.zeros(shape=(self.nb_resources + self.job_slots*2 + 1), dtype=np.float)
-        #_, idle, sleeping = self.resource_manager.nb_resources_state()
-
-
-        index = 0
-        for res in self.resource_manager.get_resources():
-            #state[index] = int(not res.is_sleeping)
-            state[index] = res.get_reserved_time()# / self.time_window
-            index += 1
-
-        #state[0] = idle / self.nb_resources
-        #state[1] = sleeping / self.nb_resources
-
-        jobs = self.jobs_manager.job_slots
-        #print(self.simulator.time_since_last_new_job)
-        #max_waiting_time = self.jobs_manager.get_max_waiting_time()
-        #max_slowdown = self.jobs_manager.get_max_slowdown()
-        for job in jobs:
-            if job is not None:
-                state[index] = job.requested_resources# / self.nb_resources
-                state[index+1] = min(job.requested_time, self.time_window)# / self.time_window
-                #state[index+2] = job.waiting_time / max_waiting_time if max_waiting_time != 0 else 0#job.estimate_slowdown() / max_slowdown if max_slowdown != 0 else 0
-            index += 2
-        
-        state[-1] = self.simulator.time_since_last_new_job / float(self.simulator.max_tracking_time_since_last_job)
-
-        return state
-
-    def _get_state(self):
-        state = dict(
-            resources_properties=self.resource_manager.get_resources(),
-            resources_spaces=self.resource_manager.get_view(),
-            queue=self.jobs_manager.job_slots,
-            backlog=self.jobs_manager.nb_jobs_in_backlog)
         return state
