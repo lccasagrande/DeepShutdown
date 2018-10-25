@@ -6,18 +6,18 @@ from gym.utils import seeding
 import matplotlib.pyplot as plt
 import math
 from sklearn.preprocessing import MinMaxScaler
-from .batsim import BatsimHandler, GridSimulatorHandler, InsufficientResourcesError, UnavailableResourcesError, InvalidJobError
+from .batsim import BatsimHandler, InsufficientResourcesError, UnavailableResourcesError, InvalidJobError
 import numpy as np
 
 
-class GridEnv(gym.Env):
+class BatsimEnv(gym.Env):
     def __init__(self):
         self.job_slots = 10
         self.time_window = 20
         self.backlog_width = 3
         self.energy_factor = .5
         self.slowd_factor = .5
-        self.simulator = GridSimulatorHandler(job_slots=self.job_slots,
+        self.simulator = BatsimHandler(job_slots=self.job_slots,
                                        time_window=self.time_window,
                                        backlog_width=self.backlog_width)
         self.action_space = spaces.Discrete(self.job_slots+1)

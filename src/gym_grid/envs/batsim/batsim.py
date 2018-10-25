@@ -42,7 +42,7 @@ class BatsimHandler:
     WORKLOAD_DIR = "workloads"
     OUTPUT_DIR = "results/batsim"
 
-    def __init__(self, job_slots, time_window, backlog_width, verbose='information'):
+    def __init__(self, job_slots, time_window, backlog_width, verbose='quiet'):
         fullpath = os.path.join(os.path.dirname(__file__), "files")
         if not os.path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
@@ -128,7 +128,7 @@ class BatsimHandler:
 
     def _wait_state_change(self):
         self._update_state()
-        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty or self.resource_manager.is_full()):
+        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty):
             self._update_state()
 
     def _get_ready_jobs(self):
@@ -204,28 +204,19 @@ class BatsimHandler:
         self.protocol_manager.acknowledge()
         self.protocol_manager.send_events()
         self.running_simulation = False
-        self.metrics["batsim_scheduling_time"] = float(data["scheduling_time"])
-        self.metrics["batsim_nb_jobs"] = int(data["nb_jobs"])
-        self.metrics["batsim_nb_jobs_finished"] = int(data["nb_jobs_finished"])
-        self.metrics["batsim_nb_jobs_success"] = int(data["nb_jobs_success"])
-        self.metrics["batsim_nb_jobs_killed"] = int(data["nb_jobs_killed"])
-        self.metrics["batsim_success_rate"] = float(data["success_rate"])
         self.metrics["batsim_makespan"] = float(data["makespan"])
-        self.metrics["batsim_mean_waiting_time"] = float(
-            data["mean_waiting_time"])
-        self.metrics["batsim_mean_turnaround_time"] = float(
-            data["mean_turnaround_time"])
+        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time
+        self.metrics["batsim_mean_waiting_time"] = float(data["mean_waiting_time"])
+        self.metrics['mean_waiting_time'] = self.jobs_manager.total_waiting_time / self.nb_jobs_submitted
+        self.metrics["batsim_mean_turnaround_time"] = float(data["mean_turnaround_time"])
+        self.metrics['mean_turnaround_time'] = self.jobs_manager.total_turnaround_time  / self.nb_jobs_submitted
         self.metrics["batsim_mean_slowdown"] = float(data["mean_slowdown"])
-        self.metrics["batsim_max_waiting_time"] = float(
-            data["max_waiting_time"])
-        self.metrics["batsim_max_turnaround_time"] = float(
-            data["max_turnaround_time"])
+        self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
+        self.metrics["batsim_max_waiting_time"] = float(data["max_waiting_time"])
+        self.metrics["batsim_max_turnaround_time"] = float(data["max_turnaround_time"])
         self.metrics["batsim_max_slowdown"] = float(data["max_slowdown"])
         self.metrics["batsim_energy_consumed"] = float(data["consumed_joules"])
         self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
-        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - \
-            self.jobs_manager.first_job.submit_time
-        self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
@@ -478,8 +469,7 @@ class GridSimulatorHandler:
 
     def _handle_simulation_ends(self, data):
         self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
-        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time - \
-            self.jobs_manager.first_job.submit_time
+        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
         self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time

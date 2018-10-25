@@ -36,6 +36,8 @@ class Resource:
     def from_xml(id, data, time_window):
         name = data.getAttribute('id')
         host_speed = data.getAttribute('speed').split(',')
+        host_power_state = Resource.PowerState(int(data.getAttribute('pstate')))
+        host_state = Resource.State.SLEEPING if host_power_state == Resource.PowerState.SHUT_DOWN else Resource.State.IDLE
         host_watts = data.getElementsByTagName(
             'prop')[0].getAttribute('value').split(',')
         assert "Mf" in host_speed[-1], "Speed is not in Mega Flops"
@@ -51,7 +53,7 @@ class Resource:
                 'watt_idle': float(idle),
                 'watt_comp': float(comp)
             }
-        return Resource(id, Resource.State.SLEEPING, Resource.PowerState.SHUT_DOWN, name, profiles, time_window)
+        return Resource(id, host_state, Resource.PowerState(host_power_state), name, profiles, time_window)
 
     @property
     def is_sleeping(self):
@@ -245,8 +247,13 @@ class ResourceManager:
             self.resources[r].reserve(job)
 
     def start_job(self, job):
+        res = []
         for r in job.allocation:
-            self.resources[r].start_computing()
+            resource = self.resources[r]
+            if resource.is_sleeping:
+                res.append(r)
+            resource.start_computing()
+        return res
 
     def release(self, job):
         for r in job.allocation:

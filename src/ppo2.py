@@ -115,11 +115,11 @@ def train(args):
         lam=0.95,
         gamma=1,
         network=args.network,
-        lr=5.e-4,  # 1.e-3,#1.e-3, # f * 2.5e-4,
+        lr=1e-3,  # 1.e-3,#1.e-3, # f * 2.5e-4,
         noptepochs=4,
         log_interval=1,
-        nminibatches=4,
-        ent_coef=.01,
+        nminibatches=8,
+        ent_coef=0.01,
         # normalize_observations=True,
         value_network='copy',
         cliprange=0.1,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
@@ -203,8 +203,8 @@ def arg_parser():
     parser.add_argument('--env', type=str, default='grid-v0')
     parser.add_argument('--network', help='Network',
                         default='mlp_small', type=str)
-    parser.add_argument('--num_timesteps', type=int, default=5e6)
-    parser.add_argument('--num_env', default=12, type=int)
+    parser.add_argument('--num_timesteps', type=int, default=10e6)
+    parser.add_argument('--num_env', default=24, type=int)
     parser.add_argument('--reward_scale', default=1., type=float)
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument(
