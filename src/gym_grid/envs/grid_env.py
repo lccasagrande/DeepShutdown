@@ -144,5 +144,5 @@ class GridEnv(gym.Env):
         plot_job_state()
         plot_backlog()
         plot_last_time()
-        plt.tight_layout()
+        #plt.tight_layout()
         plt.pause(0.01)

@@ -21,6 +21,7 @@ import subprocess
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 BATSIM_WORKLOAD = "src/gym_grid/envs/batsim/files/workloads"
+BATSIM_PLATFORM = "src/gym_grid/envs/batsim/files/platforms/platform_hg_10.xml"
 PYTHON = "python"
 
 
@@ -64,7 +65,8 @@ def exec_heuristics(env_type, policies, metrics, episodes, verbose=False):
     process = []
     manager_result = manager.dict()
     for policy in policies:
-        p = Process(target=run_experiment, args=(env_type, policy, metrics, manager_result, episodes, verbose, False, ))
+        p = Process(target=run_experiment, args=(env_type, policy,
+                                                 metrics, manager_result, episodes, verbose, False, ))
         p.start()
         process.append(p)
 
@@ -76,13 +78,15 @@ def exec_heuristics(env_type, policies, metrics, episodes, verbose=False):
 
 def load_workloads(workloads_path):
     nb_workloads = 0
+    names = []
     utils.overwrite_dir(BATSIM_WORKLOAD)
     for w in os.listdir(workloads_path):
         if w.endswith('.json'):
             file = "/{}".format(w)
             copyfile(workloads_path+file, BATSIM_WORKLOAD + file)
             nb_workloads += 1
-    return nb_workloads
+            names.append(w)
+    return nb_workloads, names
 
 
 def train_ppo(workload_path, timesteps, save_path, log_fn):
@@ -94,16 +98,36 @@ def train_ppo(workload_path, timesteps, save_path, log_fn):
     process.wait()
 
 
-def exec_ppo(weight_fn, episodes, output_dir):
+def exec_ppo(env_type, weight_fn, episodes, output_dir):
     result_fn = output_dir+"/ppo_results.csv"
-    args = "--load_path {} --test --test_outputfn {} --test_epi {}".format(
-        weight_fn, result_fn, episodes)
+    args = "--env {} --load_path {} --test --test_outputfn {} --test_epi {} --render".format(env_type,
+                                                                                    weight_fn, result_fn, episodes)
     cmd = "{} src/ppo2.py {}".format(PYTHON, args)
 
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     process.wait()
 
     return pd.read_csv(result_fn).to_dict(orient='records')[0]
+
+
+def exec_batsched(output_dir, policy, workload_path):
+    def run_batsim(output):
+        cmd = "batsim -p {} -w {} -v {} -E -e {}".format(BATSIM_PLATFORM,
+                                                         workload_path,
+                                                         "quiet",
+                                                         output)
+
+        return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
+
+    def run_batsched():
+        cmd = "batsched -d 1 -v {}".format(policy)
+        return subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
+
+    output = output_dir + "/" + policy
+    batsim = run_batsim(output)
+    batsched = run_batsched()
+    batsim.wait()
+    return pd.read_csv(output+"_schedule.csv").to_dict(orient='records')[0]
 
 
 def run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_fn):
@@ -123,15 +147,36 @@ def run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_
             for met, val in res.items():
                 results[met].append(val)
 
+    def get_batsched_results(output_dir, policies, metrics, workload_path, workload_name, results):
+        tmp_results = {k: 0 for k in metrics}
+        for p in policies:
+            bat_results = exec_batsched(output_dir, p, workload_path)
+
+            for k, value in bat_results.items():
+                if k in tmp_results:
+                    tmp_results[k] = value
+
+            results['policy'].append(p)
+            results['workload'].append(workload_name)
+            results['score'].append(0)
+            results['steps'].append(0)
+            for met, val in tmp_results.items():
+                results[met].append(val)
+
     results = defaultdict(list)
-    nb_workloads = load_workloads(workload_path)
+    nb_workloads, names = load_workloads(workload_path)
 
     print("*** BENCHMARK *** Starting")
     start_time = t.time()
 
+    print("*** BATSCHED *** TEST *** START ***")
+    get_batsched_results(
+        workload_path, ['easy_bf'], metrics, workload_path+"/"+names[0], 1, results)
+    print("*** BATSCHED *** TEST *** END ***")
+
     print("*** PPO *** TEST *** START ***")
-    get_ppo_results(env_type, weight_fn, metrics, nb_workloads,
-                    workload_path, 1, results)
+    get_ppo_results(env_type, weight_fn, metrics,
+                    nb_workloads, workload_path, 1, results)
     print("*** PPO *** TEST *** END ***")
 
     print("*** HEU *** TEST *** START ***")
@@ -151,27 +196,26 @@ def run_battery(env_type, workloads_path, train_steps, policies, metrics, output
         output_fn = "{}/{}_{}.csv".format(output, "benchmark", workload)
         weight_fn = "{}/{}_{}.hdf5".format(output, "ppo", workload)
         log_fn = "{}/{}_{}.txt".format(output, "log", workload)
-        train_ppo(workload_path, train_steps[workload], weight_fn, log_fn)
+        # train_ppo(workload_path, train_steps[workload], weight_fn, log_fn)
 
-        run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_fn)
+        run_benchmark(env_type, workload_path, weight_fn,
+                      policies, metrics, output_fn)
 
 
 if __name__ == "__main__":
-    metrics = ['total_slowdown', 'makespan', 'energy_consumed',
-               'mean_slowdown', 'total_turnaround_time', 'total_waiting_time']
-    workloads = 'Benchmark/reboot'
+    metrics = ['makespan', 'mean_slowdown', 'total_slowdown', 'total_turnaround_time',
+               'mean_turnaround_time', 'total_waiting_time', 'mean_waiting_time',
+               'max_waiting_time', 'max_turnaround_time', 'max_slowdown']
+    workloads = 'Benchmark/workloads'
     output = "Benchmark"
-    train_steps = {".1": 5e5, ".2": 1e6, ".3": 2e6, ".4": 4e6,
-                   ".5": 6e6, ".6": 8e6, ".8": 10e6, "1.0": 10e6}
+    train_steps = {"10": 5e5, "40": 1e6, "70": 1.5e6,
+                   "100": 2.5e6, "130": 5e6, "160": 7e6, "190": 9e6}
     policies = [Random(), Tetris(), SJF(), Packer()]
-    #eval_env = "batsim-v0"
+    eval_env = "batsim-v0"
     train_env = "grid-v0"
 
-    #run_battery(workloads, train_steps, policies, metrics, output)
-    #exec_ppo("weights/ppo_.4.hdf5", 1, "tmp")
-    run_experiment(train_env, SJF(), metrics, dict(), episodes=1, verbose=True, visualize=False)
-    #train_ppo(train_workloads, 1e6, weight_fn, log_fn)
-    #nb_workloads = load_workloads(test_workloads)
-    #run_benchmark(test_workloads, weight_fn, policies, metrics, output_fn)
-    #exec_heuristics(policies, metrics, nb_workloads, True)
-    #run_experiment(Random(), metrics,{}, episodes=100, verbose=True, visualize=False)
+    exec_ppo(eval_env, "Benchmark/ppo_190.hdf5", 1, "tmp")
+    #run_battery(eval_env, workloads, train_steps, policies, metrics, output)
+    # exec_ppo("weights/ppo_.4.hdf5", 1, "tmp")
+    # run_experiment(eval_env, SJF(), [], dict(), episodes=1, verbose=True, visualize=False)
+    # run_experiment(Random(), metrics,{}, episodes=100, verbose=True, visualize=False)

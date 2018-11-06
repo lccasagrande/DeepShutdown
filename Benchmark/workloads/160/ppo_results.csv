@@ -1,0 +1,2 @@
+makespan,max_slowdown,max_turnaround_time,max_waiting_time,mean_slowdown,mean_turnaround_time,mean_waiting_time,score,steps,total_slowdown,total_turnaround_time,total_waiting_time
+192.00006,10.866671,163.00006,148.00006,2.895914,14.890343,10.59364,-2.8958098763832822,284.0,263.5186979686979,1355.0,964.0

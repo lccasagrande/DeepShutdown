@@ -219,8 +219,13 @@ def arg_parser():
 
 
 def main(args):
-    metrics = ['total_slowdown', 'makespan', 'energy_consumed',
-               'mean_slowdown', 'total_turnaround_time', 'total_waiting_time']
+
+    metrics = ['makespan', 'mean_slowdown', 'total_slowdown', 'total_turnaround_time',
+               'mean_turnaround_time', 'total_waiting_time', 'mean_waiting_time',
+               'max_waiting_time', 'max_turnaround_time', 'max_slowdown']
+
+    #metrics = ['total_slowdown', 'makespan', 'energy_consumed',
+    #           'mean_slowdown', 'total_turnaround_time', 'total_waiting_time']
     if args.test:
         test_model(args, metrics)
     else:

@@ -108,7 +108,9 @@ class BatsimHandler:
         self._reset()
         self._simulator_process = self._start_simulator()
         self.protocol_manager.start()
-        self._wait_state_change()
+        while self.jobs_manager.is_empty:
+            self._update_state()
+
         assert self.running_simulation, "An error ocurred during simulator starting."
         self.nb_simulation += 1
 
@@ -118,17 +120,28 @@ class BatsimHandler:
             job = self.jobs_manager.get_job(job_pos)
             self.resource_manager.allocate(job)
             self.jobs_manager.on_job_allocated(job_pos)
-        elif not self._alarm_is_set:  # Handle VOID Action
-            self.protocol_manager.set_alarm(self.current_time + 1)
-            self._alarm_is_set = True
+            self._start_ready_jobs()
+            return
+        else:
+            self.alarm_time = self.current_time + 1
+
+
+        self._checkpoint()
 
         self._start_ready_jobs()
 
         self._wait_state_change()
 
+    def _checkpoint(self):
+        if not self._alarm_is_set:
+            self.protocol_manager.set_alarm(self.current_time + 1)
+            self._alarm_is_set = True
+
     def _wait_state_change(self):
+        slots_occuped = self.jobs_manager.nb_jobs_in_slots
         self._update_state()
-        while self.running_simulation and (self._alarm_is_set or self.jobs_manager.is_empty):
+        while self.running_simulation and self.alarm_time != -1: #and self.jobs_manager.nb_jobs_in_slots == slots_occuped:
+            self._checkpoint()
             self._update_state()
 
     def _get_ready_jobs(self):
@@ -180,6 +193,7 @@ class BatsimHandler:
     def _reset(self):
         self.metrics = {}
         self.time_since_last_new_job = 0
+        self.alarm_time = -1
         self._alarm_is_set = False
         self.jobs_manager.reset()
         self.protocol_manager.reset()
@@ -204,19 +218,15 @@ class BatsimHandler:
         self.protocol_manager.acknowledge()
         self.protocol_manager.send_events()
         self.running_simulation = False
-        self.metrics["batsim_makespan"] = float(data["makespan"])
-        self.metrics['makespan'] = self.jobs_manager.last_job.finish_time
-        self.metrics["batsim_mean_waiting_time"] = float(data["mean_waiting_time"])
-        self.metrics['mean_waiting_time'] = self.jobs_manager.total_waiting_time / self.nb_jobs_submitted
-        self.metrics["batsim_mean_turnaround_time"] = float(data["mean_turnaround_time"])
-        self.metrics['mean_turnaround_time'] = self.jobs_manager.total_turnaround_time  / self.nb_jobs_submitted
-        self.metrics["batsim_mean_slowdown"] = float(data["mean_slowdown"])
-        self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
-        self.metrics["batsim_max_waiting_time"] = float(data["max_waiting_time"])
-        self.metrics["batsim_max_turnaround_time"] = float(data["max_turnaround_time"])
-        self.metrics["batsim_max_slowdown"] = float(data["max_slowdown"])
-        self.metrics["batsim_energy_consumed"] = float(data["consumed_joules"])
-        self.metrics['energy_consumed'] = self.resource_manager.energy_consumption
+
+        self.metrics['makespan'] = float(data["makespan"])
+        self.metrics["mean_waiting_time"] = float(data["mean_waiting_time"])
+        self.metrics["mean_turnaround_time"] = float(data["mean_turnaround_time"])
+        self.metrics["mean_slowdown"] = float(data["mean_slowdown"])
+        self.metrics["max_waiting_time"] = float(data["max_waiting_time"])
+        self.metrics["max_turnaround_time"] = float(data["max_turnaround_time"])
+        self.metrics["max_slowdown"] = float(data["max_slowdown"])
+        self.metrics["energy_consumed"] = float(data["consumed_joules"])
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
@@ -235,12 +245,6 @@ class BatsimHandler:
             self._handle_job_completed(event.timestamp, event.data)
         elif event.type == "REQUESTED_CALL":
             self._handle_requested_call(event.timestamp)
-        elif event.type == "NOTIFY":
-            if event.data['type'] == 'no_more_static_job_to_submit':
-                return
-            else:
-                raise Exception(
-                    "Unknown NOTIFY event type {}".format(event.type))
         else:
             return
 
@@ -263,6 +267,9 @@ class BatsimHandler:
         # Update jobs if no time has passed does not make sense.
         time_passed = self.current_time - old_time
         if time_passed != 0:
+            if self.alarm_time >= self.current_time:
+                self.alarm_time = -1
+
             self.jobs_manager.update_state(time_passed)
             self.resource_manager.update_state(time_passed)
             res = self.resource_manager.shut_down_unused()
@@ -473,7 +480,9 @@ class GridSimulatorHandler:
         self.metrics['total_slowdown'] = self.jobs_manager.total_slowdown
         self.metrics['mean_slowdown'] = self.jobs_manager.runtime_mean_slowdown
         self.metrics['total_turnaround_time'] = self.jobs_manager.total_turnaround_time
+        self.metrics['mean_turnaround_time'] = self.jobs_manager.total_turnaround_time / self.jobs_manager.nb_jobs_submitted
         self.metrics['total_waiting_time'] = self.jobs_manager.total_waiting_time
+        self.metrics['mean_waiting_time'] = self.jobs_manager.total_waiting_time / self.jobs_manager.nb_jobs_submitted
         # self._export_metrics()
 
     def _handle_event(self, event):
