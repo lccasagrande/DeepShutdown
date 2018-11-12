@@ -137,7 +137,6 @@ def train(args):
 			env=env,
 			seed=args.seed,
 			nsteps=16,
-			nstack=1,
 			lrschedule='constant',
 			total_timesteps=int(args.num_timesteps),
 			ent_coef=0.01,
@@ -273,13 +272,13 @@ if __name__ == "__main__":
 	parser.add_argument("--env", type=str, default="grid-v0")
 	parser.add_argument("--network", help="Network", default="mlp_small", type=str)
 	parser.add_argument("--model", help="Model", default="ACER", type=str)
-	parser.add_argument("--num_timesteps", type=int, default=2.5e6)  # 10e6)
+	parser.add_argument("--num_timesteps", type=int, default=1e5)  # 10e6)
 	parser.add_argument("--num_env", default=12, type=int)  # 24
 	parser.add_argument("--reward_scale", default=1.0, type=float)
 	parser.add_argument("--seed", type=int, default=123)
 	parser.add_argument("--save_path", default="../weights/acer_training", type=str)
 	parser.add_argument("--load_path", default=None, type=str)
-	parser.add_argument("--test", default=False, action="store_true")
+	parser.add_argument("--test", default=True, action="store_true")
 	parser.add_argument("--test_epi", default=1, type=int)
 	parser.add_argument("--test_outputfn", default=None, type=str)
 	parser.add_argument("--render", default=False, action="store_true")
