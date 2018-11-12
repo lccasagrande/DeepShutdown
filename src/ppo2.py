@@ -21,7 +21,7 @@ from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.bench import Monitor
 from baselines.common.retro_wrappers import RewardScaler
 from baselines.common.models import register
-from src.utils.common import print_episode_result
+from utils.common import print_episode_result
 
 try:
 	from mpi4py import MPI
