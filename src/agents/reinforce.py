@@ -1,9 +1,8 @@
 import tensorflow as tf
 import numpy as np
 import time as tm
-from collections import defaultdict
-from src.utils.commons import discount, normalize, variable_summaries
-from .agent import TFAgent
+from src.utils.agent import TFAgent
+from src.utils.common import discount, normalize, variable_summaries
 
 
 class ReinforceAgent(TFAgent):
@@ -80,11 +79,11 @@ class ReinforceAgent(TFAgent):
 		assert self.compiled
 		super(ReinforceAgent, self).evaluate(env, n_episodes, visualize)
 
-	def fit(self, env, n_iterations, n_episodes, log_interval, save_interval, summarize=False):
+	def fit(self, env, n_iterations, n_episodes, log_interval, save_interval, nb_max_steps, summarize=False):
 		def get_trajectories(env, nb):
 			trajectories, ob = dict(obs=[], acts=[], rews=[], dones=[]), env.reset()
 			episodes = 0
-			while episodes < nb:
+			for _ in range(nb_max_steps):
 				action = self.act(ob)
 				trajectories['obs'].append(ob)
 				trajectories['acts'].append(action)
@@ -92,6 +91,8 @@ class ReinforceAgent(TFAgent):
 				trajectories['rews'].append(rew)
 				trajectories["dones"].append(done)
 				episodes += np.sum(done)
+				if episodes >= nb:
+					break
 			return trajectories
 
 		def calc_advantages(trajs_rews):
@@ -99,7 +100,7 @@ class ReinforceAgent(TFAgent):
 			padded_rwds = [np.pad(r, (0, max_trajectory - len(r)), "constant", constant_values=0) for r in trajs_rews]
 			baseline = np.mean(padded_rwds, axis=0)
 			advs = np.concatenate([r - baseline[: len(r)] for r in trajs_rews])
-			return normalize(advs)
+			return advs #normalize(advs)
 
 		def train(states, actions, rewards):
 			loss, entropy, steps = 0, 0, 0
@@ -154,16 +155,20 @@ class ReinforceAgent(TFAgent):
 				trajectories['acts'], 1, 0), np.swapaxes(trajectories['rews'], 1, 0)
 			trajs_obs, trajs_acts, trajs_rews = [], [], []
 			for agent, agent_dones in enumerate(agents_dones):
-				start = 0
-				for traj_done in agent_dones:
-					o = agents_obs[agent][start:traj_done]
-					trajs_obs.append(o)
-					trajs_acts.append(agents_acts[agent][start:traj_done])
-					trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
-					start = traj_done
+				if len(agent_dones) == 0:
+					trajs_obs.append(agents_obs[agent][:])
+					trajs_acts.append(agents_acts[agent][:])
+					trajs_rews.append(discount(agents_rews[agent][:], self.gamma))
+				else:
+					start = 0
+					for traj_done in agent_dones:
+						trajs_obs.append(agents_obs[agent][start:traj_done])
+						trajs_acts.append(agents_acts[agent][start:traj_done])
+						trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
+						start = traj_done
 
 			all_obs, all_acts, all_advs = (
-			np.concatenate(trajs_obs), np.concatenate(trajs_acts), calc_advantages(trajs_rews))
+				np.concatenate(trajs_obs), np.concatenate(trajs_acts), calc_advantages(trajs_rews))
 
 			loss, entropy, steps = train(all_obs, all_acts, all_advs)
 
@@ -172,7 +177,7 @@ class ReinforceAgent(TFAgent):
 			episodes_rewards, episodes_steps = zip(*[(r[0], len(r)) for r in trajs_rews])
 
 			self._log["iteration"].append(iteration)
-			self._log["total_episodes"].append(iteration * n_episodes)
+			self._log["total_episodes"].append(iteration * len(episodes_steps))
 			self._log["total_steps"].append(total_steps)
 			self._log["avg_loss"].append(loss)
 			self._log["avg_entropy"].append(entropy)
@@ -190,3 +195,4 @@ class ReinforceAgent(TFAgent):
 			print(get_log_msg())
 
 		self.save_model(step=iteration)
+		env.close()

@@ -1,0 +1,2 @@
+energy_consumed,makespan,mean_slowdown,mean_turnaround_time,mean_waiting_time,score,steps,total_slowdown,total_turnaround_time,total_waiting_time
+190869.85765,152.000045,2.097466,9.705977,4.705977,-2.0974251504521817,183.0,71.31245421245418,330.0,160.0

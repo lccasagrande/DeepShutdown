@@ -4,7 +4,6 @@ from gym import Wrapper, wrappers
 
 
 # This class is to run multiple environments at the same time.
-
 def worker(remote, env_fn_wrapper):
 	print("Worker ALIVE!")
 	env = env_fn_wrapper.x()
@@ -24,7 +23,7 @@ def worker(remote, env_fn_wrapper):
 			break
 		elif cmd == 'get_spaces':
 			remote.send((env.action_space, env.observation_space))
-		#elif cmd == 'monitor':
+		# elif cmd == 'monitor':
 		#	is_monitor, is_train, experiment_dir, record_video_every = data
 		#	env.monitor(is_monitor, is_train, experiment_dir, record_video_every)
 		elif cmd == 'render':
@@ -56,8 +55,9 @@ class SubprocVecEnv():
 		env_fns: list of environments to run in sub-processes
 		"""
 		self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(len(env_fns))])
-		#self.ps = [Process(target=test_worker, args=(work_remote,), daemon=True) for work_remote in self.work_remotes]
-		self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn))) for (work_remote, env_fn) in zip(self.work_remotes, env_fns)]
+		# self.ps = [Process(target=test_worker, args=(work_remote,), daemon=True) for work_remote in self.work_remotes]
+		self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn))) for (work_remote, env_fn) in
+		           zip(self.work_remotes, env_fns)]
 		for p in self.ps: p.start()
 		self.remotes[0].send(('get_spaces', None))
 		self.action_space, self.observation_space = self.remotes[0].recv()
@@ -80,7 +80,7 @@ class SubprocVecEnv():
 		for p in self.ps:
 			p.join()
 
-	#def monitor(self, is_monitor=True, is_train=True, experiment_dir="", record_video_every=10):
+	# def monitor(self, is_monitor=True, is_train=True, experiment_dir="", record_video_every=10):
 	#	for remote in self.remotes:
 	#		remote.send(('monitor', (is_monitor, is_train, experiment_dir, record_video_every)))
 
@@ -123,11 +123,11 @@ class Monitor(Wrapper):
 		if is_monitor:
 			if is_train:
 				self.env = wrappers.Monitor(self.env, experiment_dir + 'output', resume=True,
-											video_callable=lambda count: count % record_video_every == 0)
+				                            video_callable=lambda count: count % record_video_every == 0)
 			else:
 				self.env = wrappers.Monitor(self.env, experiment_dir + 'test', resume=True,
-											video_callable=lambda count: count % record_video_every == 0)
+				                            video_callable=lambda count: count % record_video_every == 0)
 		else:
 			self.env = wrappers.Monitor(self.env, experiment_dir + 'output', resume=True,
-										video_callable=False)
+			                            video_callable=False)
 		self.env.reset()

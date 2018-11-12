@@ -1,17 +1,10 @@
-import argparse
 import numpy as np
-import random
 import gym
-import math
-import time
-import gym_grid.envs.grid_env as g
 import utils
-import keras.backend as K
 from keras.models import Sequential
 from keras.callbacks import TensorBoard
-from keras.layers import Dense, Activation, Flatten, Convolution2D, BatchNormalization, Permute, LSTM, TimeDistributed, GRU, Dropout
+from keras.layers import Dense,  Flatten
 from keras.optimizers import Adam
-from sklearn.preprocessing import MinMaxScaler
 from rl.agents import DQNAgent
 from rl.policy import LinearAnnealedPolicy, EpsGreedyQPolicy
 from rl.memory import SequentialMemory
@@ -21,20 +14,20 @@ from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
 WINDOW_LENGTH = 1
 
-
 class GridProcessor(Processor):
     def process_observation(self, observation):
-        assert observation.ndim == 1  # (height, width)
+        assert observation.ndim == 2  # (height, width)
         return observation
 
     def process_state_batch(self, batch):
-        processed_batch = np.squeeze(batch, axis=1)
-        return processed_batch
+        return batch
 
 
 def build_model(input_shape, output_shape):
     model = Sequential()
-    model.add(Dense(32, activation='relu', input_shape=input_shape))
+    model.add(Flatten(input_shape=(1,) + input_shape))
+    model.add(Dense(64, activation='relu', input_shape=input_shape))
+    model.add(Dense(64, activation='relu'))
     model.add(Dense(output_shape, activation='linear'))
     print(model.summary())
     return model
@@ -43,10 +36,10 @@ def build_model(input_shape, output_shape):
 if __name__ == "__main__":
     train = False
     weights_nb = "0"
-    name = "ddqn_slowdown_small"
+    name = "dqn"
     seed = 123
     weight_path = "weights/" + name
-    log_path = "log/" + name
+    log_path = "logs/" + name
     utils.create_dir(weight_path)
     utils.create_dir(log_path)
 
@@ -56,41 +49,39 @@ if __name__ == "__main__":
 
     model = build_model(input_shape=env.observation_space.shape, output_shape=env.action_space.n)
 
-    memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=50000, window_length=WINDOW_LENGTH)
 
     train_policy = LinearAnnealedPolicy(inner_policy=EpsGreedyQPolicy(),
                                         attr='eps',
                                         value_max=1.,
                                         value_min=.1,
                                         value_test=.05,
-                                        nb_steps=75000)
+                                        nb_steps=50000)
 
     dqn = DQNAgent(model=model,
                    nb_actions=env.action_space.n,
                    policy=train_policy,
                    processor=GridProcessor(),
                    memory=memory,
-                   dueling_type='max',
-                   enable_dueling_network=True,
+                   train_interval=1,
+                   nb_steps_warmup=100,
                    target_model_update=1000,
-                   gamma=.99)
+                   gamma=1.)
 
-    dqn.compile(Adam(lr=.0001), metrics=['mae', 'mse'])
+    dqn.compile(Adam(lr=1e-3), metrics=['mae', 'mse'])
 
     callbacks = [
-        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=300000),
+        ModelIntervalCheckpoint(weight_path + '/weights_{step}.h5f', interval=1e5),
         FileLogger(log_path+'/log.json', interval=100),
-        TensorBoard(log_dir=log_path,
-                    write_graph=True, write_images=True)
+        TensorBoard(log_dir=log_path,write_graph=True, write_images=True)
     ]
     if train:
         dqn.fit(env=env,
                 callbacks=callbacks,
-                nb_steps=300000,
+                nb_steps=1e5,
                 log_interval=10000,
                 visualize=False,
-                verbose=1,
-                nb_max_episode_steps=60)
+                verbose=2)
 
         dqn.save_weights(weight_path+'/weights_0.h5f', overwrite=True)
     else:

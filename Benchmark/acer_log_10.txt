@@ -1,0 +1,598 @@
+Logging to /tmp/openai-2018-11-12-17-16-36-036182
+Logging to /tmp/openai-2018-11-12-17-16-39-136798
+Training with ACER
+Running Acer Simple
+{'network_kwargs': {'value_network': 'copy'}, 'load_path': None, 'delta': 1, 'alpha': 0.99, 'trust_region': True, 'c': 10.0, 'replay_start': 1000, 'replay_ratio': 4, 'buffer_size': 50000, 'log_interval': 100, 'gamma': 1, 'rprop_alpha': 0.99, 'rprop_epsilon': 1e-05, 'lrschedule': 'constant', 'lr': 0.001, 'max_grad_norm': 0.5, 'ent_coef': 0.01, 'q_coef': 0.5, 'total_timesteps': 500000, 'nstack': 1, 'nsteps': 16, 'seed': 123, 'env': <baselines.common.vec_env.subproc_vec_env.SubprocVecEnv object at 0x7f268f31dc50>, 'network': 'mlp_small'}
+Params 8
+<tf.Variable 'acer_model/pi/mlp_fc0/w:0' shape=(2280, 20) dtype=float32_ref>
+<tf.Variable 'acer_model/pi/mlp_fc0/b:0' shape=(20,) dtype=float32_ref>
+<tf.Variable 'acer_model/vf/mlp_fc0/w:0' shape=(2280, 20) dtype=float32_ref>
+<tf.Variable 'acer_model/vf/mlp_fc0/b:0' shape=(20,) dtype=float32_ref>
+<tf.Variable 'acer_model/pi/w:0' shape=(20, 11) dtype=float32_ref>
+<tf.Variable 'acer_model/pi/b:0' shape=(11,) dtype=float32_ref>
+<tf.Variable 'acer_model/q/w:0' shape=(20, 11) dtype=float32_ref>
+<tf.Variable 'acer_model/q/b:0' shape=(11,) dtype=float32_ref>
+acer_model/pi/mlp_fc0/w/ExponentialMovingAverage:0
+acer_model/pi/mlp_fc0/b/ExponentialMovingAverage:0
+acer_model/vf/mlp_fc0/w/ExponentialMovingAverage:0
+acer_model/vf/mlp_fc0/b/ExponentialMovingAverage:0
+acer_model/pi/w/ExponentialMovingAverage:0
+acer_model/pi/b/ExponentialMovingAverage:0
+acer_model/q/w/ExponentialMovingAverage:0
+acer_model/q/b/ExponentialMovingAverage:0
+[<tf.Tensor 'gradients_1/acer_model/pi_2/mlp_fc0/MatMul_grad/MatMul_1:0' shape=(2280, 20) dtype=float32>, None, 'acer_model/pi/mlp_fc0/w:0']
+[<tf.Tensor 'gradients_1/acer_model/pi_2/mlp_fc0/add_grad/Reshape_1:0' shape=(20,) dtype=float32>, None, 'acer_model/pi/mlp_fc0/b:0']
+[None, <tf.Tensor 'gradients_2/acer_model/vf_1/mlp_fc0/MatMul_grad/MatMul_1:0' shape=(2280, 20) dtype=float32>, 'acer_model/vf/mlp_fc0/w:0']
+[None, <tf.Tensor 'gradients_2/acer_model/vf_1/mlp_fc0/add_grad/Reshape_1:0' shape=(20,) dtype=float32>, 'acer_model/vf/mlp_fc0/b:0']
+[<tf.Tensor 'gradients_1/acer_model/pi_3/MatMul_grad/MatMul_1:0' shape=(20, 11) dtype=float32>, None, 'acer_model/pi/w:0']
+[<tf.Tensor 'gradients_1/acer_model/pi_3/add_grad/Reshape_1:0' shape=(11,) dtype=float32>, None, 'acer_model/pi/b:0']
+[None, <tf.Tensor 'gradients_2/acer_model/q_1/MatMul_grad/MatMul_1:0' shape=(20, 11) dtype=float32>, 'acer_model/q/w:0']
+[None, <tf.Tensor 'gradients_2/acer_model/q_1/add_grad/Reshape_1:0' shape=(11,) dtype=float32>, 'acer_model/q/b:0']
+----------------------------------
+| avg_norm_adj        | 1.58     |
+| avg_norm_g          | 18.4     |
+| avg_norm_grads_f    | 17.6     |
+| avg_norm_k          | 3.32     |
+| avg_norm_k_dot_g    | 18.3     |
+| entropy             | 2.4      |
+| explained_variance  | -0.00213 |
+| fps                 | 0        |
+| loss                | -3       |
+| loss_bc             | -0       |
+| loss_f              | -4.01    |
+| loss_policy         | -4.01    |
+| loss_q              | 2.07     |
+| mean_episode_length | 0        |
+| mean_episode_reward | 0        |
+| norm_grads          | 0.622    |
+| norm_grads_policy   | 0.161    |
+| norm_grads_q        | 0.601    |
+| total_timesteps     | 0        |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.321    |
+| avg_norm_g          | 5.27     |
+| avg_norm_grads_f    | 5.09     |
+| avg_norm_k          | 3.32     |
+| avg_norm_k_dot_g    | 5.21     |
+| entropy             | 2.4      |
+| explained_variance  | 0.00145  |
+| fps                 | 5518     |
+| loss                | -0.614   |
+| loss_bc             | -0       |
+| loss_f              | -0.713   |
+| loss_policy         | -0.713   |
+| loss_q              | 0.246    |
+| mean_episode_length | 93       |
+| mean_episode_reward | -5.22    |
+| norm_grads          | 0.122    |
+| norm_grads_policy   | 0.0342   |
+| norm_grads_q        | 0.117    |
+| total_timesteps     | 19200    |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.236    |
+| avg_norm_g          | 4.76     |
+| avg_norm_grads_f    | 4.63     |
+| avg_norm_k          | 3.32     |
+| avg_norm_k_dot_g    | 4.74     |
+| entropy             | 2.4      |
+| explained_variance  | 0.0697   |
+| fps                 | 5130     |
+| loss                | -0.311   |
+| loss_bc             | -0       |
+| loss_f              | -0.379   |
+| loss_policy         | -0.379   |
+| loss_q              | 0.184    |
+| mean_episode_length | 94.4     |
+| mean_episode_reward | -5.08    |
+| norm_grads          | 0.113    |
+| norm_grads_policy   | 0.0315   |
+| norm_grads_q        | 0.108    |
+| total_timesteps     | 38400    |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0832   |
+| avg_norm_g          | 2.25     |
+| avg_norm_grads_f    | 2.19     |
+| avg_norm_k          | 3.93     |
+| avg_norm_k_dot_g    | 2.69     |
+| entropy             | 2.14     |
+| explained_variance  | 0.135    |
+| fps                 | 4930     |
+| loss                | -0.137   |
+| loss_bc             | -0       |
+| loss_f              | -0.133   |
+| loss_policy         | -0.133   |
+| loss_q              | 0.0351   |
+| mean_episode_length | 84.2     |
+| mean_episode_reward | -1.79    |
+| norm_grads          | 0.0427   |
+| norm_grads_policy   | 0.0298   |
+| norm_grads_q        | 0.0305   |
+| total_timesteps     | 57600    |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.124    |
+| avg_norm_g          | 2.96     |
+| avg_norm_grads_f    | 2.89     |
+| avg_norm_k          | 3.43     |
+| avg_norm_k_dot_g    | 3.12     |
+| entropy             | 1.98     |
+| explained_variance  | 0.194    |
+| fps                 | 4793     |
+| loss                | -0.0533  |
+| loss_bc             | -0       |
+| loss_f              | -0.07    |
+| loss_policy         | -0.07    |
+| loss_q              | 0.073    |
+| mean_episode_length | 82.6     |
+| mean_episode_reward | -1.24    |
+| norm_grads          | 0.0709   |
+| norm_grads_policy   | 0.0439   |
+| norm_grads_q        | 0.0558   |
+| total_timesteps     | 76800    |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0721   |
+| avg_norm_g          | 2.06     |
+| avg_norm_grads_f    | 2.02     |
+| avg_norm_k          | 3.35     |
+| avg_norm_k_dot_g    | 2.02     |
+| entropy             | 2.04     |
+| explained_variance  | 0.135    |
+| fps                 | 4672     |
+| loss                | -0.12    |
+| loss_bc             | -0       |
+| loss_f              | -0.121   |
+| loss_policy         | -0.121   |
+| loss_q              | 0.042    |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.1     |
+| norm_grads          | 0.0453   |
+| norm_grads_policy   | 0.0339   |
+| norm_grads_q        | 0.03     |
+| total_timesteps     | 96000    |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0342   |
+| avg_norm_g          | 2.34     |
+| avg_norm_grads_f    | 2.32     |
+| avg_norm_k          | 3.42     |
+| avg_norm_k_dot_g    | 2.41     |
+| entropy             | 2.06     |
+| explained_variance  | 0.0865   |
+| fps                 | 4599     |
+| loss                | 0.173    |
+| loss_bc             | -0       |
+| loss_f              | 0.171    |
+| loss_policy         | 0.171    |
+| loss_q              | 0.0449   |
+| mean_episode_length | 82.2     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0625   |
+| norm_grads_policy   | 0.0478   |
+| norm_grads_q        | 0.0403   |
+| total_timesteps     | 115200   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0365   |
+| avg_norm_g          | 1.84     |
+| avg_norm_grads_f    | 1.82     |
+| avg_norm_k          | 3.34     |
+| avg_norm_k_dot_g    | 1.85     |
+| entropy             | 2.14     |
+| explained_variance  | 0.0858   |
+| fps                 | 4568     |
+| loss                | 0.0547   |
+| loss_bc             | -0       |
+| loss_f              | 0.0582   |
+| loss_policy         | 0.0582   |
+| loss_q              | 0.0358   |
+| mean_episode_length | 82.4     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0335   |
+| norm_grads_policy   | 0.0274   |
+| norm_grads_q        | 0.0193   |
+| total_timesteps     | 134400   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.125    |
+| avg_norm_g          | 2.79     |
+| avg_norm_grads_f    | 2.72     |
+| avg_norm_k          | 3.33     |
+| avg_norm_k_dot_g    | 2.89     |
+| entropy             | 2.1      |
+| explained_variance  | 0.128    |
+| fps                 | 4546     |
+| loss                | 0.0734   |
+| loss_bc             | -0       |
+| loss_f              | 0.0739   |
+| loss_policy         | 0.0739   |
+| loss_q              | 0.0411   |
+| mean_episode_length | 82.6     |
+| mean_episode_reward | -1.09    |
+| norm_grads          | 0.052    |
+| norm_grads_policy   | 0.0449   |
+| norm_grads_q        | 0.0263   |
+| total_timesteps     | 153600   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0446   |
+| avg_norm_g          | 2.07     |
+| avg_norm_grads_f    | 2.04     |
+| avg_norm_k          | 3.39     |
+| avg_norm_k_dot_g    | 2.12     |
+| entropy             | 2.17     |
+| explained_variance  | 0.123    |
+| fps                 | 4545     |
+| loss                | 0.0624   |
+| loss_bc             | -0       |
+| loss_f              | 0.065    |
+| loss_policy         | 0.065    |
+| loss_q              | 0.0382   |
+| mean_episode_length | 82.3     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0433   |
+| norm_grads_policy   | 0.0391   |
+| norm_grads_q        | 0.0186   |
+| total_timesteps     | 172800   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.234    |
+| avg_norm_g          | 3.7      |
+| avg_norm_grads_f    | 3.57     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 3.82     |
+| entropy             | 2.13     |
+| explained_variance  | 0.0577   |
+| fps                 | 4549     |
+| loss                | -0.224   |
+| loss_bc             | -0       |
+| loss_f              | -0.22    |
+| loss_policy         | -0.22    |
+| loss_q              | 0.0342   |
+| mean_episode_length | 82.8     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0494   |
+| norm_grads_policy   | 0.0267   |
+| norm_grads_q        | 0.0415   |
+| total_timesteps     | 192000   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0192   |
+| avg_norm_g          | 1.6      |
+| avg_norm_grads_f    | 1.59     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 1.67     |
+| entropy             | 2.16     |
+| explained_variance  | 0.147    |
+| fps                 | 4533     |
+| loss                | 0.145    |
+| loss_bc             | -0       |
+| loss_f              | 0.151    |
+| loss_policy         | 0.151    |
+| loss_q              | 0.0317   |
+| mean_episode_length | 82.4     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0316   |
+| norm_grads_policy   | 0.0184   |
+| norm_grads_q        | 0.0257   |
+| total_timesteps     | 211200   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.046    |
+| avg_norm_g          | 1.97     |
+| avg_norm_grads_f    | 1.95     |
+| avg_norm_k          | 3.35     |
+| avg_norm_k_dot_g    | 2.03     |
+| entropy             | 2.14     |
+| explained_variance  | 0.155    |
+| fps                 | 4534     |
+| loss                | 0.0823   |
+| loss_bc             | -0       |
+| loss_f              | 0.0805   |
+| loss_policy         | 0.0805   |
+| loss_q              | 0.0465   |
+| mean_episode_length | 82.3     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0573   |
+| norm_grads_policy   | 0.0458   |
+| norm_grads_q        | 0.0344   |
+| total_timesteps     | 230400   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.04     |
+| avg_norm_g          | 1.64     |
+| avg_norm_grads_f    | 1.61     |
+| avg_norm_k          | 3.34     |
+| avg_norm_k_dot_g    | 1.66     |
+| entropy             | 2.15     |
+| explained_variance  | 0.0398   |
+| fps                 | 4538     |
+| loss                | -0.0185  |
+| loss_bc             | -0       |
+| loss_f              | -0.0115  |
+| loss_policy         | -0.0115  |
+| loss_q              | 0.029    |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0255   |
+| norm_grads_policy   | 0.0203   |
+| norm_grads_q        | 0.0154   |
+| total_timesteps     | 249600   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0277   |
+| avg_norm_g          | 1.86     |
+| avg_norm_grads_f    | 1.85     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 1.9      |
+| entropy             | 2.18     |
+| explained_variance  | 0.14     |
+| fps                 | 4543     |
+| loss                | 0.13     |
+| loss_bc             | -0       |
+| loss_f              | 0.132    |
+| loss_policy         | 0.132    |
+| loss_q              | 0.039    |
+| mean_episode_length | 82.7     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0344   |
+| norm_grads_policy   | 0.0248   |
+| norm_grads_q        | 0.0237   |
+| total_timesteps     | 268800   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0653   |
+| avg_norm_g          | 2.2      |
+| avg_norm_grads_f    | 2.16     |
+| avg_norm_k          | 3.33     |
+| avg_norm_k_dot_g    | 2.2      |
+| entropy             | 2.13     |
+| explained_variance  | 0.134    |
+| fps                 | 4545     |
+| loss                | -0.00388 |
+| loss_bc             | -0       |
+| loss_f              | -0.00177 |
+| loss_policy         | -0.00177 |
+| loss_q              | 0.0383   |
+| mean_episode_length | 82.4     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0435   |
+| norm_grads_policy   | 0.0401   |
+| norm_grads_q        | 0.0168   |
+| total_timesteps     | 288000   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0415   |
+| avg_norm_g          | 1.7      |
+| avg_norm_grads_f    | 1.67     |
+| avg_norm_k          | 3.34     |
+| avg_norm_k_dot_g    | 1.7      |
+| entropy             | 2.14     |
+| explained_variance  | 0.196    |
+| fps                 | 4539     |
+| loss                | -0.0491  |
+| loss_bc             | -0       |
+| loss_f              | -0.0426  |
+| loss_policy         | -0.0426  |
+| loss_q              | 0.0296   |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0491   |
+| norm_grads_policy   | 0.0461   |
+| norm_grads_q        | 0.0169   |
+| total_timesteps     | 307200   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0477   |
+| avg_norm_g          | 2.2      |
+| avg_norm_grads_f    | 2.17     |
+| avg_norm_k          | 3.39     |
+| avg_norm_k_dot_g    | 2.24     |
+| entropy             | 2.15     |
+| explained_variance  | 0.162    |
+| fps                 | 4539     |
+| loss                | 0.0116   |
+| loss_bc             | -0       |
+| loss_f              | 0.0132   |
+| loss_policy         | 0.0132   |
+| loss_q              | 0.0398   |
+| mean_episode_length | 82.6     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0785   |
+| norm_grads_policy   | 0.0757   |
+| norm_grads_q        | 0.0208   |
+| total_timesteps     | 326400   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0743   |
+| avg_norm_g          | 1.86     |
+| avg_norm_grads_f    | 1.82     |
+| avg_norm_k          | 3.3      |
+| avg_norm_k_dot_g    | 1.85     |
+| entropy             | 2.13     |
+| explained_variance  | 0.132    |
+| fps                 | 4539     |
+| loss                | -0.122   |
+| loss_bc             | -0       |
+| loss_f              | -0.122   |
+| loss_policy         | -0.122   |
+| loss_q              | 0.0427   |
+| mean_episode_length | 82.2     |
+| mean_episode_reward | -1.05    |
+| norm_grads          | 0.0433   |
+| norm_grads_policy   | 0.0235   |
+| norm_grads_q        | 0.0364   |
+| total_timesteps     | 345600   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0344   |
+| avg_norm_g          | 1.64     |
+| avg_norm_grads_f    | 1.62     |
+| avg_norm_k          | 3.3      |
+| avg_norm_k_dot_g    | 1.64     |
+| entropy             | 2.17     |
+| explained_variance  | 0.148    |
+| fps                 | 4535     |
+| loss                | -0.0359  |
+| loss_bc             | -0       |
+| loss_f              | -0.0286  |
+| loss_policy         | -0.0286  |
+| loss_q              | 0.0288   |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0371   |
+| norm_grads_policy   | 0.0285   |
+| norm_grads_q        | 0.0237   |
+| total_timesteps     | 364800   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0306   |
+| avg_norm_g          | 2.18     |
+| avg_norm_grads_f    | 2.17     |
+| avg_norm_k          | 3.29     |
+| avg_norm_k_dot_g    | 2.26     |
+| entropy             | 2.15     |
+| explained_variance  | 0.206    |
+| fps                 | 4536     |
+| loss                | 0.213    |
+| loss_bc             | -0       |
+| loss_f              | 0.212    |
+| loss_policy         | 0.212    |
+| loss_q              | 0.0437   |
+| mean_episode_length | 82.4     |
+| mean_episode_reward | -1.06    |
+| norm_grads          | 0.0504   |
+| norm_grads_policy   | 0.0244   |
+| norm_grads_q        | 0.0441   |
+| total_timesteps     | 384000   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0277   |
+| avg_norm_g          | 1.03     |
+| avg_norm_grads_f    | 1.01     |
+| avg_norm_k          | 3.3      |
+| avg_norm_k_dot_g    | 1.02     |
+| entropy             | 2.17     |
+| explained_variance  | 0.128    |
+| fps                 | 4537     |
+| loss                | -0.126   |
+| loss_bc             | -0       |
+| loss_f              | -0.112   |
+| loss_policy         | -0.112   |
+| loss_q              | 0.0144   |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.07    |
+| norm_grads          | 0.0337   |
+| norm_grads_policy   | 0.0244   |
+| norm_grads_q        | 0.0232   |
+| total_timesteps     | 403200   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.027    |
+| avg_norm_g          | 2.17     |
+| avg_norm_grads_f    | 2.15     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 2.2      |
+| entropy             | 2.13     |
+| explained_variance  | 0.168    |
+| fps                 | 4542     |
+| loss                | 0.183    |
+| loss_bc             | -0       |
+| loss_f              | 0.18     |
+| loss_policy         | 0.18     |
+| loss_q              | 0.0482   |
+| mean_episode_length | 82.3     |
+| mean_episode_reward | -1.06    |
+| norm_grads          | 0.0835   |
+| norm_grads_policy   | 0.0677   |
+| norm_grads_q        | 0.049    |
+| total_timesteps     | 422400   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0537   |
+| avg_norm_g          | 1.62     |
+| avg_norm_grads_f    | 1.59     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 1.62     |
+| entropy             | 2.17     |
+| explained_variance  | 0.115    |
+| fps                 | 4540     |
+| loss                | -0.0564  |
+| loss_bc             | -0       |
+| loss_f              | -0.049   |
+| loss_policy         | -0.049   |
+| loss_q              | 0.0287   |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.034    |
+| norm_grads_policy   | 0.0298   |
+| norm_grads_q        | 0.0163   |
+| total_timesteps     | 441600   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0286   |
+| avg_norm_g          | 1.04     |
+| avg_norm_grads_f    | 1.02     |
+| avg_norm_k          | 3.31     |
+| avg_norm_k_dot_g    | 1.03     |
+| entropy             | 2.14     |
+| explained_variance  | 0.137    |
+| fps                 | 4545     |
+| loss                | -0.113   |
+| loss_bc             | -0       |
+| loss_f              | -0.0986  |
+| loss_policy         | -0.0986  |
+| loss_q              | 0.0142   |
+| mean_episode_length | 82.8     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.022    |
+| norm_grads_policy   | 0.0113   |
+| norm_grads_q        | 0.0188   |
+| total_timesteps     | 460800   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0731   |
+| avg_norm_g          | 2.31     |
+| avg_norm_grads_f    | 2.26     |
+| avg_norm_k          | 3.36     |
+| avg_norm_k_dot_g    | 2.31     |
+| entropy             | 2.13     |
+| explained_variance  | 0.168    |
+| fps                 | 4543     |
+| loss                | -0.0644  |
+| loss_bc             | -0       |
+| loss_f              | -0.0725  |
+| loss_policy         | -0.0725  |
+| loss_q              | 0.0587   |
+| mean_episode_length | 82.5     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0614   |
+| norm_grads_policy   | 0.0466   |
+| norm_grads_q        | 0.04     |
+| total_timesteps     | 480000   |
+----------------------------------
+----------------------------------
+| avg_norm_adj        | 0.0432   |
+| avg_norm_g          | 1.36     |
+| avg_norm_grads_f    | 1.34     |
+| avg_norm_k          | 3.3      |
+| avg_norm_k_dot_g    | 1.39     |
+| entropy             | 2.16     |
+| explained_variance  | 0.0308   |
+| fps                 | 4547     |
+| loss                | -0.0957  |
+| loss_bc             | -0       |
+| loss_f              | -0.0852  |
+| loss_policy         | -0.0852  |
+| loss_q              | 0.0222   |
+| mean_episode_length | 82.6     |
+| mean_episode_reward | -1.08    |
+| norm_grads          | 0.0286   |
+| norm_grads_policy   | 0.0206   |
+| norm_grads_q        | 0.0198   |
+| total_timesteps     | 499200   |
+----------------------------------
+Done!

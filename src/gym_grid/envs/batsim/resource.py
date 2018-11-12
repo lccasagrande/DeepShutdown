@@ -80,7 +80,7 @@ class Resource:
         return min(self.queue, key=(lambda j: j.time_left_to_start)) if self.queue else None
 
     def sleep(self):
-        assert not self.is_computing, "Cannot sleep resource while computing!"
+        #assert not self.is_computing, "Cannot sleep resource while computing!"
         self.state = Resource.State.SLEEPING
         self.pstate = Resource.PowerState.SHUT_DOWN
 
