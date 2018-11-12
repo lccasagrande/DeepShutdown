@@ -9,7 +9,6 @@ import time as t
 import gym
 import pandas as pd
 import subprocess
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 BATSIM_WORKLOAD = "src/gym_grid/envs/batsim/files/workloads"
 BATSIM_PLATFORM = "src/gym_grid/envs/batsim/files/platforms/platform_hg_10.xml"
@@ -84,6 +83,7 @@ def train(model, workload_path, timesteps, save_path, log_fn):
 	load_workloads(workload_path)
 	args = "--model {} --num_timesteps {} --save_path {}".format(model, int(timesteps), save_path)
 	cmd = "{} src/ppo2.py {} > {}".format(PYTHON, args, log_fn)
+	os.environ['OPENAI_LOGDIR'] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"+workload_path+"/"+model))
 	process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
 	process.wait()
 

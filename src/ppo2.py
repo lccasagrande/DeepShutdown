@@ -260,7 +260,6 @@ def run(args):
 		"total_waiting_time",
 		"mean_waiting_time",
 	]
-
 	if args.test:
 		test_model(args, sim_metrics)
 	else:

@@ -52,7 +52,7 @@ RUN ${PIP} install tensorflow \
         opencv-python \
         sortedcontainers
 
-RUN git clone https://github.com/lccasagrande/baselines.git && cd baselines && pip install -e .
+RUN git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
 
 WORKDIR /app
 
