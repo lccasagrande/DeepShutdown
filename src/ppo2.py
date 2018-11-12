@@ -278,7 +278,7 @@ if __name__ == "__main__":
 	parser.add_argument("--seed", type=int, default=123)
 	parser.add_argument("--save_path", default="../weights/acer_training", type=str)
 	parser.add_argument("--load_path", default=None, type=str)
-	parser.add_argument("--test", default=True, action="store_true")
+	parser.add_argument("--test", default=False, action="store_true")
 	parser.add_argument("--test_epi", default=1, type=int)
 	parser.add_argument("--test_outputfn", default=None, type=str)
 	parser.add_argument("--render", default=False, action="store_true")
