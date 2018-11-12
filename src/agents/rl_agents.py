@@ -2,8 +2,6 @@ import numpy as np
 import csv
 import gym
 import utils
-from gym_grid.envs.grid_env import GridEnv
-from multiprocessing import Process, Manager
 from collections import defaultdict, deque
 
 
