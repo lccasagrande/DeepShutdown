@@ -49,10 +49,17 @@ class ReinforceAgent(TFAgent):
 				self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
 				self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.Y)
 				self.loss = tf.reduce_mean(self.cross_entropy) - 0.01 * self.entropy
-				self.grads, variables = zip(*self.optimizer.compute_gradients(self.loss))
-				self.grads = [grad if grad is None else grad * self.R for grad in self.grads]
-				self.grads_and_vars = list(zip(self.grads, variables))
-				self.train_op = self.optimizer.apply_gradients(self.grads_and_vars, global_step=self.global_step)
+				self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
+				self.grads, _ = zip(*self.grads_and_vars)
+				self.grads_holder, grads_and_vars_holder = [], []
+				for grad, variable in self.grads_and_vars:
+					grad_placeholder = tf.placeholder(tf.float32, shape=grad.get_shape())
+					self.grads_holder.append(grad_placeholder)
+					grads_and_vars_holder.append((grad_placeholder, variable))
+
+				# self.grads = [grad if grad is None else grad * self.R for grad in self.grads]
+				#self.grads_and_vars = list(zip(self.grads, variables))
+				self.apply_grads = self.optimizer.apply_gradients(grads_and_vars_holder, global_step=self.global_step)
 
 			with tf.name_scope("summary"):
 				for grad, var in self.grads_and_vars:
@@ -100,25 +107,32 @@ class ReinforceAgent(TFAgent):
 			padded_rwds = [np.pad(r, (0, max_trajectory - len(r)), "constant", constant_values=0) for r in trajs_rews]
 			baseline = np.mean(padded_rwds, axis=0)
 			advs = np.concatenate([r - baseline[: len(r)] for r in trajs_rews])
-			return advs #normalize(advs)
+			return advs  # normalize(advs)
 
 		def train(states, actions, rewards):
-			loss, entropy, steps = 0, 0, 0
+			loss, entropy, steps, all_gradients = 0, 0, 0, []
 			feed_dict = {self.states: states, self.actions: actions, self.returns: rewards}
-			ops = [self.train_op, self.loss, self.entropy, self.global_step]
-			ops += [self.summarize] if summarize else [tf.no_op()]
 			self.session.run(self.iterator.initializer, feed_dict=feed_dict)
 			try:
 				while True:
-					_, l, entpy, g_step, summary = self.session.run(ops)
+					grads, l, entpy = self.session.run([self.grads, self.loss, self.entropy])
 					loss += l
 					entropy += entpy
 					steps += 1
-					if summarize: self.writer.add_summary(summary, g_step)
+					all_gradients.append(grads)
+			# if summarize: self.writer.add_summary(summary, g_step)
 			except tf.errors.OutOfRangeError:
 				pass
+
 			loss /= steps
 			entropy /= steps
+			feed_dict = {}
+			for i, placeholder in enumerate(self.grads_holder):
+				gr = [r * all_gradients[step][i] for step, r in enumerate(rewards)]
+				mean_gradient = np.mean(gr, axis=0)
+				feed_dict[placeholder] = mean_gradient
+			self.session.run(self.apply_grads, feed_dict=feed_dict)
+
 			return loss, entropy, steps
 
 		def get_log_msg():
@@ -165,6 +179,7 @@ class ReinforceAgent(TFAgent):
 						trajs_obs.append(agents_obs[agent][start:traj_done])
 						trajs_acts.append(agents_acts[agent][start:traj_done])
 						trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
+						start = traj_done
 						start = traj_done
 
 			all_obs, all_acts, all_advs = (
