@@ -51,7 +51,7 @@ class Agent:
 
 
 class TFAgent(Agent):
-	def __init__(self, saver_max_to_keep=5, **kwargs):
+	def __init__(self, saver_max_to_keep=1, save_path=None, **kwargs):
 		super(TFAgent, self).__init__(**kwargs)
 		tf.set_random_seed(self.seed)
 		self._saver_max_to_keep = saver_max_to_keep
@@ -61,6 +61,7 @@ class TFAgent(Agent):
 		self._session = None
 		self._log_fn = None
 		self._writer = None
+		self._save_path = self.checkpoint_dir if save_path is None else save_path
 
 	def save_log(self):
 		print(colorize(" [*] Saving logs...", "green"))
@@ -69,16 +70,16 @@ class TFAgent(Agent):
 
 	def save_model(self, step=None):
 		print(colorize(" [*] Saving checkpoints...", "green"))
-		ckpt_file = os.path.join(self.checkpoint_dir, self.name)
+		ckpt_file = os.path.join(self._save_path, self.name)
 		self.saver.save(self.session, ckpt_file, global_step=step)
 
 	def load_model(self):
 		print(colorize(" [*] Loading checkpoints...", "green"))
 
-		ckpt = tf.train.get_checkpoint_state(self.checkpoint_dir)
+		ckpt = tf.train.get_checkpoint_state(self._save_path)
 		if ckpt and ckpt.model_checkpoint_path:
 			ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-			fname = os.path.join(self.checkpoint_dir, ckpt_name)
+			fname = os.path.join(self._save_path, ckpt_name)
 			self.saver.restore(self.session, fname)
 			print(colorize(" [*] Load SUCCESS: %s" % fname, "green"))
 			return True
@@ -102,17 +103,15 @@ class TFAgent(Agent):
 	@property
 	def log_fn(self):
 		if self._log_fn is None:
-			root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-			path = os.path.join(root, "logs", self.name)
+			path = os.path.join(self._save_path, self.name)
 			os.makedirs(path, exist_ok=True)
-			self._log_fn = path + "/log.json"
+			self._log_fn = path + ".log"
 		return self._log_fn
 
 	@property
 	def writer(self):
 		if self._writer is None:
-			root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-			writer_path = os.path.join(root, "logs", self.name)
+			writer_path = os.path.join(self._save_path, self.name)
 			os.makedirs(writer_path, exist_ok=True)
 			self._writer = tf.summary.FileWriter(writer_path, self.session.graph)
 		return self._writer

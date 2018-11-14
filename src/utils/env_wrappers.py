@@ -5,7 +5,6 @@ from gym import Wrapper, wrappers
 
 # This class is to run multiple environments at the same time.
 def worker(remote, env_fn_wrapper):
-	print("Worker ALIVE!")
 	env = env_fn_wrapper.x()
 	while True:
 		cmd, data = remote.recv()

@@ -4,11 +4,13 @@ from shutil import copyfile
 from multiprocessing import Process, Manager
 from collections import defaultdict
 import os
+from main import run, parse_args
 from utils.common import overwrite_dir, print_episode_result
 import time as t
 import gym
 import pandas as pd
 import subprocess
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 BATSIM_WORKLOAD = "src/gym_grid/envs/batsim/files/workloads"
 BATSIM_PLATFORM = "src/gym_grid/envs/batsim/files/platforms/platform_hg_10.xml"
@@ -78,12 +80,17 @@ def load_workloads(workloads_path):
 			names.append(w)
 	return nb_workloads, names
 
+def exec_reinforce(env_type, weight_fn):
+	args = parse_args()
+	args.env = env_type
+	args.save_path = weight_fn
+	args.test = True
+	return run(args)
 
-def train(model, workload_path, timesteps, save_path, log_fn):
+def train_reinforce(workload_path, timesteps, save_path, name, log_fn):
 	load_workloads(workload_path)
-	args = "--model {} --num_timesteps {} --save_path {}".format(model, int(timesteps), save_path)
-	cmd = "{} src/ppo2.py {} > {}".format(PYTHON, args, log_fn)
-	os.environ['OPENAI_LOGDIR'] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"+workload_path+"/"+model))
+	args = "--nb_iteration {} --save_path {} --name {} --save_interval {} --log_interval {}".format(int(timesteps), save_path, name, int(timesteps), int(timesteps))
+	cmd = "{} src/main.py {} > {}".format(PYTHON, args, log_fn)
 	process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
 	process.wait()
 
@@ -100,6 +107,16 @@ def exec(model, env_type, weight_fn, episodes, output_dir):
 	process.wait()
 
 	return pd.read_csv(result_fn).to_dict(orient='records')[0]
+
+
+def train(model, workload_path, timesteps, save_path, log_fn):
+	load_workloads(workload_path)
+	args = "--model {} --num_timesteps {} --save_path {}".format(model, int(timesteps), save_path)
+	cmd = "{} src/ppo2.py {} > {}".format(PYTHON, args, log_fn)
+	os.environ['OPENAI_LOGDIR'] = os.path.abspath(
+		os.path.join(os.path.dirname(__file__), "../" + workload_path + "/" + model))
+	process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+	process.wait()
 
 
 def exec_batsched(output_dir, policy, workload_path):
@@ -133,6 +150,13 @@ def run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_
 	def get_a2c_results(env_type, weight_fn, metrics, episodes, output_dir, workload_name, results):
 		result = exec("A2C", env_type, weight_fn, episodes, output_dir)
 		results['policy'].append("A2C")
+		results['workload'].append(workload_name)
+		for metric, value in result.items():
+			results[metric].append(value)
+
+	def get_reinforce_results(env_type, weight_fn, workload_name, results):
+		result = exec_reinforce(env_type, weight_fn)
+		results['policy'].append("REINFORCE")
 		results['workload'].append(workload_name)
 		for metric, value in result.items():
 			results[metric].append(value)
@@ -183,8 +207,12 @@ def run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_
 	# get_a2c_results(env_type, weight_fn, metrics, nb_workloads, workload_path, 1, results)
 	# print("*** A2C *** TEST *** END ***")
 
+	#print("*** ACER *** TEST *** START ***")
+	#get_acer_results(env_type, weight_fn, metrics, nb_workloads, workload_path, 1, results)
+	#print("*** ACER *** TEST *** END ***")
+
 	print("*** ACER *** TEST *** START ***")
-	get_acer_results(env_type, weight_fn, metrics, nb_workloads, workload_path, 1, results)
+	get_reinforce_results(env_type, weight_fn, 1, results)
 	print("*** ACER *** TEST *** END ***")
 
 	# print("*** PPO *** TEST *** START ***")
@@ -206,13 +234,14 @@ def run_battery(env_type, workloads_path, train_steps, policies, metrics, output
 	for workload in workloads:
 		workload_path = os.path.join(workloads_path, workload)
 		output_fn = "{}/{}_{}.csv".format(output, "benchmark", workload)
-		weight_fn = "{}/{}_{}.hdf5".format(output, "acer", workload)
-		log_fn = "{}/{}_{}.txt".format(output, "acer_log", workload)
+		#weight_fn = "{}/{}_{}.hdf5".format(output, "acer", workload)
+		log_fn = "{}/{}_{}.txt".format(output, "reinforce_log", workload)
 		# train("PPO", workload_path, train_steps[workload], weight_fn, log_fn)
 		# train("A2C", workload_path, train_steps[workload], weight_fn, log_fn)
-		train("ACER", workload_path, train_steps[workload], weight_fn, log_fn)
+		#train("ACER", workload_path, train_steps[workload], weight_fn, log_fn)
+		train_reinforce(workload_path, train_steps[workload], workload_path, "reinforce_"+workload, log_fn)
 
-		run_benchmark(env_type, workload_path, weight_fn, policies, metrics, output_fn)
+		run_benchmark(env_type, workload_path, workload_path, policies, metrics, output_fn)
 
 
 if __name__ == "__main__":
@@ -220,7 +249,8 @@ if __name__ == "__main__":
 	           'total_waiting_time', 'mean_waiting_time', 'max_waiting_time', 'max_turnaround_time', 'max_slowdown']
 	workloads = 'Benchmark/workloads'
 	output = "Benchmark"
-	train_steps = {"10": 5e5, "40": 1e6, "70": 1.5e6, "100": 2.5e6, "130": 5e6, "160": 7e6, "190": 9e6}
+	#train_steps = {"10": 5e5, "40": 1e6, "70": 1.5e6, "100": 2.5e6, "130": 5e6, "160": 7e6, "190": 9e6}
+	train_steps = {"10": 3e2, "40": 3e3, "70": 4e3, "100": 5e3, "130": 6e3, "160": 7e3, "190": 8e3}
 	policies = [Random(), Tetris(), SJF(), Packer()]
 	eval_env = "batsim-v0"
 	train_env = "grid-v0"

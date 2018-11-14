@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import time as tm
 from src.utils.agent import TFAgent
+from collections import defaultdict
+from src.utils.env_wrappers import SubprocVecEnv
 from src.utils.common import discount, normalize, variable_summaries
 
 
@@ -58,7 +60,7 @@ class ReinforceAgent(TFAgent):
 					grads_and_vars_holder.append((grad_placeholder, variable))
 
 				# self.grads = [grad if grad is None else grad * self.R for grad in self.grads]
-				#self.grads_and_vars = list(zip(self.grads, variables))
+				# self.grads_and_vars = list(zip(self.grads, variables))
 				self.apply_grads = self.optimizer.apply_gradients(grads_and_vars_holder, global_step=self.global_step)
 
 			with tf.name_scope("summary"):
@@ -75,32 +77,71 @@ class ReinforceAgent(TFAgent):
 
 	def act(self, state):
 		assert self.compiled
-		x = [state] if state.ndim == 1 else state
-		act_probs = self.session.run(self.act_probs, {self.X: x})
+		act_probs = self.session.run(self.act_probs, {self.X: state})
 		if act_probs.ndim == 1:
-			return np.random.choice(np.arange(self.nb_actions), p=act_probs)
+			return [np.random.choice(np.arange(self.nb_actions), p=act_probs)]
 		else:
 			return [np.random.choice(np.arange(self.nb_actions), p=p) for p in act_probs]
 
 	def evaluate(self, env, n_episodes, visualize=False):
-		assert self.compiled
-		super(ReinforceAgent, self).evaluate(env, n_episodes, visualize)
-
-	def fit(self, env, n_iterations, n_episodes, log_interval, save_interval, nb_max_steps, summarize=False):
-		def get_trajectories(env, nb):
-			trajectories, ob = dict(obs=[], acts=[], rews=[], dones=[]), env.reset()
-			episodes = 0
-			for _ in range(nb_max_steps):
-				action = self.act(ob)
-				trajectories['obs'].append(ob)
-				trajectories['acts'].append(action)
-				ob, rew, done, _ = env.step(action)
-				trajectories['rews'].append(rew)
-				trajectories["dones"].append(done)
-				episodes += np.sum(done)
-				if episodes >= nb:
+		results = defaultdict(float)
+		for _ in range(1, n_episodes + 1, 1):
+			ob = env.reset()
+			score, steps = 0, 0
+			while True:
+				if visualize: env.render()
+				action = self.act([ob])[0]
+				ob, r, done, info = env.step(action)
+				steps += 1
+				score += r
+				if done:
+					if isinstance(info, dict):
+						for k, v in info.items():
+							results[k] += v
+					results["score"] += score
+					results["steps"] += steps
 					break
-			return trajectories
+		env.close()
+		print("[EVALUATE] Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(results["score"])))
+		return results
+
+	def fit(self, env, nb_iteration, nb_env, nb_max_steps, log_interval, save_interval, summarize=False):
+		def decode_trajectories(trajectories):
+			agents_dones = [np.where(traj == True)[0] + 1 for traj in np.swapaxes(trajectories['dones'], 1, 0)]
+			agents_obs = np.swapaxes(trajectories['obs'], 1, 0)
+			agents_acts = np.swapaxes(trajectories['acts'], 1, 0)
+			agents_rews = np.swapaxes(trajectories['rews'], 1, 0)
+			trajs_obs, trajs_acts, trajs_rews = [], [], []
+
+			for agent, agent_dones in enumerate(agents_dones):
+				if len(agent_dones) == 0:
+					trajs_obs.append(agents_obs[agent][:])
+					trajs_acts.append(agents_acts[agent][:])
+					trajs_rews.append(discount(agents_rews[agent][:], self.gamma))
+				else:
+					start = 0
+					for traj_done in agent_dones:
+						trajs_obs.append(agents_obs[agent][start:traj_done])
+						trajs_acts.append(agents_acts[agent][start:traj_done])
+						trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
+						start = traj_done
+			return trajs_obs, trajs_acts, trajs_rews
+
+		def get_trajectories():
+			trajectories = dict(obs=[], acts=[], rews=[], dones=[])
+			agent_dones = np.zeros(shape=(nb_env,))
+			obs = env.reset()
+			for step in range(1, nb_max_steps + 1):
+				acts = self.act(obs)
+				trajectories['obs'].append(obs)
+				trajectories['acts'].append(acts)
+				obs, rews, dones, _ = env.step(acts)
+				trajectories['rews'].append(rews)
+				trajectories["dones"].append(dones)
+				agent_dones += dones
+				if np.all(agent_dones > 0) and np.sum(agent_dones) >= nb_env:
+					break
+			return trajectories, step
 
 		def calc_advantages(trajs_rews):
 			max_trajectory = max(len(r) for r in trajs_rews)
@@ -133,7 +174,7 @@ class ReinforceAgent(TFAgent):
 				feed_dict[placeholder] = mean_gradient
 			self.session.run(self.apply_grads, feed_dict=feed_dict)
 
-			return loss, entropy, steps
+			return loss, entropy
 
 		def get_log_msg():
 			log_msg = " ---------------------\
@@ -160,37 +201,25 @@ class ReinforceAgent(TFAgent):
 			return log_msg
 
 		assert self.compiled
+		assert isinstance(env, SubprocVecEnv)
 		total_steps = 0
-		for iteration in range(1, n_iterations + 1):
+		fit_start_time = tm.time()
+		for iteration in range(1, nb_iteration + 1):
 			t_start = tm.time()
-			trajectories = get_trajectories(env, n_episodes)
-			agents_dones = [np.where(traj == True)[0] + 1 for traj in np.swapaxes(trajectories['dones'], 1, 0)]
-			agents_obs, agents_acts, agents_rews = np.swapaxes(trajectories['obs'], 1, 0), np.swapaxes(
-				trajectories['acts'], 1, 0), np.swapaxes(trajectories['rews'], 1, 0)
-			trajs_obs, trajs_acts, trajs_rews = [], [], []
-			for agent, agent_dones in enumerate(agents_dones):
-				if len(agent_dones) == 0:
-					trajs_obs.append(agents_obs[agent][:])
-					trajs_acts.append(agents_acts[agent][:])
-					trajs_rews.append(discount(agents_rews[agent][:], self.gamma))
-				else:
-					start = 0
-					for traj_done in agent_dones:
-						trajs_obs.append(agents_obs[agent][start:traj_done])
-						trajs_acts.append(agents_acts[agent][start:traj_done])
-						trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
-						start = traj_done
-						start = traj_done
-
-			all_obs, all_acts, all_advs = (
-				np.concatenate(trajs_obs), np.concatenate(trajs_acts), calc_advantages(trajs_rews))
-
-			loss, entropy, steps = train(all_obs, all_acts, all_advs)
-
-			elapsed_time = round(tm.time() - t_start, 2)
+			# GET TRAJECTORIES
+			trajectories, steps = get_trajectories()
 			total_steps += steps
-			episodes_rewards, episodes_steps = zip(*[(r[0], len(r)) for r in trajs_rews])
 
+			t_obs, t_acts, t_rews = decode_trajectories(trajectories)
+
+			all_obs, all_acts, all_advs = (np.concatenate(t_obs), np.concatenate(t_acts), calc_advantages(t_rews))
+
+			# TRAIN
+			loss, entropy = train(all_obs, all_acts, all_advs)
+
+			# LOG
+			elapsed_time = round(tm.time() - t_start, 2)
+			episodes_rewards, episodes_steps = zip(*[(r[0], len(r)) for r in t_rews])
 			self._log["iteration"].append(iteration)
 			self._log["total_episodes"].append(iteration * len(episodes_steps))
 			self._log["total_steps"].append(total_steps)
@@ -199,6 +228,7 @@ class ReinforceAgent(TFAgent):
 			self._log["avg_steps"].append(np.mean(episodes_steps))
 			self._log["avg_reward"].append(np.mean(episodes_rewards))
 			self._log["max_reward"].append(np.max(episodes_rewards))
+			self._log["min_reward"].append(np.min(episodes_rewards))
 			self._log["elapsed_time"].append(elapsed_time)
 
 			if iteration % log_interval == 0:
@@ -209,5 +239,7 @@ class ReinforceAgent(TFAgent):
 
 			print(get_log_msg())
 
-		self.save_model(step=iteration)
+		self.save_model(step=nb_iteration)
+		self.save_log()
 		env.close()
+		print("Done training in {:.2f} s".format(tm.time() - fit_start_time, 2))
