@@ -201,7 +201,7 @@ class ReinforceAgent(TFAgent):
 			return log_msg
 
 		assert self.compiled
-		assert isinstance(env, SubprocVecEnv)
+		#assert isinstance(env, SubprocVecEnv)
 		total_steps = 0
 		fit_start_time = tm.time()
 		for iteration in range(1, nb_iteration + 1):

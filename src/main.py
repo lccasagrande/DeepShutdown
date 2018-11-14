@@ -3,9 +3,9 @@ import gym_grid.envs.grid_env as g
 import argparse
 import os
 import pandas as pd
-from src.utils.networks import mlp
-from src.utils.common import make_vec_env
-from src.agents.reinforce import ReinforceAgent
+from utils.networks import mlp
+from utils.common import make_vec_env
+from agents.reinforce import ReinforceAgent
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
