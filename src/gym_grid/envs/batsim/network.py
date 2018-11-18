@@ -408,7 +408,7 @@ class NetworkHandler:
 
 class BatsimEvent:
     def __init__(self, timestamp, type, data):
-        self.timestamp = float("%4.f" % timestamp)
+        self.timestamp = float("{:.4f}".format(float(timestamp)))
         self.type = type
         self.data = data
 

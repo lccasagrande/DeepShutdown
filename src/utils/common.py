@@ -222,3 +222,44 @@ def normalize(dt):
 	avg = dt.mean()
 	std = dt.std()
 	return (dt - avg) / std if std != 0 else dt
+
+
+def get_avail_res_from_img2(state):
+	res = state[0, 0:-2]
+	free = 0
+	for i in range(1, res.shape[0], 2):
+		if res[i] == 0:
+			free += 1
+	return free
+
+
+def get_jobs_from_img2(state):
+	slot, jobs = 1, []
+	jobs_state = state[:, -2:]
+	for j in range(jobs_state.shape[0]):
+		if jobs_state[j, 0] != 0:
+			res = jobs_state[j, 0]
+			time = jobs_state[j, 1]
+			jobs.append((res, time, slot))
+		slot += 1
+	return jobs, slot
+
+
+
+def get_avail_res_from_img(state):
+	res = state[0, 0:10]
+	occuped = np.count_nonzero(res)
+	return len(res) - occuped
+
+
+def get_jobs_from_img(state):
+	slot = 1
+	jobs_state = state[:, 10:110]
+	jobs = []
+	for i in range(0, 100, 10):
+		if jobs_state[0, i] != 0:
+			res = np.count_nonzero(jobs_state[0, i:i + 10])
+			time = np.count_nonzero(jobs_state[:, i])
+			jobs.append((res, time, slot))
+		slot += 1
+	return jobs, slot

@@ -88,7 +88,7 @@ class GridSimulator:
     def proceed_time(self, t):
         self.current_time += t
         if self.time_since_last_new_job < self.max_tracking_time_since_last_job:
-            self.time_since_last_new_job += 1
+            self.time_since_last_new_job += t
 
     def start(self):
         self.curr_workload, self.curr_workload_name = self.select_workload()

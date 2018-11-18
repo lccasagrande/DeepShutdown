@@ -1,0 +1,2 @@
+policy,workload,makespan,mean_waiting_time,mean_turnaround_time,mean_slowdown,max_waiting_time,max_turnaround_time,max_slowdown,energy_consumed,total_slowdown,total_turnaround_time,total_waiting_time,score,steps
+REINFORCE,1,133.00012,8.851917,12.925991,4.840337,39.000075,41.000075,21.000075,134179.868,130.68822843822844,349.0,239.0,-4.840304756971413,157.0

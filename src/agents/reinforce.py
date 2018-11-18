@@ -59,8 +59,6 @@ class ReinforceAgent(TFAgent):
 					self.grads_holder.append(grad_placeholder)
 					grads_and_vars_holder.append((grad_placeholder, variable))
 
-				# self.grads = [grad if grad is None else grad * self.R for grad in self.grads]
-				# self.grads_and_vars = list(zip(self.grads, variables))
 				self.apply_grads = self.optimizer.apply_gradients(grads_and_vars_holder, global_step=self.global_step)
 
 			with tf.name_scope("summary"):

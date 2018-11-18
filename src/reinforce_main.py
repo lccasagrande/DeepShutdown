@@ -48,7 +48,7 @@ def parse_args():
 	parser.add_argument("--seed", default=123, type=int)
 	parser.add_argument("--lr", default=1e-3, type=float)
 	parser.add_argument("--nb_env", default=12, type=int)
-	parser.add_argument("--nb_iteration", type=int, default=10)  # 10e6)
+	parser.add_argument("--nb_iteration", type=int, default=100)  # 10e6)
 	parser.add_argument("--nb_max_steps", default=1000, type=int)
 	parser.add_argument("--save_interval", default=1000, type=int)
 	parser.add_argument("--log_interval", default=1000, type=int)
@@ -57,6 +57,7 @@ def parse_args():
 	parser.add_argument("--test", default=False, action="store_true")
 	parser.add_argument("--summarize", default=False, action="store_true")
 	return parser.parse_args()
+
 
 if __name__ == "__main__":
 	run(parse_args())

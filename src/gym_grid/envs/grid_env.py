@@ -68,8 +68,7 @@ class GridEnv(gym.Env):
 		return dict() if self.simulator.running_simulation else self.simulator.metrics
 
 	def _get_obs(self):
-		o = self.simulator.get_state()
-		return np.reshape(o, o.shape + (1,))
+		return self.simulator.get_state()
 
 	def _print(self):
 		stats = "\rSubmitted: {:5} Completed: {:5} | Running: {:5} Waiting: {:5}".format(

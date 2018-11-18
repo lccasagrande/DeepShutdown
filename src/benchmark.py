@@ -90,7 +90,7 @@ def exec_reinforce(env_type, weight_fn):
 def train_reinforce(workload_path, timesteps, save_path, name, log_fn):
 	load_workloads(workload_path)
 	args = "--nb_iteration {} --save_path {} --name {} --save_interval {} --log_interval {}".format(int(timesteps), save_path, name, int(timesteps), int(timesteps))
-	cmd = "{} src/main.py {} > {}".format(PYTHON, args, log_fn)
+	cmd = "{} src/reinforce_main.py {} > {}".format(PYTHON, args, log_fn)
 	process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
 	process.wait()
 
@@ -250,7 +250,7 @@ if __name__ == "__main__":
 	workloads = 'Benchmark/workloads'
 	output = "Benchmark"
 	#train_steps = {"10": 5e5, "40": 1e6, "70": 1.5e6, "100": 2.5e6, "130": 5e6, "160": 7e6, "190": 9e6}
-	train_steps = {"10": 1e3, "40": 3e3, "70": 4e3, "100": 5e3, "130": 6e3, "160": 7e3, "190": 8e3}
+	train_steps = {"10": 1e3, "40": 1e3, "70": 1e3, "100": 1e3, "130": 1e3, "160": 1e3, "190": 1e3}
 	policies = [Random(), Tetris(), SJF(), Packer()]
 	eval_env = "batsim-v0"
 	train_env = "grid-v0"

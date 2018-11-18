@@ -9,27 +9,18 @@ from gym.utils import colorize
 
 
 class Agent:
-	def __init__(self, input_shape, nb_actions, name, seed):
-		self.input_shape = input_shape
-		self.nb_actions = nb_actions
+	def __init__(self, name, seed):
 		self.name = name
 		self.seed = seed
 		np.random.seed(seed)
 		random.seed(seed)
 
 	def act(self, state):
-		pass
-
-	def build_model(self):
-		pass
-
-	def fit(self):
-		pass
+		raise NotImplemented()
 
 	def evaluate(self, env, n_episodes, visualize=False):
 		reward_history = list()
-
-		for _ in tqdm(range(1, n_episodes + 1, 1), initial=1, total=n_episodes):
+		for _ in range(1, n_episodes + 1):
 			ob = env.reset()
 			reward = 0.0
 			while True:
@@ -43,14 +34,23 @@ class Agent:
 			reward_history.append(reward)
 
 		env.close()
-		print(
-			"[EVALUATE] Avg. reward over {} episodes: {:.4f}".format(
-				n_episodes, np.mean(reward_history)
-			)
-		)
+		print("[EVALUATE] Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
 
 
-class TFAgent(Agent):
+class LearningAgent(Agent):
+	def __init__(self, input_shape, nb_actions, **kwargs):
+		super(LearningAgent, self).__init__(**kwargs)
+		self.input_shape = input_shape
+		self.nb_actions = nb_actions
+
+	def build_model(self):
+		raise NotImplementedError()
+
+	def fit(self):
+		raise NotImplementedError()
+
+
+class TFAgent(LearningAgent):
 	def __init__(self, saver_max_to_keep=1, save_path=None, **kwargs):
 		super(TFAgent, self).__init__(**kwargs)
 		tf.set_random_seed(self.seed)
