@@ -16,9 +16,9 @@ def run(args):
 		agent = RandomAgent(seed=args.seed, name="")
 	elif args.heuristic == "ljf":
 		agent = LJFAgent(seed=args.seed, name="")
-	elif args.heuristic == "Packer":
+	elif args.heuristic == "packer":
 		agent = PackerAgent(seed=args.seed, name="")
-	elif args.heuristic == "Tetris":
+	elif args.heuristic == "tetris":
 		agent = TetrisAgent(seed=args.seed, name="")
 	elif args.heuristic == "firstfit":
 		agent = FirstFitAgent(seed=args.seed, name="")

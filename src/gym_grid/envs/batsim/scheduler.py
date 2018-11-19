@@ -186,7 +186,6 @@ class SchedulerManager():
 
 	def on_job_submitted(self, time, data):
 		job = Job.from_json(data)
-		job.requested_time /= 2.0
 		job.state = Job.State.SUBMITTED
 
 		if self._job_slots.is_full:

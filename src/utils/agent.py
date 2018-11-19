@@ -19,22 +19,24 @@ class Agent:
 		raise NotImplemented()
 
 	def evaluate(self, env, n_episodes, visualize=False):
-		reward_history = list()
+		reward_history, steps_history = list(), list()
 		for _ in range(1, n_episodes + 1):
 			ob = env.reset()
-			reward = 0.0
+			reward,steps = 0.0, 0
 			while True:
 				if visualize:
 					env.render()
 				action = self.act(ob)
 				ob, r, done, _ = env.step(action)
 				reward += r
+				steps += 1
 				if done:
 					break
 			reward_history.append(reward)
+			steps_history.append(steps)
 
 		env.close()
-		print("[EVALUATE] Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
+		print("[EVALUATE] Avg. reward {:.4f} - Avg. steps {:.4f} over {} episodes".format(np.mean(reward_history), np.mean(steps_history), n_episodes))
 
 
 class LearningAgent(Agent):

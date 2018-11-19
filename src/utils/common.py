@@ -235,11 +235,11 @@ def get_avail_res_from_img2(state):
 
 def get_jobs_from_img2(state):
 	slot, jobs = 1, []
-	jobs_state = state[:, -2:]
+	jobs_state = state[:, 10:12]
 	for j in range(jobs_state.shape[0]):
 		if jobs_state[j, 0] != 0:
-			res = jobs_state[j, 0]
-			time = jobs_state[j, 1]
+			res = jobs_state[j, 0] * 10
+			time = jobs_state[j, 1] * 20
 			jobs.append((res, time, slot))
 		slot += 1
 	return jobs, slot

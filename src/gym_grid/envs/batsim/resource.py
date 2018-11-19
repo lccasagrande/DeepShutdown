@@ -110,8 +110,8 @@ class Resource:
 		# view[self.queue[0].time_left_to_start:self.time_window] = 127
 
 		for j in self.queue:
-            end = j.time_left_to_start + int(j.remaining_time)
-            view[j.time_left_to_start:end] = j.color
+			end = j.time_left_to_start + int(j.remaining_time)
+			view[j.time_left_to_start:end] = 1.0
 
 		return view
 
@@ -201,9 +201,9 @@ class ResourceManager:
 
 	def _select_resources(self, nb_res, time):
 		state = self.get_view()
-        for t in range(self.time_window-time+1):
-            avail_resources = [r for r in range(self.nb_resources) if np.count_nonzero(state[t:t+time, r]) == 0]
-            if len(avail_resources) >= nb_res:
+		for t in range(self.time_window-time+1):
+			avail_resources = [r for r in range(self.nb_resources) if np.count_nonzero(state[t:t+time, r]) == 0]
+			if len(avail_resources) >= nb_res:
 				return avail_resources[0:nb_res], t
 
 		raise UnavailableResourcesError("There is no resource available.")

@@ -1,13 +1,8 @@
 import gym
-from copy import deepcopy
-from collections import defaultdict
 from gym import error, spaces, utils
 from gym.utils import seeding
 import matplotlib.pyplot as plt
-import math
-from sklearn.preprocessing import MinMaxScaler
-from .batsim import BatsimHandler, GridSimulatorHandler, InsufficientResourcesError, UnavailableResourcesError, \
-	InvalidJobError
+from .batsim import GridSimulatorHandler, UnavailableResourcesError, 	InvalidJobError
 import numpy as np
 
 
@@ -18,15 +13,11 @@ class GridEnv(gym.Env):
 		self.backlog_width = 3
 		self.energy_factor = .5
 		self.slowd_factor = .5
-		self.simulator = GridSimulatorHandler(job_slots=self.job_slots,
-		                                      time_window=self.time_window,
+		self.simulator = GridSimulatorHandler(job_slots=self.job_slots, time_window=self.time_window,
 		                                      backlog_width=self.backlog_width)
 		self.action_space = spaces.Discrete(self.job_slots + 1)
 		state = self._get_obs()
-		self.observation_space = spaces.Box(low=0,
-		                                    high=1,
-		                                    shape=state.shape,
-		                                    dtype=state.dtype)
+		self.observation_space = spaces.Box(low=0, high=1, shape=state.shape, dtype=state.dtype)
 
 	def step(self, action):
 		assert self.simulator.running_simulation, "Simulation is not running."
@@ -80,7 +71,7 @@ class GridEnv(gym.Env):
 
 	def _plot(self):
 		def plot_resource_state():
-			resource_state = self.simulator.resource_manager.get_view()
+			resource_state = self.simulator.get_resource_state()
 			plt.subplot(1, 1 + self.job_slots + 2, 1)
 			plt.imshow(resource_state, interpolation='nearest', vmin=0, vmax=1, aspect='auto')
 			ax = plt.gca()

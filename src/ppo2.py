@@ -1,6 +1,5 @@
 import gym
 import gym_grid.envs.grid_env as g
-import sys
 import multiprocessing
 import os.path as osp
 import tensorflow as tf
@@ -9,12 +8,12 @@ import os
 import argparse
 import pandas as pd
 from collections import defaultdict
-from baselines import bench, logger
+from baselines import logger
 from baselines.acer import acer
 from baselines.ppo2 import ppo2
 from baselines.deepq import deepq
 from baselines.a2c import a2c
-from baselines.a2c.utils import conv, fc, conv_to_fc
+from baselines.a2c.utils import conv, fc, conv_to_fc, lstm, batch_to_seq, seq_to_batch
 from baselines.common import misc_util
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
@@ -39,14 +38,14 @@ def cnn_small(**conv_kwargs):
 			conv(X, "c1", nf=16, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs)
 		)
 		h = conv_to_fc(h)
-		# h = activ(fc(h, 'fc1', nh=20, init_scale=np.sqrt(2)))
+		h = activ(fc(h, 'fc1', nh=20, init_scale=np.sqrt(2)))
 		return h
 
 	return network_fn
 
 
 @register("mlp_small")
-def mlp(num_layers=1, num_hidden=20, activation=tf.nn.relu, layer_norm=False):
+def mlp(num_layers=5, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 	def network_fn(X):
 		h = tf.layers.flatten(X)
 		for i in range(num_layers):
@@ -141,7 +140,7 @@ def train(args):
 			total_timesteps=int(args.num_timesteps),
 			ent_coef=0.01,
 			max_grad_norm=0.5,
-			#c=0.5,
+			# c=0.5,
 			lr=1e-3,
 			gamma=1,
 			replay_ratio=4,
@@ -271,9 +270,9 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--env", type=str, default="grid-v0")
 	parser.add_argument("--network", help="Network", default="mlp_small", type=str)
-	parser.add_argument("--model", help="Model", default="ACER", type=str)
-	parser.add_argument("--num_timesteps", type=int, default=1e5)  # 10e6)
-	parser.add_argument("--num_env", default=12, type=int)  # 24
+	parser.add_argument("--model", help="Model", default="PPO", type=str)
+	parser.add_argument("--num_timesteps", type=int, default=9e6)
+	parser.add_argument("--num_env", default=24, type=int)
 	parser.add_argument("--reward_scale", default=1.0, type=float)
 	parser.add_argument("--seed", type=int, default=123)
 	parser.add_argument("--save_path", default="../weights/acer_training", type=str)
