@@ -1,7 +1,8 @@
 import gym
-import src.GridEnv.envs.grid_env as g
+import GridGym.envs.grid_env
 import argparse
 import pandas as pd
+import time as tm
 from src.agents.heuristics import *
 
 
@@ -25,7 +26,9 @@ def run(args):
 	else:
 		raise NotImplementedError("Agent not implemented")
 
+	t0 = tm.time()
 	results = agent.evaluate(env, args.nb_episodes, args.visualize)
+	print("Done in {:.4f} seconds".format(tm.time() - t0))
 	if args.output is not None:
 		dt = pd.DataFrame([results])
 		dt.to_csv(args.output, index=False)
