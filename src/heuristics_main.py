@@ -36,7 +36,7 @@ def run(args):
 
 def parse_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--env", type=str, default="grid-v0")
+	parser.add_argument("--env", type=str, default="batsim-v0")
 	parser.add_argument("--heuristic", type=str, default="sjf")
 	parser.add_argument("--output", type=str, default=None)
 	parser.add_argument("--seed", default=123, type=int)
