@@ -1,3 +1,6 @@
 [submodule "src/GridEnv"]
 	path = src/GridEnv
 	url = git@github.com:lccasagrande/GridEnv.git
+[submodule "src/GridGym"]
+	path = src/GridGym
+	url = git@github.com:lccasagrande/GridGym.git

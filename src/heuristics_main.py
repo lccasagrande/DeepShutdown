@@ -1,5 +1,5 @@
 import gym
-import gym_grid.envs.grid_env as g
+import src.GridEnv.envs.grid_env as g
 import argparse
 import pandas as pd
 from src.agents.heuristics import *
