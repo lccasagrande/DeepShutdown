@@ -2,7 +2,7 @@ import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 import matplotlib.pyplot as plt
-from .batsim import GridSimulatorHandler, UnavailableResourcesError, 	InvalidJobError
+from .batsim import GridSimulatorHandler, UnavailableResourcesError, InvalidJobError
 import numpy as np
 
 

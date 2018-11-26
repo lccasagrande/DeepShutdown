@@ -33,11 +33,10 @@ class BatsimHandler:
 		self.time_window = time_window
 		self.job_slots = job_slots
 		self.protocol_manager = BatsimProtocolHandler()
-		self.resource_manager = ResourceManager.from_xml(self._platform, time_window)
+		self.resource_manager = ResourceManager.from_xml(self._platform, self.time_window)
 		self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
 		self.backlog_width = backlog_width
-		self.state_shape = (self.time_window, self.nb_resources +
-		                    (self.nb_resources * self.job_slots) + backlog_width)
+		self.state_shape = (self.time_window, self.nb_resources + (self.nb_resources * self.job_slots) + backlog_width)
 		self._reset()
 
 	@property
@@ -266,8 +265,7 @@ class BatsimHandler:
 		return s
 
 	def get_backlog_state(self):
-		s = np.zeros(shape=(self.time_window, self.backlog_width),
-		             dtype=np.uint8)
+		s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
 		t, i = 0, 0
 		nb_jobs = min(self.backlog_width * self.time_window,
 		              self.jobs_manager.nb_jobs_in_backlog)
@@ -280,14 +278,12 @@ class BatsimHandler:
 		return s
 
 	def get_time_state(self):
-		diff = min(self.max_tracking_time_since_last_job,
-		           self.current_time - self.time_since_last_new_job)
+		diff = min(self.max_tracking_time_since_last_job, self.current_time - self.time_since_last_new_job)
 		v = diff / float(self.max_tracking_time_since_last_job)
 		return np.full(shape=self.time_window, fill_value=v, dtype=np.float)
 
 	def _get_image(self):
-		shape = (self.time_window, self.nb_resources +
-		         self.job_slots * self.nb_resources + self.backlog_width + 1)
+		shape = (self.time_window, self.nb_resources + self.job_slots * self.nb_resources + self.backlog_width + 1)
 		state = np.zeros(shape=shape, dtype=np.float)
 
 		# RESOURCES
@@ -299,8 +295,7 @@ class BatsimHandler:
 		state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
 		# BACKLOG
-		backlog_end = self.nb_resources + self.job_slots * \
-		              self.nb_resources + self.backlog_width
+		backlog_end = self.nb_resources + self.job_slots * self.nb_resources + self.backlog_width
 		state[:, job_slot_end:backlog_end] = self.get_backlog_state()
 
 		state[:, -1] = self.get_time_state()
@@ -329,6 +324,7 @@ class GridSimulatorHandler:
 
 		# self._output_dir = self._make_random_dir(BatsimHandler.OUTPUT_DIR)
 		self._platform = os.path.join(fullpath, GridSimulatorHandler.PLATFORM)
+		self.time_slice = 1
 		workloads_path = os.path.join(
 			fullpath, GridSimulatorHandler.WORKLOAD_DIR)
 		self._workloads = [workloads_path + "/" +
@@ -336,9 +332,8 @@ class GridSimulatorHandler:
 		self.nb_simulation = 0
 		self.time_window = time_window
 		self.job_slots = job_slots
-		self.resource_manager = ResourceManager.from_xml(
-			self._platform, time_window)
-		self.jobs_manager = SchedulerManager(self.nb_resources, job_slots)
+		self.resource_manager = ResourceManager.from_xml(self._platform, self.time_window)
+		self.jobs_manager = SchedulerManager(self.nb_resources, self.job_slots)
 		self.simulator = GridSimulator(self._workloads, self.jobs_manager)
 		self.backlog_width = backlog_width
 		self._reset()
@@ -476,9 +471,9 @@ class GridSimulatorHandler:
 		return resources
 
 	def _proceed_time(self):
-        self.simulator.proceed_time(1)
-        self.jobs_manager.update_state(1)
-        self.resource_manager.update_state(1)
+		self.simulator.proceed_time(1)
+		self.jobs_manager.update_state(1)
+		self.resource_manager.update_state(1)
 		self.resource_manager.shut_down_unused()
 
 	def _update_state(self):
@@ -487,22 +482,32 @@ class GridSimulatorHandler:
 			self._handle_event(event)
 
 	def get_job_slot_state(self):
-        s = np.zeros(
-            shape=(self.time_window, self.nb_resources*self.job_slots), dtype=np.uint8)
+		s = np.zeros(shape=(self.time_window, self.nb_resources * self.job_slots), dtype=np.uint8)
 
-        for i, job in enumerate(self.jobs_manager.job_slots):
-            if job != None:
-                start_idx = i * self.nb_resources
-                end_idx = start_idx + job.requested_resources
-                s[0:job.requested_time, start_idx:end_idx] = 1
+		for i, job in enumerate(self.jobs_manager.job_slots):
+			if job is not None:
+				start_idx = i * self.nb_resources
+				end_idx = start_idx + job.requested_resources
+				s[0:job.requested_time, start_idx:end_idx] = 1
 		return s
 
+	#def get_job_slot_state(self):
+	#	state = np.zeros(shape=(self.time_window, self.nb_resources * self.job_slots), dtype=np.float)
+#
+	#	for i, job in enumerate(self.jobs_manager.job_slots):
+	#		if job is not None:
+	#			start_idx = i * self.nb_resources
+	#			end_idx = start_idx + job.requested_resources
+	#			frac_time, req_time = math.modf(job.requested_time / self.time_slice)
+	#			state[0:int(req_time), start_idx:end_idx] = 1.
+	#			if frac_time != 0:
+	#				state[int(req_time), start_idx:end_idx] = frac_time
+	#	return state
+
 	def get_backlog_state(self):
-		s = np.zeros(shape=(self.time_window, self.backlog_width),
-		             dtype=np.uint8)
+		s = np.zeros(shape=(self.time_window, self.backlog_width), dtype=np.uint8)
 		t, i = 0, 0
-		nb_jobs = min(self.backlog_width * self.time_window,
-		              self.jobs_manager.nb_jobs_in_backlog)
+		nb_jobs = min(self.backlog_width * self.time_window, self.jobs_manager.nb_jobs_in_backlog)
 		for _ in range(nb_jobs):
 			s[t, i] = 1
 			i += 1
@@ -512,31 +517,49 @@ class GridSimulatorHandler:
 		return s
 
 	def get_time_state(self):
-		v = self.simulator.time_since_last_new_job / \
-		    float(self.simulator.max_tracking_time_since_last_job)
+		v = self.simulator.time_since_last_new_job / float(self.simulator.max_tracking_time_since_last_job)
 		return np.full(shape=self.time_window, fill_value=v, dtype=np.float)
 
 	def get_state(self):
 		return self._get_image()
 
+	def get_resource_state(self):
+		return self.resource_manager.get_view()
+		#resource_state = self.resource_manager.get_view()
+		#state = np.zeros(shape=(self.time_window, self.nb_resources))
+		#start = 0
+		#for init in range(0, resource_state.shape[0], self.time_slice):
+		#	state[start, 0:self.nb_resources] = np.sum(resource_state[init:init + self.time_slice, 0:self.nb_resources],
+		#	                                           axis=0) / self.time_slice
+		#	start += 1
+#
+		#return state
+
 	def _get_image(self):
-		shape = (self.time_window, self.nb_resources +
-		         self.job_slots * self.nb_resources + self.backlog_width + 1)
+		assert self.time_window % self.time_slice == 0
+		shape = (self.time_window, self.nb_resources + self.job_slots * self.nb_resources + self.backlog_width + 1)
 		state = np.zeros(shape=shape, dtype=np.float)
 
 		# RESOURCES
 		resource_end = self.nb_resources
-		state[:, 0:resource_end] = self.resource_manager.get_view()
+		state[:, 0:resource_end] = self.get_resource_state()
 
 		# JOB SLOTS
-		job_slot_end = self.nb_resources * self.job_slots + self.nb_resources
+		job_slot_end = self.nb_resources * self.job_slots + resource_end
+
+		#for i, job in enumerate(self.jobs_manager.job_slots):
+		#	if job is not None:
+		#		state[i, 0] = job.requested_resources / self.nb_resources
+		#		state[i, 1] = job.requested_time / self.time_window
+
 		state[:, resource_end:job_slot_end] = self.get_job_slot_state()
 
 		# BACKLOG
-		backlog_end = self.nb_resources + self.job_slots * \
-		              self.nb_resources + self.backlog_width
+		backlog_end = job_slot_end + self.backlog_width
 		state[:, job_slot_end:backlog_end] = self.get_backlog_state()
 
 		state[:, -1] = self.get_time_state()
+
+		#state = np.expand_dims(state, axis=2)
 
 		return state

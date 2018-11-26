@@ -45,7 +45,7 @@ def cnn_small(**conv_kwargs):
 
 
 @register("mlp_small")
-def mlp(num_layers=5, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
+def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 	def network_fn(X):
 		h = tf.layers.flatten(X)
 		for i in range(num_layers):
@@ -271,7 +271,7 @@ if __name__ == "__main__":
 	parser.add_argument("--env", type=str, default="grid-v0")
 	parser.add_argument("--network", help="Network", default="mlp_small", type=str)
 	parser.add_argument("--model", help="Model", default="PPO", type=str)
-	parser.add_argument("--num_timesteps", type=int, default=9e6)
+	parser.add_argument("--num_timesteps", type=int, default=1.5e6)
 	parser.add_argument("--num_env", default=24, type=int)
 	parser.add_argument("--reward_scale", default=1.0, type=float)
 	parser.add_argument("--seed", type=int, default=123)
