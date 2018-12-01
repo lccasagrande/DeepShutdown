@@ -48,7 +48,7 @@ class PackerAgent(Agent):
 		nb_res = get_avail_res_from_img(state)
 		jobs, _ = get_jobs_from_img(state)
 		for j in jobs:
-			if j[0] <= nb_res and j[0] > score:
+			if nb_res >= j[0] > score:
 				score = j[0]
 				action = j[2]
 

@@ -1,5 +1,5 @@
 import gym
-import gym_grid.envs.grid_env as g
+import GridGym.envs.grid_env
 import multiprocessing
 import os.path as osp
 import tensorflow as tf
@@ -8,19 +8,18 @@ import os
 import argparse
 import pandas as pd
 from collections import defaultdict
-from baselines import logger
-from baselines.acer import acer
-from baselines.ppo2 import ppo2
-from baselines.deepq import deepq
-from baselines.a2c import a2c
-from baselines.a2c.utils import conv, fc, conv_to_fc, lstm, batch_to_seq, seq_to_batch
-from baselines.common import misc_util
-from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-from baselines.bench import Monitor
-from baselines.common.retro_wrappers import RewardScaler
-from baselines.common.models import register
-from utils.common import print_episode_result
+from src.baselines.baselines import logger
+from src.baselines.baselines.acer import acer
+from src.baselines.baselines.ppo2 import ppo2
+from src.baselines.baselines.deepq import deepq
+from src.baselines.baselines.a2c import a2c
+from src.baselines.baselines.a2c.utils import conv, fc, conv_to_fc, lstm, batch_to_seq, seq_to_batch
+from src.baselines.baselines.common import misc_util
+from src.baselines.baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from src.baselines.baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from src.baselines.baselines.bench.monitor import Monitor
+from src.baselines.baselines.common.retro_wrappers import RewardScaler
+from src.utils.common import print_episode_result
 
 try:
 	from mpi4py import MPI
@@ -28,23 +27,6 @@ except ImportError:
 	MPI = None
 
 
-@register("cnn_1")
-def cnn_small(**conv_kwargs):
-	def network_fn(X):
-		# h = tf.cast(X, tf.float32) / 255.
-
-		activ = tf.nn.relu
-		h = activ(
-			conv(X, "c1", nf=16, rf=2, stride=1, init_scale=np.sqrt(2), **conv_kwargs)
-		)
-		h = conv_to_fc(h)
-		h = activ(fc(h, 'fc1', nh=20, init_scale=np.sqrt(2)))
-		return h
-
-	return network_fn
-
-
-@register("mlp_small")
 def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 	def network_fn(X):
 		h = tf.layers.flatten(X)
@@ -55,6 +37,33 @@ def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 			h = activation(h)
 
 		return h
+
+	return network_fn
+
+
+def cnn_small(**conv_kwargs):
+	def network_fn(X, nenv=1):
+		nbatch = X.shape[0]
+		nsteps = nbatch // nenv
+		h = tf.cast(X, tf.float32)
+
+		h = tf.nn.relu(conv(h, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
+		# h = tf.nn.relu(conv(h, 'c2', nf=16, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
+		h = conv_to_fc(h)
+		# h = activ(fc(h, 'fc1', nh=128, init_scale=np.sqrt(2)))
+
+		M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
+		S = tf.placeholder(tf.float32, [nenv, 2 * 128])  # states
+
+		xs = batch_to_seq(h, nenv, nsteps)
+		ms = batch_to_seq(M, nenv, nsteps)
+
+		h5, snew = lstm(xs, ms, S, scope='lstm', nh=128)
+
+		h = seq_to_batch(h5)
+		initial_state = np.zeros(S.shape.as_list(), dtype=float)
+
+		return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
 
 	return network_fn
 
@@ -96,12 +105,13 @@ def build_env(args):
 def train(args):
 	print("Training with {}".format(args.model))
 	env = build_env(args)
+	network = "lstm"#mlp()
 
 	if args.model == "A2C":
 		model = a2c.learn(
 			env=env,
 			seed=args.seed,
-			network=args.network,
+			network=network,
 			total_timesteps=int(args.num_timesteps),
 			nsteps=8,
 			lr=1e-3,
@@ -111,28 +121,27 @@ def train(args):
 			value_network="copy",
 			load_path=args.load_path,
 		)
-
 	elif args.model == "PPO":
 		model = ppo2.learn(
 			env=env,
 			seed=args.seed,
-			network=args.network,
+			network=network,
 			total_timesteps=int(args.num_timesteps),
-			nsteps=64,
+			nsteps=128,
 			lam=0.95,
-			gamma=1,
+			gamma=1.,
 			lr=1e-3,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=4,
 			log_interval=10,
-			nminibatches=8,
+			nminibatches=1,  # 8
 			ent_coef=0.01,
 			cliprange=0.1,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
-			value_network="copy",
+			#value_network="copy",
 			load_path=args.load_path,
 		)
 	elif args.model == "ACER":
 		model = acer.learn(
-			network=args.network,
+			network=network,
 			env=env,
 			seed=args.seed,
 			nsteps=16,
@@ -149,18 +158,9 @@ def train(args):
 			value_network="copy",
 			load_path=args.load_path)
 	elif args.model == "DQN":
-		model = deepq.learn(env,
-		                    network='mlp',
-		                    seed=args.seed,
-		                    lr=1e-3,
-		                    total_timesteps=int(args.num_timesteps),
-		                    gamma=1.0,
-		                    buffer_size=10000,
-		                    exploration_final_eps=0.05,
-		                    train_freq=4,
-		                    target_network_update_freq=1000,
-		                    exploration_fraction=0.1,
-		                    hiddens=[])
+		model = deepq.learn(env=env, network=network, seed=args.seed, lr=1e-3, total_timesteps=int(args.num_timesteps),
+		                    gamma=1.0, buffer_size=10000, exploration_final_eps=0.05, train_freq=4,
+		                    target_network_update_freq=1000, exploration_fraction=0.1, hiddens=[])
 	else:
 		raise NotImplementedError("Model not implemented")
 
@@ -212,7 +212,7 @@ def test_model(args, metrics=[], verbose=True):
 				results["steps"] += steps
 				return
 
-	args.load_path = args.save_path if args.load_path == None else args.load_path
+	args.load_path = args.save_path if args.load_path is None else args.load_path
 	args.save_path = None
 	args.num_timesteps = 0
 	args.num_env = 1
@@ -236,18 +236,6 @@ def test_model(args, metrics=[], verbose=True):
 
 
 def run(args):
-	batsim_metrics = [
-		"makespan",
-		"mean_slowdown",
-		"total_slowdown",
-		"total_turnaround_time",
-		"mean_turnaround_time",
-		"total_waiting_time",
-		"mean_waiting_time",
-		"max_waiting_time",
-		"max_turnaround_time",
-		"max_slowdown",
-	]
 	sim_metrics = [
 		"energy_consumed",
 		"makespan",
@@ -271,13 +259,13 @@ if __name__ == "__main__":
 	parser.add_argument("--env", type=str, default="grid-v0")
 	parser.add_argument("--network", help="Network", default="mlp_small", type=str)
 	parser.add_argument("--model", help="Model", default="PPO", type=str)
-	parser.add_argument("--num_timesteps", type=int, default=1.5e6)
+	parser.add_argument("--num_timesteps", type=int, default=20e6)
 	parser.add_argument("--num_env", default=24, type=int)
 	parser.add_argument("--reward_scale", default=1.0, type=float)
 	parser.add_argument("--seed", type=int, default=123)
-	parser.add_argument("--save_path", default="../weights/acer_training", type=str)
+	parser.add_argument("--save_path", default="../weights/lstm_training", type=str)
 	parser.add_argument("--load_path", default=None, type=str)
-	parser.add_argument("--test", default=False, action="store_true")
+	parser.add_argument("--test", default=True, action="store_true")
 	parser.add_argument("--test_epi", default=1, type=int)
 	parser.add_argument("--test_outputfn", default=None, type=str)
 	parser.add_argument("--render", default=False, action="store_true")

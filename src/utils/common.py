@@ -224,35 +224,45 @@ def normalize(dt):
 	return (dt - avg) / std if std != 0 else dt
 
 
-def get_avail_res_from_img2(state):
-	res = state[0, 0:-2]
-	free = 0
-	for i in range(1, res.shape[0], 2):
-		if res[i] == 0:
-			free += 1
-	return free
+def get_avail_res_from_img(state):
+	res = state[0:100]
+	return len(res) - np.count_nonzero(res)
 
 
-def get_jobs_from_img2(state):
+def get_jobs_from_img(state):
 	slot, jobs = 1, []
-	jobs_state = state[:, 10:12]
-	for j in range(jobs_state.shape[0]):
-		if jobs_state[j, 0] != 0:
-			res = jobs_state[j, 0] * 10
-			time = jobs_state[j, 1] * 20
+	jobs_state = state[100:120]
+	for j in range(0, 20, 2):
+		if jobs_state[j] != 0:
+			res = jobs_state[j]
+			time = np.sum(jobs_state[j+1])
+			jobs.append((res, time, slot))
+		slot += 1
+	return jobs, slot
+
+def get_avail_res_from_img3(state):
+	res = state[0, 0:20]
+	return len(res) - np.count_nonzero(res)
+
+
+def get_jobs_from_img3(state):
+	slot, jobs = 1, []
+	jobs_state = state[:, 20:40]
+	for j in range(0, 20, 2):
+		if jobs_state[0, j] != 0:
+			res = jobs_state[0, j] * 20
+			time = np.sum(jobs_state[:, j+1]) * 60
 			jobs.append((res, time, slot))
 		slot += 1
 	return jobs, slot
 
 
-
-def get_avail_res_from_img(state):
+def get_avail_res_from_img2(state):
 	res = state[0, 0:10]
-	occuped = np.count_nonzero(res)
-	return len(res) - occuped
+	return len(res) - np.count_nonzero(res)
 
 
-def get_jobs_from_img(state):
+def get_jobs_from_img2(state):
 	slot = 1
 	jobs_state = state[:, 10:110]
 	jobs = []

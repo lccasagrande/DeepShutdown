@@ -2,7 +2,7 @@ from setuptools import setup
 import sys
 
 CURRENT_PYTHON = float("{}.{}".format(sys.version_info.major,sys.version_info.minor))
-REQUIRED_PYTHON = 3.6
+REQUIRED_PYTHON = 3
 
 if CURRENT_PYTHON < REQUIRED_PYTHON:
     sys.stderr.write("""
@@ -20,7 +20,7 @@ setup(name='drl_grid',
       version='0.0.1',
       install_requires=[
           'gym',
-          'numpy<=1.14.5',
+          'numpy',
           'pandas',
           'zmq',
           'plotly',
@@ -39,6 +39,6 @@ setup(name='drl_grid',
           'mpi4py',
           'cloudpickle',
           'click',
-          'opencv-python'
+          'opencv-python',
           'sortedcontainers'
       ])

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import json
 import random
-from tqdm import tqdm
+import time as tm
 from collections import defaultdict
 from gym.utils import colorize
 
@@ -18,25 +18,30 @@ class Agent:
 	def act(self, state):
 		raise NotImplemented()
 
-	def evaluate(self, env, n_episodes, visualize=False):
+	def evaluate(self, env, n_episodes, visualize=False, verbose=True):
 		reward_history, steps_history = list(), list()
-		for _ in range(1, n_episodes + 1):
+		t0 = tm.time()
+		for epi in range(1, n_episodes + 1):
 			ob = env.reset()
 			reward,steps = 0.0, 0
 			while True:
 				if visualize:
 					env.render()
 				action = self.act(ob)
-				ob, r, done, _ = env.step(action)
+				ob, r, done, info = env.step(action)
 				reward += r
 				steps += 1
 				if done:
 					break
 			reward_history.append(reward)
 			steps_history.append(steps)
+			if verbose:
+				results = " ".join([" [{}: {}]".format(k, v) for k, v in info.items()])
+				print("[EVALUATE {}] {}".format(epi, results))
 
 		env.close()
-		print("[EVALUATE] Avg. reward {:.4f} - Avg. steps {:.4f} over {} episodes".format(np.mean(reward_history), np.mean(steps_history), n_episodes))
+		tend = tm.time() - t0
+		print("[EVALUATE] Avg. reward {:.4f} - Avg. steps {:.4f} over {} episodes in {:.4f} seconds".format(np.mean(reward_history), np.mean(steps_history), n_episodes, tend))
 
 
 class LearningAgent(Agent):

@@ -1,5 +1,5 @@
 import gym
-import GridGym.envs.grid_env
+import GridGym.gridgym.envs.grid_env
 import argparse
 import pandas as pd
 import time as tm
@@ -26,19 +26,12 @@ def run(args):
 	else:
 		raise NotImplementedError("Agent not implemented")
 
-	t0 = tm.time()
-	results = agent.evaluate(env, args.nb_episodes, args.visualize)
-	print("Done in {:.4f} seconds".format(tm.time() - t0))
-	if args.output is not None:
-		dt = pd.DataFrame([results])
-		dt.to_csv(args.output, index=False)
-
+	agent.evaluate(env, args.nb_episodes, args.visualize)
 
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--env", type=str, default="batsim-v0")
-	parser.add_argument("--heuristic", type=str, default="sjf")
-	parser.add_argument("--output", type=str, default=None)
+	parser.add_argument("--heuristic", type=str, default="packer")
 	parser.add_argument("--seed", default=123, type=int)
 	parser.add_argument("--visualize", default=False, action="store_true")
 	parser.add_argument("--nb_episodes", default=1, type=int)
