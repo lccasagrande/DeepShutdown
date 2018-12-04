@@ -225,13 +225,13 @@ def normalize(dt):
 
 
 def get_avail_res_from_img(state):
-	res = state[0:100]
+	res = state[0:10]
 	return len(res) - np.count_nonzero(res)
 
 
 def get_jobs_from_img(state):
 	slot, jobs = 1, []
-	jobs_state = state[100:120]
+	jobs_state = state[10:30]
 	for j in range(0, 20, 2):
 		if jobs_state[j] != 0:
 			res = jobs_state[j]

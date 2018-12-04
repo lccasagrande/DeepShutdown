@@ -1,5 +1,5 @@
 import gym
-import GridGym.gridgym.envs.grid_env
+import gridgym.envs.grid_env
 import tensorflow as tf
 import os.path as osp
 import numpy as np
@@ -59,7 +59,7 @@ class PPOAgent:
 
 		return make_vec_env(nenv)
 
-	def train(self, n_timesteps, env=None, nsteps=256, lr=1e-3, gamma=1., noptepochs=6, nminibatches=8, ent_coef=0.01,
+	def train(self, n_timesteps, env=None, nsteps=512, lr=1e-3, gamma=1., noptepochs=6, nminibatches=12, ent_coef=0.02,
 	          cliprange=0.1, weights=None, save_path=None):
 		def config_log():
 			# configure logger, disable logging in child MPI processes (with rank > 0)

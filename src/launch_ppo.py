@@ -1,5 +1,5 @@
 import gym
-import GridGym.gridgym.envs.grid_env as g
+import gridgym.envs.grid_env as g
 import argparse
 from src.agents.ppo import PPOAgent
 

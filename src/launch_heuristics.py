@@ -1,5 +1,5 @@
 import gym
-import GridGym.gridgym.envs.grid_env
+import gridgym.envs.grid_env
 import argparse
 import pandas as pd
 import time as tm
@@ -30,8 +30,8 @@ def run(args):
 
 def parse_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--env", type=str, default="batsim-v0")
-	parser.add_argument("--heuristic", type=str, default="packer")
+	parser.add_argument("--env", type=str, default="grid-v0")
+	parser.add_argument("--heuristic", type=str, default="sjf")
 	parser.add_argument("--seed", default=123, type=int)
 	parser.add_argument("--visualize", default=False, action="store_true")
 	parser.add_argument("--nb_episodes", default=1, type=int)
