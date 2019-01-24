@@ -1,10 +1,10 @@
 import tensorflow as tf
 import numpy as np
 import time as tm
-from utils.agent import TFAgent
+from utils.agents import TFAgent
 from collections import defaultdict
 from utils.env_wrappers import SubprocVecEnv
-from utils.common import discount, normalize, variable_summaries
+from utils.commons import discount, normalize, variable_summaries
 
 
 class ReinforceAgent(TFAgent):

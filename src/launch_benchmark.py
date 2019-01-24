@@ -5,7 +5,7 @@ from multiprocessing import Process, Manager
 from collections import defaultdict
 import os
 from main import run, parse_args
-from utils.common import overwrite_dir, print_episode_result
+from utils.commons import overwrite_dir, print_episode_result
 import time as t
 import gym
 import pandas as pd

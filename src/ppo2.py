@@ -19,7 +19,7 @@ from src.baselines.baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from src.baselines.baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from src.baselines.baselines.bench.monitor import Monitor
 from src.baselines.baselines.common.retro_wrappers import RewardScaler
-from src.utils.common import print_episode_result
+from src.utils.commons import print_episode_result
 
 try:
 	from mpi4py import MPI

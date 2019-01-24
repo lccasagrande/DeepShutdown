@@ -1,163 +1,201 @@
 import tensorflow as tf
 import numpy as np
-import time as tm
-from collections import deque
-from src.utils.agent import TFAgent
-from collections import defaultdict
-from src.utils.env_wrappers import SubprocVecEnv
-from src.utils.common import discount, normalize, variable_summaries
+import gym
+import time
+from collections import defaultdict, deque
+from src.utils.commons import safemean, discount_with_dones, softmax
+from src.utils.runners import AbstractEnvRunner
+from src.utils.agents import TFAgent
+from src.utils.tf_utils import entropy, variable_summaries
+from src.utils.env_wrappers import make_vec_env
 
 
-class SimpleA2C(TFAgent):
-	def __init__(self, network, **kwargs):
-		super(SimpleA2C, self).__init__(**kwargs)
-		self.compiled = False
-		self.network = network
-		self.memory = deque(maxlen=2000)
-		self.tau = .125
+class Runner(AbstractEnvRunner):
+	def __init__(self, env, model, nsteps=5, gamma=0.99):
+		super().__init__(env=env, model=model, nsteps=nsteps)
+		self.gamma = gamma
 
-	def build_model(self, obs_n, lr=1e-3):
-		self._build_policy_network(obs_n, lr)
-		self._build_value_network(obs_n, lr)
-		self.session.run(tf.global_variables_initializer())
-		self.compiled = True
+	def run(self):
+		def discount_rewards(envs_rewards, envs_dones):
+			discounted_rewards = np.empty_like(envs_rewards, dtype=np.float32)
+			if self.gamma > 0.0:
+				_, last_obs_value = self.model.predict(self.obs)
+				for i, (rewards, dones, value) in enumerate(zip(envs_rewards, envs_dones, last_obs_value)):
+					rewards = rewards.tolist()
+					dones = dones.tolist()
+					if dones[-1]:
+						discounted_rewards[i] = discount_with_dones(rewards, dones, self.gamma)
+					else:
+						discounted_rewards[i] = discount_with_dones(rewards + [value], dones + [False], self.gamma)[:-1]
 
-	def _build_value_network(self, obs_n, lr=1e-3):
-		with tf.variable_scope("value_network"):
-			with tf.name_scope('input'):
-				self.observations2 = tf.placeholder(dtype=tf.int32, shape=(1,))
-				self.targets2 = tf.placeholder(dtype=tf.float32, shape=(1,))
-				self.one_hot2 = tf.one_hot(self.observations2, obs_n)
+			return discounted_rewards
 
-			with tf.name_scope('network'):
-				self.value_network = self.network(self.one_hot2)
-				self.value_logits = tf.layers.dense(tf.layers.flatten(self.value_network), 1)
-				self.value_estimate = tf.squeeze(self.value_logits, axis=0)
-				self.value_loss = tf.losses.mean_squared_error(predictions=self.value_estimate, labels=self.targets2)
-				self.value_optimize = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.value_loss)
+		# We initialize the lists that will contain the mb of experiences
+		rollout_actions, rollout_obs, rollout_rew, rollout_dones, rollout_values, epinfos = [], [], [], [], [], []
+		for n in range(self.nsteps):
+			# Given observations, take action and value (V(s))
+			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
+			actions, values = self.model.predict(self.obs)
+			next_obs, rewards, dones, infos = self.env.step(actions)
 
-	def _build_policy_network(self, obs_n, lr=1e-3):
-		with tf.variable_scope("policy_network"):
-			with tf.name_scope('input'):
-				self.observations = tf.placeholder(dtype=tf.int32, shape=(1,))
-				self.actions = tf.placeholder(dtype=tf.int32, shape=(1,))
-				self.targets = tf.placeholder(dtype=tf.float32, shape=(1,))
-				self.one_hot = tf.one_hot(self.observations, obs_n)
+			for info in infos:
+				ep_info = info.get('episode')
+				if ep_info:
+					epinfos.append(ep_info)
 
-			with tf.name_scope('network'):
-				self.policy_network = self.network(self.one_hot)
-				self.policy_logits = tf.layers.dense(tf.layers.flatten(self.policy_network), self.nb_actions)
-				self.act_probs = tf.squeeze(tf.nn.softmax(self.policy_logits))
-				self.picked_action = tf.gather(self.act_probs, self.actions)
+			rollout_actions.append(actions)
+			rollout_obs.append(np.copy(self.obs))
+			rollout_rew.append(rewards)
+			rollout_dones.append(dones)
+			rollout_values.append(values)
+			self.obs = next_obs
 
-				self.neglog2 = -tf.log(self.picked_action)
-				self.loss2 = self.neglog2 * self.targets
-
-				self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy_logits,
-				                                                                    labels=self.actions)
-				self.policy_loss_norm = tf.multiply(self.cross_entropy, self.targets)
-				self.policy_loss = tf.reduce_mean(self.policy_loss_norm)
-				self.policy_optimize = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.policy_loss)
-
-	def update(self, state, target, action):
-		feed_dict = {self.observations: [state], self.targets: [target], self.actions: [action]}
-		_, a_p, p_a, nl2, l2, nl, l, lt = self.session.run(
-			[self.policy_optimize, self.act_probs, self.picked_action, self.neglog2, self.loss2, self.cross_entropy,
-			 self.policy_loss, self.policy_loss_norm], feed_dict=feed_dict)
-
-		print("OK")
-
-	def update_value(self, state, target):
-		feed_dict = {self.observations2: [state], self.targets2: [target]}
-		_, value, loss = self.session.run([self.value_optimize, self.value_estimate, self.value_loss], feed_dict=feed_dict)
-
-		print("OK")
-
-
-	def predict_value(self, state):
-		assert self.compiled
-		state_value = self.session.run(self.value_estimate, feed_dict={self.observations2: [state]})
-		return state_value[0]
-
-	def act(self, state):
-		assert self.compiled
-		act_probs, o_h = self.session.run([self.act_probs, self.one_hot], {self.observations: [state]})
-		return np.random.choice(np.arange(self.nb_actions), p=act_probs)
-
-	def evaluate(self, env, n_episodes, visualize=False):
-		pass
-
-	def fit(self, env, nb_iteration, nb_env, nb_max_steps, log_interval, save_interval, summarize=False):
-		pass
+		envs_acts = np.asarray(rollout_actions).swapaxes(1, 0)
+		envs_obs = np.asarray(rollout_obs).swapaxes(1, 0)
+		envs_rewards = np.asarray(rollout_rew, dtype=np.float32).swapaxes(1, 0)
+		envs_dones = np.asarray(rollout_dones, dtype=np.bool).swapaxes(1, 0)
+		envs_values = np.asarray(rollout_values, dtype=np.float32).swapaxes(1, 0)
+		envs_discounted_rewards = discount_rewards(envs_rewards, envs_dones)
+		return envs_obs, envs_acts, envs_discounted_rewards, envs_rewards, envs_values, envs_dones, epinfos
 
 
 class A2CAgent(TFAgent):
-	def __init__(self, network, **kwargs):
-		super(A2CAgent, self).__init__(**kwargs)
-		self.compiled = False
-		self.network = network
-		self.memory = deque(maxlen=2000)
-		self.tau = .125
+	def __init__(self, env_id, input_shape, nb_actions, network):
+		super().__init__(
+			env_id=env_id,
+			input_shape=input_shape,
+			nb_actions=nb_actions,
+			network=network)
+		self._compiled = False
+		self.summary_episode_interval = 100
 
-	def _build_policy(self):
+	def compile(self, lr=0.001, ent_coef=0.01, vf_coef=.5, max_grad_norm=.5):
 		with tf.name_scope("input"):
-			self.observations = tf.placeholder(dtype=tf.float32, shape=(None,) + self.input_shape)
+			self.obs = tf.placeholder(tf.float32, shape=(None,) + self.input_shape, name='observations')
+			self.mask = tf.placeholder(tf.float32, shape=(None,) + self.input_shape, name='mask')
+			self.actions = tf.placeholder(tf.int32, shape=[None], name='actions')
+			self.rewards = tf.placeholder(tf.float32, shape=[None], name='rewards')
+			self.advs = tf.placeholder(tf.float32, shape=[None], name='advantages')
 
-		with tf.name_scope('network'):
-			with tf.variable_scope('policy', reuse=tf.AUTO_REUSE):
-				self.policy_network = self.network(self.X)
-				self.policy_logits = tf.layers.dense(tf.layers.Flatten(self.policy_network), self.nb_actions)
+			self.X = self.obs  # Do some preprocessing here
+			self.policy_labels = self.actions  # Do some preprocessing here
+			self.value_labels = self.rewards  # Do some preprocessing here
 
-			with tf.variable_scope('value', reuse=tf.AUTO_REUSE):
-				self.value_network = self.network(self.X)
-				self.value_logits = tf.layers.dense(tf.layers.Flatten(self.value_network), 1)
+		with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
+			self.policy_network = tf.layers.dense(self._network(self.X), self.nb_actions)
+			self.act_probs = tf.nn.softmax(self.policy_network)
+			self.policy_ce = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.policy_labels,
+			                                                                logits=self.policy_network)
 
-		with tf.name_scope("output"):
-			self.neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy_network,
-			                                                                labels=self.actions)
-			self.act_probs = tf.squeeze(tf.nn.softmax(self.policy_logits))
-			self.state_value = self.value_logits
+			self.entropy = entropy(self.policy_network)
+			self.policy_loss = tf.reduce_mean(self.policy_ce * self.advs)
 
-	def build_model(self, lr, batch_size=1, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, alpha=0.99, epsilon=1e-5):
-		self.actions = tf.placeholder(dtype=tf.int32, shape=(None,))
-		self.rewards = tf.placeholder(dtype=tf.float32, shape=(None,))
-		self.adv = tf.placeholder(dtype=tf.float32, shape=(None,))
+		with tf.variable_scope("value_network", reuse=tf.AUTO_REUSE):
+			self.value_network = tf.layers.dense(self._network(self.X), 1)[:, 0]
+			self.value_loss = tf.losses.mean_squared_error(labels=self.value_labels, predictions=self.value_network)
+			self.mae = tf.losses.absolute_difference(labels=self.value_labels, predictions=self.value_network)
 
-		with tf.variable_scope('a2c_model', reuse=tf.AUTO_REUSE):
-			# step_model is used for sampling
-			self.step_model = self._build_policy()
+		self.loss = self.policy_loss + vf_coef * self.value_loss - ent_coef * self.entropy
+		trainable_vars = tf.trainable_variables()
+		gradients = tf.gradients(self.loss, trainable_vars)
+		if max_grad_norm is not None:  # Clip the gradients (normalize)
+			gradients, _ = tf.clip_by_global_norm(gradients, max_grad_norm)
 
-			# train_model is used to train our network
-			self.train_model = self._build_policy()
+		gradients = list(zip(gradients, trainable_vars))
+		self.train_op = tf.train.AdamOptimizer(learning_rate=lr).apply_gradients(gradients)
+		self.session.run(tf.global_variables_initializer())
+		self._compiled = True
 
-		with tf.name_scope("train"):
-			a0 = self.train_model.policy_logits - tf.reduce_max(self.self.train_model.policy_logits, axis=-1,
-			                                                    keepdims=True)
-			ea0 = tf.exp(a0)
-			z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)
-			p0 = ea0 / z0
-			self.entropy = tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=-1)
-			# L = A(s,a) * -logpi(a|s)
-			self.policy_loss = tf.reduce_mean(self.adv * self.train_model.neglogpac)
-			self.entropy_loss = tf.reduce_mean(self.entropy)
-			self.value_loss = tf.losses.mean_squared_error(tf.squeeze(self.train_model.state_value), self.rewards)
-			self.loss = self.policy_loss - self.entropy * ent_coef + self.value_loss * vf_coef
-			params = tf.trainable_variables('a2c_model')
-			self.grads = tf.gradients(self.loss, params)
-			if max_grad_norm is not None:
-				self.grads, grad_norm = tf.clip_by_global_norm(self.grads, max_grad_norm)
+	def act(self, obs):
+		actions, _ = self.predict(obs)
+		return actions
 
-			self.grads = list(zip(self.grads, params))
+	def predict(self, obs, argmax=False):
+		assert self._compiled
 
-			optimizer = tf.train.RMSPropOptimizer(learning_rate=lr, decay=alpha, epsilon=epsilon)
+		act_probs, value, policy = self.session.run([self.act_probs, self.value_network, self.policy_network],
+		                                    feed_dict={self.obs: obs})
 
-			self.train_op = optimizer.apply_gradients(self.grads)
+		#act_probs = [softmax(policy[i, :self.get_nb_valid_actions(o)]) for i, o in enumerate(obs)]
+		actions = [np.argmax(p) if argmax else np.random.choice(np.arange(len(p)), p=p) for p in act_probs]
+		return actions, value
 
-	def act(self, state):
-		pass
+	def _update(self, n_batch, obs, rewards, advantages, actions):
+		o = obs.reshape((n_batch,) + self.input_shape)
+		r = rewards.flatten()
+		a = advantages.flatten()
+		acts = actions.flatten()
 
-	def evaluate(self, env, n_episodes, visualize=False):
-		pass
+		_, policy_loss, entropy, value_loss, mae = self.session.run(
+			[self.train_op, self.policy_loss, self.entropy, self.value_loss, self.mae],
+			feed_dict={self.obs: o, self.advs: a, self.actions: acts, self.rewards: r}
+		)
 
-	def fit(self, env, nb_iteration, nb_env, nb_max_steps, log_interval, save_interval, summarize=False):
-		pass
+		return policy_loss, value_loss, mae, entropy
+
+	def fit(self, timesteps, nsteps, discount=1., num_envs=1, log_interval=10, summary=False, seed=None, loggers=None,
+	        monitor_dir=None):
+		assert self._compiled, "You should compile the model first."
+
+		# PREPARE
+		env = make_vec_env(self.env_id, num_envs, seed, monitor_dir=monitor_dir)
+		n_batch = nsteps * env.num_envs
+		n_updates = int(timesteps // n_batch)
+		runner = Runner(env, self, nsteps, discount)
+		nepisodes = 0
+		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
+		tstart = time.time()
+
+		# START UPDATES
+		try:
+			for update in range(1, n_updates + 1):
+				obs, acts, disc_rewards, rewards, values, dones, infos = runner.run()
+				advantages = disc_rewards - values
+				p_loss, v_loss, mae, entropy = self._update(n_batch, obs, disc_rewards, advantages, acts)
+
+				nseconds = time.time() - tstart
+				nepisodes += len(infos)
+				history.extend(infos)
+
+				if loggers is not None and (update % log_interval == 0 or update == 1):
+					loggers.log('nupdates', update)
+					loggers.log('ntimesteps', update * n_batch)
+					loggers.log('nepisodes', nepisodes)
+					loggers.log('fps', int((update * n_batch) / nseconds))
+					loggers.log('policy_entropy', float(entropy))
+					loggers.log('policy_loss', float(p_loss))
+					loggers.log('value_loss', float(v_loss))
+					loggers.log('value_mae', float(mae))
+					loggers.log('eprewmean', safemean([h['score'] for h in history]))
+					loggers.log('eplenmean', safemean([h['nsteps'] for h in history]))
+					loggers.log('eprewmax', np.max([h['score'] for h in history]) if history else np.nan)
+					loggers.log('eprewmin', np.min([h['score'] for h in history]) if history else np.nan)
+					loggers.dump()
+		finally:
+			env.close()
+			if loggers is not None:
+				loggers.close()
+			if summary:
+				self.writer.close()
+
+		return history
+
+	def play(self, render, verbose):
+		env = gym.make(self.env_id)
+		obs = env.reset()
+		done = False
+		epi_history = dict(score=0, lenght=0)
+		while not done:
+			if render:
+				env.render()
+			actions, _ = self.predict([obs], argmax=True)
+			print(obs, actions)
+			obs, reward, done, info = env.step(actions[0])
+			epi_history['score'] += reward
+			epi_history['lenght'] += 1
+
+		if verbose:
+			print("Evaluation - " + " ".join("{}: {}".format(k, v) for k, v in epi_history.items()))
+
+		env.close()
+		return epi_history

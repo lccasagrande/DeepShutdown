@@ -1,6 +1,6 @@
 import numpy as np
-from src.utils.agent import Agent
-from src.utils.common import get_jobs_from_img, get_avail_res_from_img
+from src.utils.agents import Agent
+from src.utils.commons import get_jobs_from_img, get_avail_res_from_img
 
 
 class UserAgent(Agent):

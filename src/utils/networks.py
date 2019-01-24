@@ -2,15 +2,16 @@ import tensorflow as tf
 import numpy as np
 
 
-def mlp(layers=[32], activation=tf.nn.relu):
-	def network_fn(X):
+def mlp(layers, activations):
+	assert len(layers) == len(activations)
+
+	def network(X):
 		h = tf.layers.flatten(X)
-		for unit in layers:
-			h = tf.layers.dense(h, unit, activation=activation, init_scale=np.sqrt(2))
+		for units, activation in zip(layers, activations):
+			h = tf.layers.dense(h, units, activation=activation)
 		return h
 
-	return network_fn
-
+	return network
 #def cnn_small():
 #	def network_fn(X, nenv=1):
 #		nbatch = X.shape[0]

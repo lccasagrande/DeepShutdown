@@ -4,7 +4,7 @@ import argparse
 import os
 import pandas as pd
 from utils.networks import mlp
-from utils.common import make_vec_env
+from utils.commons import make_vec_env
 from agents.reinforce import ReinforceAgent
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"

@@ -14,7 +14,6 @@ from src.baselines.baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from src.baselines.baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from src.baselines.baselines.bench.monitor import Monitor
 from src.baselines.baselines.common.retro_wrappers import RewardScaler
-from src.utils.common import print_episode_result
 
 try:
 	from mpi4py import MPI
@@ -38,7 +37,7 @@ class PPOAgent:
 			def make_env(rank):  # pylint: disable=C0111
 				def _thunk():
 					env = gym.make(self.env_id)
-					env.seed(self.seed + 10000 * mpi_rank + rank if self.seed is not None else None)
+					env.seed(self.seed + 10000 * mpi_rank + rank)  # if self.seed is not None else None)
 					env = Monitor(
 						env,
 						logger.get_dir()
@@ -59,7 +58,7 @@ class PPOAgent:
 
 		return make_vec_env(nenv)
 
-	def train(self, n_timesteps, env=None, nsteps=512, lr=1e-3, gamma=1., noptepochs=6, nminibatches=12, ent_coef=0.02,
+	def train(self, n_timesteps, env=None, nsteps=40, lr=5e-4, gamma=.99, noptepochs=2, nminibatches=4, ent_coef=0.01,
 	          cliprange=0.1, weights=None, save_path=None):
 		def config_log():
 			# configure logger, disable logging in child MPI processes (with rank > 0)
@@ -76,10 +75,10 @@ class PPOAgent:
 		self.model = ppo2.learn(
 			env=env,
 			seed=self.seed,
-			network=self.network,
+			network=lstm22(),
 			total_timesteps=n_timesteps,
 			nsteps=nsteps,
-			lam=0.95,
+			lam=.99,#0.95,
 			gamma=gamma,
 			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=noptepochs,
@@ -87,7 +86,7 @@ class PPOAgent:
 			nminibatches=nminibatches,  # 8,  # 8
 			ent_coef=ent_coef,
 			cliprange=cliprange,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
-			# value_network="copy",
+			#value_network="copy",
 			load_path=weights,
 		)
 		env.close()
@@ -96,32 +95,44 @@ class PPOAgent:
 			save_path = osp.expanduser(save_path)
 			self.model.save(save_path)
 
-	def evaluate(self, weights, metrics=[], output_fn=None, verbose=True, render=False):
-		def get_trajectory(env, metrics, render):
+	def evaluate(self, weights, nb_episodes=1, output_fn=None, verbose=True, render=False):
+		def get_trajectory(env, render):
 			def initialize_placeholders(nlstm=128, **kwargs):
 				return np.zeros((1, 2 * nlstm)), np.zeros((1))
 
 			state, dones = initialize_placeholders()
 			score, steps, results, done, info, obs = 0, 0, defaultdict(float), False, [{}], env.reset()
 			while not done:
-				if render:	env.render()
+				if render:
+					env.render()
 				actions, _, state, _ = self.model.step(obs, S=state, M=dones)
+				print("State: {} - Action: {}".format(obs, actions))
 				obs, rew, done, info = env.step(actions)
 				done = done.any() if isinstance(done, np.ndarray) else done
 				results["steps"] += 1
 				results["score"] += rew[0]
 
-			for m in metrics: results[m] = info[0][m]
+			for k, v in info[0].items():
+				results[k] = v
+
 			return results
 
 		env = self._build_env(1)
 		self.train(n_timesteps=0, env=env, weights=weights, nminibatches=1)
+		results = defaultdict(list)
+		rewards = list()
 
-		results = get_trajectory(env, metrics, render)
+		for i in range(1, nb_episodes + 1):
+			ep_results = get_trajectory(env, render)
+			ep_results['episode'] = i
+			rewards.append(ep_results["score"])
+			for k, v in ep_results.items():
+				results[k].append(v)
 
-		if verbose:
-			print_episode_result("PPO", results)
+			if verbose:
+				print("PPO - " + " ".join("{}: {}".format(k, v) for k, v in results.items()))
 
+		print("Avg reward: {}".format(np.mean(rewards)))
 		if output_fn is not None:
 			pd.DataFrame([results]).to_csv(output_fn, index=False)
 
@@ -136,6 +147,29 @@ def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 			h = activation(h)
 
 		return h
+
+	return network_fn
+
+
+def lstm22(nlstm=128):
+	def network_fn(X, nenv=1):
+		nbatch = X.shape[0]
+		nsteps = nbatch // nenv
+
+		h = tf.layers.flatten(X)
+
+		M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
+		S = tf.placeholder(tf.float32, [nenv, 2 * nlstm])  # states
+
+		xs = batch_to_seq(h, nenv, nsteps)
+		ms = batch_to_seq(M, nenv, nsteps)
+
+		h5, snew = lstm(xs, ms, S, scope='lstm', nh=nlstm)
+
+		h = seq_to_batch(h5)
+		initial_state = np.zeros(S.shape.as_list(), dtype=float)
+
+		return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
 
 	return network_fn
 
@@ -165,5 +199,3 @@ def cnn_small(**conv_kwargs):
 		return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
 
 	return network_fn
-
-
