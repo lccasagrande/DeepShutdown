@@ -7,6 +7,7 @@ from plotly.offline import plot
 from src.utils import loggers as log
 from src.utils.networks import mlp
 from src.agents.a2c import A2CAgent
+#from src.agents.a2c_lstm import A2CAgent
 import gridgym.envs.grid_env as g
 
 
@@ -28,8 +29,8 @@ def plot_hist(dt, interval, title, with_error=False):
 
 
 def run(args):
-	layers = [64, 64, 64]
-	activations = [tf.nn.relu] * len(layers)
+	layers = [64, 64]
+	activations = [tf.nn.leaky_relu] * len(layers)
 	LR = 5e-4
 
 	loggers = log.LoggerWrapper()
@@ -40,15 +41,15 @@ def run(args):
 
 	env = gym.make(args.env_id)
 	nb_actions = env.action_space.n
-	input_shape = env.observation_space.shape
-	agent = A2CAgent(args.env_id, input_shape, nb_actions, mlp(layers, activations))
+	obs_dim = env.observation_space.shape[-1] * args.nframes
+	agent = A2CAgent(args.env_id, (obs_dim,), nb_actions, mlp(layers, activations), nframes=args.nframes)
 
 	if args.test:
 		agent.compile()
 		agent.load(args.weights)
 		agent.play(render=args.render, verbose=args.verbose)
 	else:
-		agent.compile(lr=LR, ent_coef=.01)
+		agent.compile(lr=LR, ent_coef=.05)
 		hist = agent.fit(
 			timesteps=args.nb_timesteps,
 			nsteps=args.nsteps,
@@ -57,8 +58,8 @@ def run(args):
 			log_interval=args.log_interval,
 			loggers=loggers)
 
-		agent.play(render=args.render, verbose=args.verbose)
 		agent.save(args.weights)
+		agent.play(render=args.render, verbose=args.verbose)
 		# plot_hist([(hist['score'], 'score1')], 100, 'Scores', with_error=True)
 		# plot_hist([(hist['policy_loss'], 'score1')], 100, 'Policy Loss', with_error=True)
 		# plot_hist([(hist['value_loss'], 'score1')], 100, 'Value Loss', with_error=True)
@@ -68,16 +69,17 @@ def run(args):
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--env_id", type=str, default="shutdown-v0")
-	parser.add_argument("--num_envs", default=12, type=int)
+	parser.add_argument("--num_envs", default=6, type=int)
 	parser.add_argument("--weights", default="../weights/a2c_shutdown", type=str)
 	parser.add_argument("--log_dir", default="../weights", type=str)
 	parser.add_argument("--verbose", default=True, action="store_true")
-	parser.add_argument("--render", default=True, action="store_true")
-	parser.add_argument("--nb_timesteps", type=int, default=1e6)
+	parser.add_argument("--render", default=False, action="store_true")
+	parser.add_argument("--nb_timesteps", type=int, default=100000)
 	parser.add_argument("--discount", default=.99, action="store_true")
-	parser.add_argument("--nsteps", default=50, action="store_true")
-	parser.add_argument("--log_interval", default=10, action="store_true")
-	parser.add_argument("--test", default=0, action="store_true")
+	parser.add_argument("--nsteps", default=64, action="store_true")
+	parser.add_argument("--nframes", default=6, action="store_true")
+	parser.add_argument("--log_interval", default=1, action="store_true")
+	parser.add_argument("--test", default=False, action="store_true")
 	return parser.parse_args()
 
 

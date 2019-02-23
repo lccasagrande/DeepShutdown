@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def safemean(xs):
 	return np.nan if len(xs) == 0 else np.mean(xs)
 
@@ -15,6 +16,26 @@ def discount_with_dones(rewards, dones, gamma):
 		r = reward + gamma * r * (1. - done)  # fixed off by one bug
 		discounted.append(r)
 	return discounted[::-1]
+
+
+def pad_sequence(seqs):
+	maxlen = max(len(s) for s in seqs)
+	seq, seqs_len = [], []
+	for s in seqs:
+		seqlen = len(s)
+		seqs_len.append(seqlen)
+		if seqlen < maxlen:
+			seq.append(np.pad(s, ((0, maxlen - seqlen), (0, 0)), mode='constant', constant_values=0))
+		else:
+			seq.append(s)
+	return np.asarray(seq), np.asarray(seqs_len)
+
+def discount(rewards, gamma):
+	discounted, r = [], 0
+	for reward in rewards[::-1]:
+		r = reward + gamma * r
+		discounted.append(r)
+	return np.asarray(discounted[::-1])
 
 
 def explained_variance(ypred, y):
@@ -53,15 +74,6 @@ def tile_images(img_nhwc):
 	img_HhWwc = img_HWhwc.transpose(0, 2, 1, 3, 4)
 	img_Hh_Ww_c = img_HhWwc.reshape(H * h, W * w, c)
 	return img_Hh_Ww_c
-
-
-def discount(rewards, gamma):
-	steps, retur = len(rewards), 0
-	discounted_rewads = np.zeros(steps)
-	for i in reversed(range(steps)):
-		retur = rewards[i] + gamma * retur
-		discounted_rewads[i] = retur
-	return discounted_rewads
 
 
 def normalize(dt):

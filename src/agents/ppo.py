@@ -5,8 +5,10 @@ import os.path as osp
 import numpy as np
 import os
 import pandas as pd
+import random
+from utils.env_wrappers import VecFrameStack
 from collections import defaultdict
-from src.baselines.baselines import logger
+from src.utils.env_wrappers import make_vec_env, VecFrameStack
 from src.baselines.baselines.ppo2 import ppo2
 from src.baselines.baselines.a2c.utils import conv, fc, conv_to_fc, lstm, batch_to_seq, seq_to_batch
 from src.baselines.baselines.common import misc_util
@@ -15,98 +17,66 @@ from src.baselines.baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from src.baselines.baselines.bench.monitor import Monitor
 from src.baselines.baselines.common.retro_wrappers import RewardScaler
 
-try:
-	from mpi4py import MPI
-except ImportError:
-	MPI = None
-
 
 class PPOAgent:
-	def __init__(self, network, env_id, num_env, seed, rew_scale):
+	def __init__(self, network, env_id, num_env, seed, rew_scale, nb_frames, incl_action=True):
 		self.network = network
 		self.num_env = num_env
 		self.env_id = env_id
 		self.seed = seed
+		self.incl_action = incl_action
+
+		tf.set_random_seed(self.seed)
+		np.random.seed(self.seed)
+		random.seed(self.seed)
 		self.rew_scale = rew_scale
+		self.nb_frames = nb_frames
 		self.model = None
 
-	def _build_env(self, nenv):
-		def make_vec_env(nenv):
-			mpi_rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
+	def train(self, n_timesteps, env=None, nsteps=512, gamma=.98, noptepochs=4, nminibatches=6, ent_coef=0.00, lr=1e-3,
+	          # lr=lambda f: 3e-4 * f,
+	          cliprange=0.2, weights=None, save_path=None, monitor_dir=None):
+		if env is None:
+			env = VecFrameStack(make_vec_env(self.env_id, self.num_env, monitor_dir=monitor_dir), self.nb_frames,
+			                    self.incl_action)
 
-			def make_env(rank):  # pylint: disable=C0111
-				def _thunk():
-					env = gym.make(self.env_id)
-					env.seed(self.seed + 10000 * mpi_rank + rank)  # if self.seed is not None else None)
-					env = Monitor(
-						env,
-						logger.get_dir()
-						and os.path.join(logger.get_dir(), str(mpi_rank) + "." + str(rank)),
-						allow_early_resets=True,
-					)
-
-					return RewardScaler(env, self.rew_scale) if self.rew_scale != 1 else env
-
-				return _thunk
-
-			misc_util.set_global_seeds(self.seed)
-			return (
-				SubprocVecEnv([make_env(i) for i in range(nenv)])
-				if nenv > 1
-				else DummyVecEnv([make_env(0)])
-			)
-
-		return make_vec_env(nenv)
-
-	def train(self, n_timesteps, env=None, nsteps=40, lr=5e-4, gamma=.99, noptepochs=2, nminibatches=4, ent_coef=0.01,
-	          cliprange=0.1, weights=None, save_path=None):
-		def config_log():
-			# configure logger, disable logging in child MPI processes (with rank > 0)
-			if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
-				rank = 0
-				logger.configure()
-			else:
-				logger.configure(format_strs=[])
-				rank = MPI.COMM_WORLD.Get_rank()
-			return rank
-
-		rank = config_log()
-		env = self._build_env(self.num_env) if env is None else env
 		self.model = ppo2.learn(
 			env=env,
 			seed=self.seed,
 			network=lstm22(),
 			total_timesteps=n_timesteps,
 			nsteps=nsteps,
-			lam=.99,#0.95,
+			lam=.95,  # 0.95,
 			gamma=gamma,
 			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=noptepochs,
 			log_interval=10,
 			nminibatches=nminibatches,  # 8,  # 8
 			ent_coef=ent_coef,
+			# estimate_q=True,
 			cliprange=cliprange,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
-			#value_network="copy",
-			load_path=weights,
+			# value_network="copy",
+			load_path=weights
 		)
 		env.close()
 
-		if save_path is not None and rank == 0:
+		if save_path is not None:
 			save_path = osp.expanduser(save_path)
 			self.model.save(save_path)
 
 	def evaluate(self, weights, nb_episodes=1, output_fn=None, verbose=True, render=False):
 		def get_trajectory(env, render):
-			def initialize_placeholders(nlstm=128, **kwargs):
+			def initialize_placeholders(nlstm=64, **kwargs):
 				return np.zeros((1, 2 * nlstm)), np.zeros((1))
 
 			state, dones = initialize_placeholders()
 			score, steps, results, done, info, obs = 0, 0, defaultdict(float), False, [{}], env.reset()
 			while not done:
 				if render:
-					env.render()
+					env.render('console')
 				actions, _, state, _ = self.model.step(obs, S=state, M=dones)
-				print("State: {} - Action: {}".format(obs, actions))
+				print(actions)
+				# print("State: {} - Action: {}".format(obs, actions))
 				obs, rew, done, info = env.step(actions)
 				done = done.any() if isinstance(done, np.ndarray) else done
 				results["steps"] += 1
@@ -117,7 +87,7 @@ class PPOAgent:
 
 			return results
 
-		env = self._build_env(1)
+		env = VecFrameStack(make_vec_env(self.env_id, 1), self.nb_frames, self.incl_action)
 		self.train(n_timesteps=0, env=env, weights=weights, nminibatches=1)
 		results = defaultdict(list)
 		rewards = list()
@@ -130,14 +100,15 @@ class PPOAgent:
 				results[k].append(v)
 
 			if verbose:
-				print("PPO - " + " ".join("{}: {}".format(k, v) for k, v in results.items()))
+				print("[EVALUATE][PPO] {}".format(
+					" ".join([" [{}: {}]".format(k, v) for k, v in sorted(results.items())])))
 
 		print("Avg reward: {}".format(np.mean(rewards)))
 		if output_fn is not None:
 			pd.DataFrame([results]).to_csv(output_fn, index=False)
 
 
-def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
+def mlp(num_layers=2, num_hidden=64, activation=tf.nn.leaky_relu, layer_norm=False):
 	def network_fn(X):
 		h = tf.layers.flatten(X)
 		for i in range(num_layers):
@@ -151,7 +122,7 @@ def mlp(num_layers=1, num_hidden=32, activation=tf.nn.relu, layer_norm=False):
 	return network_fn
 
 
-def lstm22(nlstm=128):
+def lstm22(nlstm=64):
 	def network_fn(X, nenv=1):
 		nbatch = X.shape[0]
 		nsteps = nbatch // nenv

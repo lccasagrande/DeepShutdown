@@ -8,7 +8,7 @@ class AbstractEnvRunner(ABC):
 		self.nenv = env.num_envs if hasattr(env, 'num_envs') else 1
 		self.obs = env.reset()
 		self.nsteps = nsteps
-		self.done = [False for _ in range(self.nenv)]
+		self.dones = [False for _ in range(self.nenv)]
 
 	@abstractmethod
 	def run(self):

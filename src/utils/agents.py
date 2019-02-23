@@ -17,7 +17,7 @@ class Agent(ABC):
 		raise NotImplementedError
 
 	@abstractmethod
-	def play(self, render, verbose):
+	def play(self, *args):
 		raise NotImplementedError
 
 

@@ -2,18 +2,30 @@ import tensorflow as tf
 import numpy as np
 import gym
 import time
+import functools
+import operator
 from collections import defaultdict, deque
-from src.utils.commons import safemean, discount_with_dones, softmax, pad_sequence, explained_variance
+from src.utils.commons import safemean, discount, softmax, pad_sequence, discount_with_dones
 from src.utils.runners import AbstractEnvRunner
 from src.utils.agents import TFAgent
 from src.utils.tf_utils import entropy, variable_summaries
-from src.utils.env_wrappers import make_vec_env, VecFrameStack, DummyVecEnv
+from src.utils.env_wrappers import make_vec_env, VecFrameStack
+
+
+def lstm(units):
+	def network(X):
+		cell = tf.nn.rnn_cell.LSTMCell(units)
+		return tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
+
+	return network
 
 
 class Runner(AbstractEnvRunner):
 	def __init__(self, env, model, nsteps=5, gamma=0.99):
 		super().__init__(env=env, model=model, nsteps=nsteps)
 		self.gamma = gamma
+
+	# self.obs = self.obs.reshape(self.nenv, self.nsteps, -1)
 
 	def run(self):
 		def discount_rewards(envs_rewards, envs_dones):
@@ -36,6 +48,7 @@ class Runner(AbstractEnvRunner):
 		for n in range(self.nsteps):
 			# Given observations, take action and value (V(s))
 			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
+
 			actions, values = self.model.predict(self.obs)
 			rollout_actions.append(actions)
 			rollout_obs.append(np.copy(self.obs))
@@ -50,55 +63,60 @@ class Runner(AbstractEnvRunner):
 					epinfos.append(ep_info)
 
 			rollout_rew.append(rewards)
-			self.obs = next_obs
+			self.obs = next_obs  # next_obs.reshape(self.nenv, self.nsteps, -1)
 			self.dones = dones
 		rollout_dones.append(self.dones)
 
-		envs_acts = np.asarray(rollout_actions).swapaxes(1, 0)
 		envs_obs = np.asarray(rollout_obs).swapaxes(1, 0)
+		envs_obs = envs_obs.reshape(-1, self.nsteps, envs_obs.shape[-1])
+		envs_values = np.asarray(rollout_values, dtype=np.float32).swapaxes(1, 0).flatten()
+		envs_acts = np.asarray(rollout_actions).swapaxes(1, 0).flatten()
+
 		envs_rewards = np.asarray(rollout_rew, dtype=np.float32).swapaxes(1, 0)
-		envs_values = np.asarray(rollout_values, dtype=np.float32).swapaxes(1, 0)
-		envs_dones = np.asarray(rollout_dones, dtype=np.bool).swapaxes(1, 0)
-		envs_dones = envs_dones[:, 1:]
-		envs_discounted_rewards = discount_rewards(envs_rewards, envs_dones)
-		return envs_obs, envs_acts, envs_discounted_rewards, envs_rewards, envs_values, envs_dones, epinfos
+		envs_dones = np.asarray(rollout_dones, dtype=np.bool).swapaxes(1, 0)[:, 1:]
+		discounted = discount_rewards(envs_rewards, envs_dones).flatten()
+
+		return envs_obs, envs_acts, discounted, envs_values, epinfos
 
 
 class A2CAgent(TFAgent):
-	def __init__(self, env_id, input_shape, nb_actions, network, nframes=1):
+	def __init__(self, env_id, input_shape, nb_actions, network):
 		super().__init__(
 			env_id=env_id,
 			input_shape=input_shape,
 			nb_actions=nb_actions,
 			network=network)
 		self._compiled = False
-		self.nframes = nframes
-		self.summary_episode_interval = 1
+		self.summary_episode_interval = 10
+		self.policy_steps = 0
 
-	def compile(self, lr=0.001, ent_coef=0.01, vf_coef=.5, max_grad_norm=None):
+	# noinspection PyAttributeOutsideInit
+	def compile(self, lr=0.001, ent_coef=0.01, vf_coef=.5, max_grad_norm=None, units=32, policy_steps=None):
+		network = lstm(units)
 		with tf.name_scope("input"):
-			self.obs = tf.placeholder(tf.float32, shape=(None,) + self.input_shape, name='observations')
-			self.actions = tf.placeholder(tf.int32, shape=[None], name='actions')
+			self.obs = tf.placeholder(tf.float32, shape=(None, None,) + self.input_shape)
 			self.rewards = tf.placeholder(tf.float32, shape=[None], name='rewards')
+			self.actions = tf.placeholder(tf.int32, shape=[None], name='actions')
 			self.advs = tf.placeholder(tf.float32, shape=[None], name='advantages')
-
-			self.X = self.obs  # Do some preprocessing here
-			self.policy_labels = self.actions  # Do some preprocessing here
-			self.value_labels = self.rewards  # Do some preprocessing here
+			self.seq_len = tf.placeholder(tf.int32, shape=[None])
 
 		with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
-			self.policy_network = tf.layers.dense(self._network(self.X), self.nb_actions)
-			self.act_probs = tf.nn.softmax(self.policy_network)
-			self.policy_ce = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.policy_labels,
-			                                                                logits=self.policy_network)
+			self.output, self.states = network(self.obs)
 
-			self.entropy = entropy(self.policy_network)
+			self.policy_output = tf.layers.dense(self.output[:, -1, :], self.nb_actions)
+			self.step = tf.nn.softmax(self.policy_output)
+
+			self.policy_ce = tf.nn.sparse_softmax_cross_entropy_with_logits(
+				labels=self.actions,
+				logits=self.policy_output)
+
+			self.entropy = entropy(self.policy_output)
 			self.policy_loss = tf.reduce_mean(self.policy_ce * self.advs)
 
 		with tf.variable_scope("value_network", reuse=tf.AUTO_REUSE):
-			self.value_network = tf.layers.dense(self._network(self.X), 1)[:, 0]
-			self.value_loss = tf.losses.mean_squared_error(labels=self.value_labels, predictions=self.value_network)
-			self.mae = tf.losses.absolute_difference(labels=self.value_labels, predictions=self.value_network)
+			self.value_output = tf.layers.dense(self.output[:, -1, :], 1)[:, 0]
+			self.value_loss = tf.losses.mean_squared_error(labels=self.rewards, predictions=self.value_output)
+			self.mae = tf.losses.absolute_difference(labels=self.rewards, predictions=self.value_output)
 
 		self.loss = self.policy_loss + vf_coef * self.value_loss - ent_coef * self.entropy
 		trainable_vars = tf.trainable_variables()
@@ -107,7 +125,7 @@ class A2CAgent(TFAgent):
 			gradients, _ = tf.clip_by_global_norm(gradients, max_grad_norm)
 
 		gradients = list(zip(gradients, trainable_vars))
-		self.train_op = tf.train.AdamOptimizer(learning_rate=lr).apply_gradients(gradients)
+		self.train = tf.train.AdamOptimizer(learning_rate=lr).apply_gradients(gradients)
 		self.session.run(tf.global_variables_initializer())
 		self._compiled = True
 
@@ -117,19 +135,21 @@ class A2CAgent(TFAgent):
 
 	def predict(self, obs, argmax=False):
 		assert self._compiled
-		act_probs, value = self.session.run([self.act_probs, self.value_network], feed_dict={self.obs: obs})
-		actions = [np.argmax(p) if argmax else np.random.choice(np.arange(len(p)), p=p) for p in act_probs]
+
+		act_probs, value = self.session.run(
+			fetches=[self.step, self.value_output],
+			feed_dict={self.obs: obs})
+
+		# act_probs = [softmax(policy[i, :self.get_nb_valid_actions(o)]) for i, o in enumerate(obs)]
+		actions = [np.argmax(p) if argmax else np.random.choice(np.arange(self.nb_actions), p=p) for p in act_probs]
 		return actions, value
 
-	def _update(self, n_batch, obs, rewards, advantages, actions):
-		o = obs.reshape((n_batch,) + self.input_shape)
-		r = rewards.flatten()
-		a = advantages.flatten()
-		acts = actions.flatten()
+	def _update(self, obs, actions, rewards, values):
+		advs = rewards - values
 
 		_, policy_loss, entropy, value_loss, mae = self.session.run(
-			[self.train_op, self.policy_loss, self.entropy, self.value_loss, self.mae],
-			feed_dict={self.obs: o, self.advs: a, self.actions: acts, self.rewards: r}
+			[self.train, self.policy_loss, self.entropy, self.value_loss, self.mae],
+			{self.obs: obs, self.advs: advs, self.actions: actions, self.rewards: rewards}
 		)
 
 		return policy_loss, value_loss, mae, entropy
@@ -139,7 +159,7 @@ class A2CAgent(TFAgent):
 		assert self._compiled, "You should compile the model first."
 
 		# PREPARE
-		env = VecFrameStack(make_vec_env(self.env_id, num_envs, seed, monitor_dir=monitor_dir), self.nframes)
+		env = VecFrameStack(make_vec_env(self.env_id, num_envs, seed, monitor_dir=monitor_dir), nsteps)
 		n_batch = nsteps * env.num_envs
 		n_updates = int(timesteps // n_batch)
 		runner = Runner(env, self, nsteps, discount)
@@ -150,9 +170,8 @@ class A2CAgent(TFAgent):
 		# START UPDATES
 		try:
 			for update in range(1, n_updates + 1):
-				obs, acts, returns, rewards, values, dones, infos = runner.run()
-				advantages = returns - values
-				p_loss, v_loss, mae, entropy = self._update(n_batch, obs, returns, advantages, acts)
+				obs, acts, discounted, values, infos = runner.run()
+				p_loss, v_loss, mae, entropy = self._update(obs, acts, discounted, values)
 
 				nseconds = time.time() - tstart
 				nepisodes += len(infos)
@@ -168,7 +187,6 @@ class A2CAgent(TFAgent):
 					loggers.log('value_loss', float(v_loss))
 					loggers.log('value_mae', float(mae))
 					loggers.log('eprewmean', safemean([h['score'] for h in history]))
-					loggers.log('ev', explained_variance(values.flatten(), returns.flatten()))
 					loggers.log('eplenmean', safemean([h['nsteps'] for h in history]))
 					loggers.log('eprewmax', np.max([h['score'] for h in history]) if history else np.nan)
 					loggers.log('eprewmin', np.min([h['score'] for h in history]) if history else np.nan)
@@ -183,24 +201,21 @@ class A2CAgent(TFAgent):
 		return history
 
 	def play(self, render, verbose):
-		env = VecFrameStack(make_vec_env(self.env_id, 1), self.nframes)
+		env = gym.make(self.env_id)
 		obs = env.reset()
 		done = False
 		epi_history = dict(score=0, lenght=0)
 		while not done:
 			if render:
 				env.render()
-			actions, _ = self.predict(obs, argmax=True)
-			obs, reward, done, info = env.step(actions)
+			actions, _ = self.predict([obs], argmax=True)
+			print(obs, actions)
+			obs, reward, done, info = env.step(actions[0])
 			epi_history['score'] += reward
 			epi_history['lenght'] += 1
 
 		if verbose:
-			if isinstance(info, tuple):
-				for i in info:
-					print("[RESULTS] {}".format(" ".join([" [{}: {}]".format(k, v) for k, v in sorted(i.items())])))
-			elif isinstance(info, dict):
-				print("[RESULTS] {}".format(" ".join([" [{}: {}]".format(k, v) for k, v in sorted(info.items())])))
+			print("[RESULTS] {}".format(" ".join([" [{}: {}]".format(k, v) for k, v in sorted(info.items())])))
 			print("Evaluation - " + " ".join("{}: {}".format(k, v) for k, v in epi_history.items()))
 
 		env.close()

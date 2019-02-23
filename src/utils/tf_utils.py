@@ -1,6 +1,24 @@
 import tensorflow as tf
 
 
+def batch_to_seq(h, nbatch, nsteps, flat=False):
+	if flat:
+		h = tf.reshape(h, [nbatch, nsteps])
+	else:
+		h = tf.reshape(h, [nbatch, nsteps, -1])
+	return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=nsteps, value=h)]
+
+
+def seq_to_batch(h, flat=False):
+	shape = h[0].get_shape().as_list()
+	if not flat:
+		assert (len(shape) > 1)
+		nh = h[0].get_shape()[-1].value
+		return tf.reshape(tf.concat(axis=1, values=h), [-1, nh])
+	else:
+		return tf.reshape(tf.stack(values=h, axis=1), [-1])
+
+
 def KL(old_logits, logits):
 	a0 = logits - tf.reduce_max(logits, axis=-1, keepdims=True)
 	a1 = old_logits - tf.reduce_max(old_logits, axis=-1, keepdims=True)

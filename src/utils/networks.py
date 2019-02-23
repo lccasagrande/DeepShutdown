@@ -12,7 +12,11 @@ def mlp(layers, activations):
 		return h
 
 	return network
-#def cnn_small():
+
+
+
+
+# def cnn_small():
 #	def network_fn(X, nenv=1):
 #		nbatch = X.shape[0]
 #		nsteps = nbatch // nenv
