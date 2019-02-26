@@ -1,16 +1,16 @@
 import tensorflow as tf
 import os
 import joblib
+import numpy as np
+import random
 from gym.utils import colorize
 from abc import ABC, abstractmethod
 import multiprocessing
 
 
 class Agent(ABC):
-	def __init__(self, *, env_id, input_shape, nb_actions):
+	def __init__(self, *, env_id):
 		self.env_id = env_id
-		self.input_shape = input_shape
-		self.nb_actions = nb_actions
 
 	@abstractmethod
 	def act(self, obs):
@@ -22,10 +22,6 @@ class Agent(ABC):
 
 
 class LearningAgent(Agent):
-	def __init__(self, env_id, input_shape, nb_actions, network):
-		super().__init__(env_id=env_id, input_shape=input_shape, nb_actions=nb_actions)
-		self._network = network
-
 	@abstractmethod
 	def compile(self, *args):
 		raise NotImplementedError
@@ -44,20 +40,14 @@ class LearningAgent(Agent):
 
 
 class TFAgent(LearningAgent):
-	def __init__(self, env_id, input_shape, nb_actions, network):
-		super().__init__(env_id=env_id, input_shape=input_shape, nb_actions=nb_actions, network=network)
+	def __init__(self, env_id, seed=None):
+		super().__init__(env_id=env_id)
 		self._session = None
-		self._writer = None
-		#self.output_dir = output_dir
-		#if output_dir is not None:
-		#	os.makedirs(output_dir, exist_ok=True)
-
-	#@property
-	#def writer(self):
-	#	if self._writer is None:
-	#		assert self.output_dir is not None, "Output dir should be set to dump summaries"
-	#		self._writer = tf.summary.FileWriter(self.output_dir + "summaries", tf.get_default_graph())
-	#	return self._writer
+		self.seed = seed
+		if seed is not None:
+			tf.set_random_seed(seed)
+			np.random.seed(seed)
+			random.seed(seed)
 
 	@property
 	def session(self):

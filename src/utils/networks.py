@@ -2,13 +2,14 @@ import tensorflow as tf
 import numpy as np
 
 
-def mlp(layers, activations):
-	assert len(layers) == len(activations)
-
+def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):
 	def network(X):
 		h = tf.layers.flatten(X)
-		for units, activation in zip(layers, activations):
-			h = tf.layers.dense(h, units, activation=activation)
+		for units in layers:
+			h = tf.layers.dense(h, units)
+			if layer_norm:
+				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
+			h = activation(h)
 		return h
 
 	return network

@@ -33,9 +33,9 @@ class PPOAgent:
 		self.nb_frames = nb_frames
 		self.model = None
 
-	def train(self, n_timesteps, env=None, nsteps=512, gamma=.98, noptepochs=4, nminibatches=6, ent_coef=0.00, lr=1e-3,
+	def train(self, n_timesteps, env=None, nsteps=512, gamma=.98, noptepochs=4, nminibatches=6, ent_coef=0.01, lr=5e-4,
 	          # lr=lambda f: 3e-4 * f,
-	          cliprange=0.2, weights=None, save_path=None, monitor_dir=None):
+	          cliprange=0.1, weights=None, save_path=None, monitor_dir=None):
 		if env is None:
 			env = VecFrameStack(make_vec_env(self.env_id, self.num_env, monitor_dir=monitor_dir), self.nb_frames,
 			                    self.incl_action)
@@ -43,19 +43,20 @@ class PPOAgent:
 		self.model = ppo2.learn(
 			env=env,
 			seed=self.seed,
-			network=lstm22(),
+			network=mlp(),
 			total_timesteps=n_timesteps,
 			nsteps=nsteps,
 			lam=.95,  # 0.95,
 			gamma=gamma,
+			normalize_observations=True,
 			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=noptepochs,
-			log_interval=10,
+			log_interval=1,
 			nminibatches=nminibatches,  # 8,  # 8
 			ent_coef=ent_coef,
 			# estimate_q=True,
 			cliprange=cliprange,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
-			# value_network="copy",
+			#value_network="copy",
 			load_path=weights
 		)
 		env.close()
