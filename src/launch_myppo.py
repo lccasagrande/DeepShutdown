@@ -34,11 +34,11 @@ def run(args):
 	if args.verbose:
 		loggers.append(log.ConsoleLogger())
 
-	agent = PPOAgent(args.env_id, args.seed, args.nb_frames, args.log_dir, normalize_obs=True, clip_obs=10.)
+	agent = PPOAgent(args.env_id, args.seed, args.nb_frames, args.log_dir, normalize_obs=True, clip_obs=5.)
 
 	agent.compile(
 		p_network=mlp([64, 64], tf.nn.leaky_relu),
-		#v_network=mlp([64], tf.nn.leaky_relu),
+		#v_network=mlp([64, 64], tf.nn.leaky_relu),
 		clip_value=0.1,
 		lr=5e-4,
 		ent_coef=0.01,
@@ -80,7 +80,7 @@ def parse_args():
 	parser.add_argument("--weights", default="../weights/ppo_shutdown", type=str)
 	parser.add_argument("--log_dir", default="../weights/", type=str)
 	parser.add_argument("--seed", default=123, type=int)
-	parser.add_argument("--nb_timesteps", default=2e6, type=int)
+	parser.add_argument("--nb_timesteps", default=1.5e6, type=int)
 	parser.add_argument("--nsteps", default=512, action="store_true")
 	parser.add_argument("--nb_frames", default=8, type=int)
 	parser.add_argument("--num_envs", default=12, type=int)
@@ -90,7 +90,7 @@ def parse_args():
 	parser.add_argument("--log_interval", default=1, action="store_true")
 	parser.add_argument("--verbose", default=True, action="store_true")
 	parser.add_argument("--render", default=True, action="store_true")
-	parser.add_argument("--test", default=False, action="store_true")
+	parser.add_argument("--test", default=0, action="store_true")
 	parser.add_argument("--continue_learning", default=False, action="store_true")
 	return parser.parse_args()
 

@@ -200,7 +200,7 @@ class PPOAgent(TFAgent):
 		# TRAIN
 		self.loss = self.p_loss - self.entropy * ent_coef + self.v_loss * vf_coef
 		self.learning_rate = tf.train.exponential_decay(lr, self.global_step, decay_steps, decay_rate)
-		optimizer = tf.train.AdamOptimizer(learning_rate=lr, epsilon=1e-5)
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-5)
 
 		trainable_vars = tf.trainable_variables()
 		gradients, variables = zip(*optimizer.compute_gradients(self.loss, trainable_vars))
@@ -232,7 +232,11 @@ class PPOAgent(TFAgent):
 	def value(self, obs):
 		return self._pred(self.pred_value, obs)
 
-	def act(self, obs):
+	def act(self, obs, argmax=False):
+		if argmax:
+			probs = self._pred(self.act_probs, obs)
+			return [np.argmax(p) for p in probs]
+
 		return self._pred(self.sample_action, obs)
 
 	def fit(
@@ -267,6 +271,7 @@ class PPOAgent(TFAgent):
 					values=values,
 					neglogpacs=neglogps)
 
+				elapsed_time = time.time() - tstart
 				nepisodes += len(infos)
 				history.extend(infos)
 				eprew_max = np.max([h['score'] for h in history]) if history else np.nan
@@ -277,9 +282,10 @@ class PPOAgent(TFAgent):
 				if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
 					loggers.log('v_explained_variance', round(explained_variance(values, returns), 4))
 					loggers.log('nupdates', nupdate)
+					loggers.log('elapsed_time', elapsed_time)
 					loggers.log('ntimesteps', nupdate * n_batch)
 					loggers.log('nepisodes', nepisodes)
-					loggers.log('fps', int(n_batch / (time.time() - tstart)))
+					loggers.log('fps', int(n_batch / elapsed_time))
 					loggers.log('eprew_avg', safemean([h['score'] for h in history]))
 					loggers.log('eplen_avg', safemean([h['nsteps'] for h in history]))
 					loggers.log('eprew_max', eprew_max)
@@ -301,7 +307,7 @@ class PPOAgent(TFAgent):
 		while not done:
 			if render:
 				env.render('console')
-			action = self.act(obs)
+			action = self.act(obs, True)
 			obs, reward, done, info = env.step(action)
 			print(" Act: {}".format(action))
 
