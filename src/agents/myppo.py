@@ -3,11 +3,73 @@ import numpy as np
 import gym
 import time
 from collections import defaultdict, deque
+import os
+import joblib
 from src.utils.commons import *
 from src.utils.runners import AbstractEnvRunner
 from src.utils.agents import TFAgent
 from src.utils.tf_utils import *
 from src.utils.env_wrappers import *
+
+
+class Runner2(AbstractEnvRunner):
+	def __init__(self, env, model, nsteps=5, gamma=0.99):
+		super().__init__(env=env, model=model, nsteps=nsteps)
+		self.gamma = gamma
+
+	def run(self):
+		def discount_rewards(envs_rewards, envs_dones):
+			discounted_rewards = np.empty_like(envs_rewards, dtype=np.float32)
+			if self.gamma > 0.0:
+				last_obs_value = self.model.value(self.obs)
+				for i, (rewards, dones, value) in enumerate(zip(envs_rewards, envs_dones, last_obs_value)):
+					rewards = rewards.tolist()
+					dones = dones.tolist()
+					if dones[-1]:
+						discounted_rewards[i] = discount_with_dones(rewards, dones, self.gamma)
+					else:
+						discounted_rewards[i] = discount_with_dones(rewards + [value], dones + [False], self.gamma)[:-1]
+
+			return discounted_rewards
+
+		# We initialize the lists that will contain the mb of experiences
+		rollout_actions, rollout_obs, rollout_rew, rollout_dones, rollout_values, epinfos = [], [], [], [], [], []
+		rollout_neglogpacs = []
+
+		for n in range(self.nsteps):
+			# Given observations, take action and value (V(s))
+			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
+			actions, values, neglogpacs = self.model.step(self.obs)
+			rollout_neglogpacs.append(neglogpacs)
+			rollout_actions.append(actions)
+			rollout_obs.append(np.copy(self.obs))
+			rollout_values.append(values)
+			rollout_dones.append(self.dones)
+
+			next_obs, rewards, dones, infos = self.env.step(actions)
+
+			for info in infos:
+				ep_info = info.get('episode')
+				if ep_info:
+					epinfos.append(ep_info)
+
+			rollout_rew.append(rewards)
+			self.obs = next_obs
+			self.dones = dones
+		rollout_dones.append(self.dones)
+		envs_acts = np.asarray(rollout_actions)
+		envs_obs = np.asarray(rollout_obs)
+		envs_values = np.asarray(rollout_values, dtype=np.float32)
+		envs_neglogpacs = np.asarray(rollout_neglogpacs, dtype=np.float32)
+		envs_rewards = np.asarray(rollout_rew, dtype=np.float32).swapaxes(0, 1)
+		envs_dones = np.asarray(rollout_dones, dtype=np.bool).swapaxes(0, 1)
+		envs_dones = envs_dones[:, 1:]
+		envs_discounted_rewards = discount_rewards(envs_rewards, envs_dones)
+		s = envs_discounted_rewards.shape
+		returns = envs_discounted_rewards.reshape(s[0] * s[1], *s[2:])
+
+		obs, acts, values, dones, neglogps = map(sf01, (envs_obs, envs_acts, envs_values, envs_dones, envs_neglogpacs))
+		return obs, acts, returns, values, dones, neglogps, epinfos
 
 
 class Runner(AbstractEnvRunner):
@@ -85,7 +147,7 @@ class PPOAgent(TFAgent):
 		self.nframes = nbframes
 		self._compiled = False
 		self.monitor_dir = monitor_dir
-		self._incl_action_in_frame = True
+		self._incl_action_in_frame = False
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
 		self.summary_episode_interval = 100
@@ -95,7 +157,7 @@ class PPOAgent(TFAgent):
 
 	def _train(self, global_step, obs, returns, actions, values, neglogpacs, normalize=True):
 		advs = returns - values
-		advs = (advs - advs.mean()) / (advs.std() + 1e-8) if normalize else advs
+		advs = (advs - advs.mean()) / (advs.std()) if normalize else advs
 
 		feed_dict = {
 			self.obs: obs, self.returns: returns, self.actions: actions, self.advs: advs,
@@ -117,6 +179,7 @@ class PPOAgent(TFAgent):
 			for start in range(0, nbatch, batch_size):
 				ind = inds[start:start + batch_size]
 				batch = (dt[ind] for dt in (obs, returns, actions, values, neglogpacs))
+
 				results.append(self._train(nupdate, *batch))
 
 		stats = np.mean(results, axis=0)
@@ -127,12 +190,19 @@ class PPOAgent(TFAgent):
 		return stats
 
 	def _build_env(self, n):
-		env = make_vec_env(self.env_id, n, self.seed, self.monitor_dir)
+		env = make_vec_env(env_id=self.env_id, nenv=n, seed=self.seed, monitor_dir=self.monitor_dir)
 		if self.normalize_obs:
 			env = VecNormalize(env, ret=False, clipob=self.clip_obs)
 		if self.nframes > 1:
 			env = VecFrameStack(env, self.nframes, include_action=self._incl_action_in_frame)
 		return env
+
+	def load_value(self, fn):
+		network = tf.trainable_variables("value_network")
+		network.extend(tf.trainable_variables("value_logits"))
+		values = joblib.load(os.path.expanduser(fn))
+		restores = [v.assign(values[v.name]) for v in network]
+		self.session.run(restores)
 
 	def compile(
 			self, p_network, v_network=None, clip_value=.2, lr=0.01, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
@@ -148,7 +218,7 @@ class PPOAgent(TFAgent):
 			self.old_neglogprob = old_neglogprob = tf.placeholder(tf.float32, shape=[None])
 			self.old_vpred = old_vpred = tf.placeholder(tf.float32, shape=[None])
 
-			self.X = self.obs#tf.clip_by_value(self.obs / 0.99999994, -5., 5.) if self.normalize_obs else self.obs
+			self.X = self.obs  # tf.clip_by_value(self.obs / 0.99999994, -5., 5.) if self.normalize_obs else self.obs
 
 		with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
 			p_net = p_network(self.X)
@@ -175,7 +245,6 @@ class PPOAgent(TFAgent):
 
 		# VALUE NETWORK
 		self.pred_value = tf.layers.dense(self.v_net, 1, name='value_logits')[:, 0]
-
 
 		# VALUE NETWORK LOSS
 		self.value_clipped = old_vpred + tf.clip_by_value(self.pred_value - old_vpred, -clip_value, clip_value)
@@ -217,13 +286,13 @@ class PPOAgent(TFAgent):
 		assert self._compiled
 		if hasattr(self, 'rms'):
 			self.session.run(self.rms.update_ops, {self.obs: obs})
-			#if isinstance(ops, list):
-			#	ops.append(self.rms.update_ops)
-			#	return self.session.run(ops, {self.obs: obs})[:-1]
-			#else:
-			#	ops = [ops, self.rms.update_ops]
-			#	return self.session.run(ops, {self.obs: obs})[0]
-		#else:
+		# if isinstance(ops, list):
+		#	ops.append(self.rms.update_ops)
+		#	return self.session.run(ops, {self.obs: obs})[:-1]
+		# else:
+		#	ops = [ops, self.rms.update_ops]
+		#	return self.session.run(ops, {self.obs: obs})[0]
+		# else:
 		return self.session.run(ops, {self.obs: obs})
 
 	def step(self, obs):
@@ -253,7 +322,8 @@ class PPOAgent(TFAgent):
 		max_score = np.nan
 		nepisodes = 0
 		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
-		runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
+		#runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
+		runner = Runner2(env=env, model=self, nsteps=nsteps, gamma=gamma)
 
 		# START UPDATES
 		try:
@@ -277,8 +347,9 @@ class PPOAgent(TFAgent):
 				eprew_max = np.max([h['score'] for h in history]) if history else np.nan
 				if max_score is np.nan:
 					max_score = eprew_max
-				else:
-					max_score = max_score if max_score > eprew_max else eprew_max
+				elif max_score < eprew_max:
+					max_score = eprew_max
+					self.save("../weights/best_ppo_shutdown")
 				if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
 					loggers.log('v_explained_variance', round(explained_variance(values, returns), 4))
 					loggers.log('nupdates', nupdate)
@@ -309,7 +380,7 @@ class PPOAgent(TFAgent):
 				env.render('console')
 			action = self.act(obs, True)
 			obs, reward, done, info = env.step(action)
-			print(" Act: {}".format(action))
+		# print(" Act: {}".format(action))
 
 		ep = info[0].pop('episode')
 		if verbose:
@@ -317,4 +388,4 @@ class PPOAgent(TFAgent):
 
 		print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'], ep['time']))
 		env.close()
-		return ep
+		return ep['score']

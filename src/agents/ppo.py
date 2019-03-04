@@ -33,7 +33,7 @@ class PPOAgent:
 		self.nb_frames = nb_frames
 		self.model = None
 
-	def train(self, n_timesteps, env=None, nsteps=512, gamma=.98, noptepochs=4, nminibatches=6, ent_coef=0.01, lr=5e-4,
+	def train(self, n_timesteps, env=None, nsteps=512, gamma=.99, noptepochs=4, nminibatches=6, ent_coef=0.01, lr=1e-4,
 	          # lr=lambda f: 3e-4 * f,
 	          cliprange=0.1, weights=None, save_path=None, monitor_dir=None):
 		if env is None:
@@ -48,7 +48,7 @@ class PPOAgent:
 			nsteps=nsteps,
 			lam=.95,  # 0.95,
 			gamma=gamma,
-			normalize_observations=True,
+			#normalize_observations=True,
 			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=noptepochs,
 			log_interval=1,
@@ -74,11 +74,11 @@ class PPOAgent:
 			score, steps, results, done, info, obs = 0, 0, defaultdict(float), False, [{}], env.reset()
 			while not done:
 				if render:
-					env.render('console')
+					env.render()
 				actions, _, state, _ = self.model.step(obs, S=state, M=dones)
-				print(actions)
 				# print("State: {} - Action: {}".format(obs, actions))
 				obs, rew, done, info = env.step(actions)
+				print(" Action: {}".format(actions))
 				done = done.any() if isinstance(done, np.ndarray) else done
 				results["steps"] += 1
 				results["score"] += rew[0]

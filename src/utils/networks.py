@@ -6,7 +6,7 @@ def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):
 	def network(X):
 		h = tf.layers.flatten(X)
 		for units in layers:
-			h = tf.layers.dense(h, units)
+			h = tf.layers.dense(h, units, kernel_initializer=tf.initializers.glorot_uniform())
 			if layer_norm:
 				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
 			h = activation(h)

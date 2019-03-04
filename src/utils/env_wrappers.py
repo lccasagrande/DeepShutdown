@@ -532,4 +532,7 @@ def make_vec_env(env_id, nenv, seed=None, monitor_dir=None):
 
 		return _thunk
 
-	return DummyVecEnv([make_env(0)]) if nenv == 1 else SubprocVecEnv([make_env(i) for i in range(nenv)])
+	if nenv == 1:
+		return DummyVecEnv([make_env(0)])
+	else:
+		return SubprocVecEnv([make_env(i) for i in range(nenv)])
