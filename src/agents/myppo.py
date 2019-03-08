@@ -157,7 +157,7 @@ class PPOAgent(TFAgent):
 
 	def _train(self, global_step, obs, returns, actions, values, neglogpacs, normalize=True):
 		advs = returns - values
-		advs = (advs - advs.mean()) / (advs.std()) if normalize else advs
+		advs = (advs - advs.mean()) / (advs.std() + 1e-8) if normalize else advs
 
 		feed_dict = {
 			self.obs: obs, self.returns: returns, self.actions: actions, self.advs: advs,
@@ -322,8 +322,8 @@ class PPOAgent(TFAgent):
 		max_score = np.nan
 		nepisodes = 0
 		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
-		#runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
-		runner = Runner2(env=env, model=self, nsteps=nsteps, gamma=gamma)
+		runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
+		#runner = Runner2(env=env, model=self, nsteps=nsteps, gamma=gamma)
 
 		# START UPDATES
 		try:
@@ -359,8 +359,8 @@ class PPOAgent(TFAgent):
 					loggers.log('fps', int(n_batch / elapsed_time))
 					loggers.log('eprew_avg', safemean([h['score'] for h in history]))
 					loggers.log('eplen_avg', safemean([h['nsteps'] for h in history]))
-					loggers.log('eprew_max', eprew_max)
-					loggers.log('eprew_max_score', max_score)
+					loggers.log('eprew_max', float(eprew_max))
+					loggers.log('eprew_max_score', float(max_score))
 					loggers.log('eprew_min', int(np.min([h['score'] for h in history])) if history else np.nan)
 					for key, value in stats.items():
 						loggers.log(key, float(value))
@@ -377,10 +377,11 @@ class PPOAgent(TFAgent):
 		obs, done = env.reset(), False
 		while not done:
 			if render:
-				env.render('console')
+				#env.render('console')
+				env.render()
 			action = self.act(obs, True)
 			obs, reward, done, info = env.step(action)
-		# print(" Act: {}".format(action))
+			print(" Act: {}".format(action))
 
 		ep = info[0].pop('episode')
 		if verbose:

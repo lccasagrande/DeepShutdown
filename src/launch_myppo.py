@@ -51,6 +51,9 @@ def run(args):
 		if args.weights is not None and args.continue_learning:
 			agent.load(args.weights)
 
+		if args.v_weights is not None:
+			agent.load_value(args.v_weights)
+
 		agent.fit(
 			timesteps=args.nb_timesteps,
 			nsteps=args.nsteps,
@@ -81,17 +84,17 @@ def run(args):
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--env_id", default="shutdown-v0", type=str)
-	parser.add_argument("--weights", default="../weights/best_ppo_shutdown", type=str)
-	#parser.add_argument("--v_weights", default="../weights/ppo_value", type=str)
+	parser.add_argument("--weights", default="../weights/myppo", type=str)
+	parser.add_argument("--v_weights", default=None, type=str)
 	parser.add_argument("--log_dir", default="../weights/", type=str)
 	parser.add_argument("--seed", default=123, type=int)
 	parser.add_argument("--nb_timesteps", default=1e6, type=int)
-	parser.add_argument("--nsteps", default=512, action="store_true")
-	parser.add_argument("--nb_frames", default=4, type=int)
-	parser.add_argument("--num_envs", default=6, type=int)
-	parser.add_argument("--epochs", default=2, action="store_true")
-	parser.add_argument("--discount", default=.995, action="store_true")
-	parser.add_argument("--batch_size", default=64, action="store_true")
+	parser.add_argument("--nsteps", default=1024, action="store_true")
+	parser.add_argument("--nb_frames", default=6, type=int)
+	parser.add_argument("--num_envs", default=12, type=int)
+	parser.add_argument("--epochs", default=8, action="store_true")
+	parser.add_argument("--discount", default=1, action="store_true")
+	parser.add_argument("--batch_size", default=256, action="store_true")
 	parser.add_argument("--log_interval", default=1, action="store_true")
 	parser.add_argument("--verbose", default=True, action="store_true")
 	parser.add_argument("--render", default=False, action="store_true")
