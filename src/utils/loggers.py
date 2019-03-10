@@ -75,3 +75,44 @@ class JSONLogger(Logger):
 
 	def close(self):
 		self.file.close()
+
+
+class CSVLogger(Logger):
+	def __init__(self, fn):
+		super().__init__()
+		self.file = open(fn, 'w+t')
+		self.keys = []
+		self.sep = ','
+
+	def log(self, name, value):
+		self._log[name] = value
+
+	def dump(self):
+		extra_keys = list(self._log.keys() - self.keys)
+		extra_keys.sort()
+		if extra_keys:
+			self.keys.extend(extra_keys)
+			self.file.seek(0)
+			lines = self.file.readlines()
+			self.file.seek(0)
+			for (i, k) in enumerate(self.keys):
+				if i > 0:
+					self.file.write(',')
+				self.file.write(k)
+			self.file.write('\n')
+			for line in lines[1:]:
+				self.file.write(line[:-1])
+				self.file.write(self.sep * len(extra_keys))
+				self.file.write('\n')
+		for (i, k) in enumerate(self.keys):
+			if i > 0:
+				self.file.write(',')
+			v = self._log.get(k)
+			if v is not None:
+				self.file.write(str(v))
+		self.file.write('\n')
+		self.file.flush()
+		self._log.clear()
+
+	def close(self):
+		self.file.close()

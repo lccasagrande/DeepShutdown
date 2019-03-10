@@ -147,7 +147,7 @@ class PPOAgent(TFAgent):
 		self.nframes = nbframes
 		self._compiled = False
 		self.monitor_dir = monitor_dir
-		self._incl_action_in_frame = False
+		self._incl_action_in_frame = True
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
 		self.summary_episode_interval = 100
@@ -386,7 +386,7 @@ class PPOAgent(TFAgent):
 		ep = info[0].pop('episode')
 		if verbose:
 			print("[EVAL] {}".format(" ".join([" [{}: {}]".format(k, v) for k, v in sorted(info[0].items())])))
-
+		info[0]['reward'] = ep['score']
 		print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'], ep['time']))
 		env.close()
-		return ep['score']
+		return info[0]
