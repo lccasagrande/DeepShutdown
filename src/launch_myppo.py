@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
+from collections import defaultdict
 from plotly.offline import plot
 from src.utils import loggers as log
 from src.utils.networks import mlp
@@ -38,13 +39,13 @@ def run(args):
 	agent = PPOAgent(args.env_id, args.seed, args.nb_frames, args.log_dir, normalize_obs=False, clip_obs=None)
 
 	agent.compile(
-		p_network=mlp([64, 64, 64, 32], tf.nn.leaky_relu),
-		#v_network=mlp([64, 64], tf.nn.leaky_relu),
+		p_network=mlp([64, 64, 64, 64], tf.nn.leaky_relu),
+		# v_network=mlp([64, 64], tf.nn.leaky_relu),
 		clip_value=0.2,
-		lr=1e-3,
+		lr=1e-4,
 		ent_coef=0.01,
 		vf_coef=.5,
-		decay_steps=100,
+		decay_steps=300,
 		#max_grad_norm=.5,
 		shared=False)
 
@@ -60,7 +61,7 @@ def run(args):
 			nsteps=args.nsteps,
 			num_envs=args.num_envs,
 			gamma=args.discount,
-			lam=0.95,
+			lam=.95,
 			log_interval=args.log_interval,
 			epochs=args.epochs,
 			loggers=loggers,
@@ -75,34 +76,42 @@ def run(args):
 	# plot_hist([(hist['policy_loss'], 'score1')], 100, 'Policy Loss', with_error=True)
 	# plot_hist([(hist['value_loss'], 'score1')], 100, 'Value Loss', with_error=True)
 	# plot_hist([(hist['entropy'], 'score1')], 100, 'Entropy', with_error=True)
-	results = agent.play(render=args.render, verbose=args.verbose)
 
-	if args.output_fn is not None and results:
-		pd.DataFrame([results]).to_csv(args.output_fn, index=False)
+	hist = defaultdict(list)
+	for _ in range(args.nb_workloads):
+		ep = agent.play(render=args.render, verbose=args.verbose)
+		for k, v in ep.items():
+			hist[k].append(v)
+
+	hist.pop('workload', None)
+	print("[EVALUATE][INFO] {}".format(" ".join([" [{}: {}]".format(k, np.mean(v)) for k, v in sorted(hist.items())])))
+	#if args.output_fn is not None and results:
+	#	pd.DataFrame([results]).to_csv(args.output_fn, index=False)
 
 
 def parse_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--env_id", default="shutdown-v0", type=str)
-	#parser.add_argument("--weights", default="../results/5/myppo2", type=str)
-	#parser.add_argument("--output_fn", default="../results/5/ppo_results.csv", type=str)
-	#parser.add_argument("--log_dir", default="../results/5/", type=str)
+	# parser.add_argument("--weights", default="../results/5/myppo2", type=str)
+	# parser.add_argument("--output_fn", default="../results/5/ppo_results.csv", type=str)
+	# parser.add_argument("--log_dir", default="../results/5/", type=str)
 	parser.add_argument("--weights", default="../weights/myppo2", type=str)
 	parser.add_argument("--output_fn", default="../weights/ppo_results.csv", type=str)
 	parser.add_argument("--log_dir", default="../weights/", type=str)
 	parser.add_argument("--v_weights", default=None, type=str)
 	parser.add_argument("--seed", default=123, type=int)
 	parser.add_argument("--nb_timesteps", default=1e6, type=int)
-	parser.add_argument("--nsteps", default=256, action="store_true")
-	parser.add_argument("--nb_frames", default=6, type=int)
+	parser.add_argument("--nsteps", default=512, action="store_true")
+	parser.add_argument("--nb_frames", default=5, type=int)
 	parser.add_argument("--num_envs", default=12, type=int)
 	parser.add_argument("--epochs", default=6, action="store_true")
-	parser.add_argument("--discount", default=1, action="store_true")
-	parser.add_argument("--batch_size", default=64, action="store_true")
+	parser.add_argument("--discount", default=.99, action="store_true")
+	parser.add_argument("--batch_size", default=128, action="store_true")
 	parser.add_argument("--log_interval", default=1, action="store_true")
 	parser.add_argument("--verbose", default=True, action="store_true")
-	parser.add_argument("--render", default=False, action="store_true")
+	parser.add_argument("--render", default=0, action="store_true")
 	parser.add_argument("--test", default=0, action="store_true")
+	parser.add_argument("--nb_workloads", default=1, action="store_true")
 	parser.add_argument("--continue_learning", default=False, action="store_true")
 	return parser.parse_args()
 

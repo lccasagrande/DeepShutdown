@@ -29,7 +29,7 @@ class Runner2(AbstractEnvRunner):
 						discounted_rewards[i] = discount_with_dones(rewards, dones, self.gamma)
 					else:
 						discounted_rewards[i] = discount_with_dones(rewards + [value], dones + [False], self.gamma)[:-1]
-
+			#print("Max: {} - Min: {}".format(np.max(discounted_rewards[:, 0]), np.min(discounted_rewards[:, 0])))
 			return discounted_rewards
 
 		# We initialize the lists that will contain the mb of experiences
@@ -40,20 +40,20 @@ class Runner2(AbstractEnvRunner):
 			# Given observations, take action and value (V(s))
 			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
 			actions, values, neglogpacs = self.model.step(self.obs)
-			rollout_neglogpacs.append(neglogpacs)
 			rollout_actions.append(actions)
-			rollout_obs.append(np.copy(self.obs))
 			rollout_values.append(values)
+			rollout_neglogpacs.append(neglogpacs)
+			rollout_obs.append(np.copy(self.obs))
 			rollout_dones.append(self.dones)
 
 			next_obs, rewards, dones, infos = self.env.step(actions)
 
+			rollout_rew.append(rewards)
 			for info in infos:
 				ep_info = info.get('episode')
 				if ep_info:
 					epinfos.append(ep_info)
 
-			rollout_rew.append(rewards)
 			self.obs = next_obs
 			self.dones = dones
 		rollout_dones.append(self.dones)
@@ -94,7 +94,8 @@ class Runner(AbstractEnvRunner):
 		for _ in range(self.nsteps):
 			# Given observations, get action value and neglopacs
 			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
-			actions, values, neglogpacs = self.model.step(self.obs)
+			masks = self.env.get_valid_actions()
+			actions, values, neglogpacs = self.model.step(self.obs, masks)
 			mb_obs.append(self.obs.copy())
 			mb_actions.append(actions)
 			mb_values.append(values)
@@ -130,6 +131,7 @@ class Runner(AbstractEnvRunner):
 			delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
 			mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
 		mb_returns = mb_advs + mb_values
+		#print("[ACTU] Max: {} - Min: {}".format(np.max(mb_returns[:, 0]), np.min(mb_returns[:, 0])))
 		return (*map(sf01, (mb_obs, mb_actions, mb_returns, mb_values, mb_dones, mb_neglogpacs)), epinfos)
 
 
@@ -147,7 +149,7 @@ class PPOAgent(TFAgent):
 		self.nframes = nbframes
 		self._compiled = False
 		self.monitor_dir = monitor_dir
-		self._incl_action_in_frame = True
+		self._incl_action_in_frame = False
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
 		self.summary_episode_interval = 100
@@ -218,7 +220,7 @@ class PPOAgent(TFAgent):
 			self.old_neglogprob = old_neglogprob = tf.placeholder(tf.float32, shape=[None])
 			self.old_vpred = old_vpred = tf.placeholder(tf.float32, shape=[None])
 
-			self.X = self.obs  # tf.clip_by_value(self.obs / 0.99999994, -5., 5.) if self.normalize_obs else self.obs
+			self.X = self.obs
 
 		with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
 			p_net = p_network(self.X)
@@ -240,6 +242,7 @@ class PPOAgent(TFAgent):
 		self.act_probs = tf.nn.softmax(self.p_logits)
 		u = tf.random_uniform(tf.shape(self.p_logits), dtype=self.p_logits.dtype)
 		self.sample_action = tf.argmax(self.p_logits - tf.log(-tf.log(u)), axis=-1)
+		# self.sample_action = tf.squeeze(tf.multinomial(tf.log(self.act_probs), 1))
 
 		self.p_neglogprob = sparse_softmax_cross_entropy_with_logits(self.p_logits, self.sample_action)
 
@@ -248,10 +251,9 @@ class PPOAgent(TFAgent):
 
 		# VALUE NETWORK LOSS
 		self.value_clipped = old_vpred + tf.clip_by_value(self.pred_value - old_vpred, -clip_value, clip_value)
-
 		self.v_loss1 = tf.square(self.pred_value - self.returns)
 		self.v_loss2 = tf.square(self.value_clipped - self.returns)
-		self.v_loss = .5 * tf.reduce_mean(tf.maximum(self.v_loss1, self.v_loss2))
+		self.v_loss = tf.reduce_mean(tf.maximum(self.v_loss1, self.v_loss2))
 
 		# POLICY NETWORK LOSS
 		self.neglogpac = sparse_softmax_cross_entropy_with_logits(self.p_logits, self.actions)
@@ -259,8 +261,6 @@ class PPOAgent(TFAgent):
 		self.p_loss1 = -self.advs * self.ratio
 		self.p_loss2 = -self.advs * tf.clip_by_value(self.ratio, 1.0 - clip_value, 1.0 + clip_value)
 		self.p_loss = tf.reduce_mean(tf.maximum(self.p_loss1, self.p_loss2))
-		self.approxkl = .5 * tf.reduce_mean(tf.square(self.neglogpac - old_neglogprob))
-		self.clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(self.ratio - 1.0), clip_value)))
 
 		# ENTROPY
 		self.entropy = entropy(self.p_logits)
@@ -279,6 +279,8 @@ class PPOAgent(TFAgent):
 		grads_and_vars = list(zip(gradients, variables))
 		self.train_op = optimizer.apply_gradients(grads_and_vars)
 
+		self.approxkl = .5 * tf.reduce_mean(tf.square(self.neglogpac - old_neglogprob))
+		self.clipfrac = tf.reduce_mean(tf.cast(tf.greater(tf.abs(self.ratio - 1.0), clip_value), dtype=tf.float32))
 		self.session.run(tf.global_variables_initializer())
 		self._compiled = True
 
@@ -293,6 +295,7 @@ class PPOAgent(TFAgent):
 		#	ops = [ops, self.rms.update_ops]
 		#	return self.session.run(ops, {self.obs: obs})[0]
 		# else:
+
 		return self.session.run(ops, {self.obs: obs})
 
 	def step(self, obs):
@@ -305,7 +308,6 @@ class PPOAgent(TFAgent):
 		if argmax:
 			probs = self._pred(self.act_probs, obs)
 			return [np.argmax(p) for p in probs]
-
 		return self._pred(self.sample_action, obs)
 
 	def fit(
@@ -323,7 +325,6 @@ class PPOAgent(TFAgent):
 		nepisodes = 0
 		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
 		runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
-		#runner = Runner2(env=env, model=self, nsteps=nsteps, gamma=gamma)
 
 		# START UPDATES
 		try:
@@ -349,7 +350,7 @@ class PPOAgent(TFAgent):
 					max_score = eprew_max
 				elif max_score < eprew_max:
 					max_score = eprew_max
-					self.save("../weights/best_ppo_shutdown")
+				# self.save("../weights/best_ppo_shutdown")
 				if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
 					loggers.log('v_explained_variance', round(explained_variance(values, returns), 4))
 					loggers.log('nupdates', nupdate)
@@ -377,16 +378,15 @@ class PPOAgent(TFAgent):
 		obs, done = env.reset(), False
 		while not done:
 			if render:
-				#env.render('console')
+				# env.render('console')
 				env.render()
 			action = self.act(obs, True)
 			obs, reward, done, info = env.step(action)
-			print(" Act: {}".format(action))
+			#print("Obs: {} Action: {} Reward: {}".format('', action, reward))
 
 		ep = info[0].pop('episode')
 		if verbose:
-			print("[EVAL] {}".format(" ".join([" [{}: {}]".format(k, v) for k, v in sorted(info[0].items())])))
+			print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'], ep['time']))
 		info[0]['reward'] = ep['score']
-		print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'], ep['time']))
 		env.close()
 		return info[0]
