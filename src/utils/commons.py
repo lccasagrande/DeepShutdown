@@ -30,6 +30,7 @@ def pad_sequence(seqs):
 			seq.append(s)
 	return np.asarray(seq), np.asarray(seqs_len)
 
+
 def discount(rewards, gamma):
 	discounted, r = [], 0
 	for reward in rewards[::-1]:

@@ -9,6 +9,9 @@ def batch_to_seq(h, nbatch, nsteps, flat=False):
 		h = tf.reshape(h, [nbatch, nsteps, -1])
 	return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=nsteps, value=h)]
 
+def mask_softmax(logits, mask):
+	masked_e = tf.exp(logits) * tf.cast(mask, dtype=tf.float32)
+	return masked_e / tf.reduce_sum(masked_e, axis=-1, keepdims=True)
 
 def sparse_softmax_cross_entropy_with_logits(logits, labels):
 	encoded = tf.one_hot(labels, logits.get_shape()[-1])

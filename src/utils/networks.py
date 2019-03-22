@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 
 def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):

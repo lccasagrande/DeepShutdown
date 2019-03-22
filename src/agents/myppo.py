@@ -94,8 +94,7 @@ class Runner(AbstractEnvRunner):
 		for _ in range(self.nsteps):
 			# Given observations, get action value and neglopacs
 			# We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
-			masks = self.env.get_valid_actions()
-			actions, values, neglogpacs = self.model.step(self.obs, masks)
+			actions, values, neglogpacs = self.model.step(self.obs)
 			mb_obs.append(self.obs.copy())
 			mb_actions.append(actions)
 			mb_values.append(values)
@@ -149,7 +148,6 @@ class PPOAgent(TFAgent):
 		self.nframes = nbframes
 		self._compiled = False
 		self.monitor_dir = monitor_dir
-		self._incl_action_in_frame = False
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
 		self.summary_episode_interval = 100
@@ -196,7 +194,7 @@ class PPOAgent(TFAgent):
 		if self.normalize_obs:
 			env = VecNormalize(env, ret=False, clipob=self.clip_obs)
 		if self.nframes > 1:
-			env = VecFrameStack(env, self.nframes, include_action=self._incl_action_in_frame)
+			env = VecFrameStack(env, self.nframes, include_action=False)
 		return env
 
 	def load_value(self, fn):

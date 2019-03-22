@@ -526,7 +526,7 @@ def make_vec_env(env_id, nenv, seed=None, monitor_dir=None):
 	def make_env(rank):
 		def _thunk():
 			env = gym.make(env_id)
-			env.seed(seed + rank if seed is not None else None)
+			env.seed(seed + rank + 100 if seed is not None else None)
 			env = Monitor(env) if monitor_dir is None else CSVMonitor(env, filename=monitor_dir + str(rank))
 			return env
 
