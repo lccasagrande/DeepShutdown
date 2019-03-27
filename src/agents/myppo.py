@@ -1,3 +1,4 @@
+from pandas.core.config import is_callable
 import tensorflow as tf
 import numpy as np
 import gym
@@ -10,6 +11,12 @@ from src.utils.runners import AbstractEnvRunner
 from src.utils.agents import TFAgent
 from src.utils.tf_utils import *
 from src.utils.env_wrappers import *
+
+
+def constfn(val):
+	def f(_):
+		return val
+	return f
 
 
 class Runner2(AbstractEnvRunner):
@@ -29,7 +36,7 @@ class Runner2(AbstractEnvRunner):
 						discounted_rewards[i] = discount_with_dones(rewards, dones, self.gamma)
 					else:
 						discounted_rewards[i] = discount_with_dones(rewards + [value], dones + [False], self.gamma)[:-1]
-			#print("Max: {} - Min: {}".format(np.max(discounted_rewards[:, 0]), np.min(discounted_rewards[:, 0])))
+			# print("Max: {} - Min: {}".format(np.max(discounted_rewards[:, 0]), np.min(discounted_rewards[:, 0])))
 			return discounted_rewards
 
 		# We initialize the lists that will contain the mb of experiences
@@ -130,7 +137,7 @@ class Runner(AbstractEnvRunner):
 			delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
 			mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
 		mb_returns = mb_advs + mb_values
-		#print("[ACTU] Max: {} - Min: {}".format(np.max(mb_returns[:, 0]), np.min(mb_returns[:, 0])))
+		# print("[ACTU] Max: {} - Min: {}".format(np.max(mb_returns[:, 0]), np.min(mb_returns[:, 0])))
 		return (*map(sf01, (mb_obs, mb_actions, mb_returns, mb_values, mb_dones, mb_neglogpacs)), epinfos)
 
 
@@ -150,27 +157,28 @@ class PPOAgent(TFAgent):
 		self.monitor_dir = monitor_dir
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
-		self.summary_episode_interval = 100
+		self.summary_episode_interval = 10
 		env = self._build_env(1)
 		self.input_shape, self.nb_actions = env.observation_space.shape, env.action_space.n
 		env.close()
 
-	def _train(self, global_step, obs, returns, actions, values, neglogpacs, normalize=True):
+	def _train(self, global_step, clip_value, obs, returns, actions, values, neglogpacs, normalize=True):
 		advs = returns - values
 		advs = (advs - advs.mean()) / (advs.std() + 1e-8) if normalize else advs
 
 		feed_dict = {
 			self.obs: obs, self.returns: returns, self.actions: actions, self.advs: advs,
-			self.old_neglogprob: neglogpacs, self.old_vpred: values, self.global_step: global_step
+			self.old_neglogprob: neglogpacs, self.old_vpred: values, self.global_step: global_step,
+			self.clip_value: clip_value
 		}
 		ops = [
 			self.train_op, self.p_loss, self.v_loss, self.entropy, self.approxkl, self.clipfrac,
-			self.learning_rate
+			self.learning_rate, self.clip_value
 		]
 
 		return self.session.run(fetches=ops, feed_dict=feed_dict)[1:]
 
-	def _update(self, nupdate, nbatch, epochs, batch_size, obs, returns, actions, values, neglogpacs):
+	def _update(self, nupdate, clip_value, nbatch, epochs, batch_size, obs, returns, actions, values, neglogpacs):
 		inds = np.arange(nbatch)
 		results = []
 
@@ -180,12 +188,12 @@ class PPOAgent(TFAgent):
 				ind = inds[start:start + batch_size]
 				batch = (dt[ind] for dt in (obs, returns, actions, values, neglogpacs))
 
-				results.append(self._train(nupdate, *batch))
+				results.append(self._train(nupdate, clip_value, *batch))
 
 		stats = np.mean(results, axis=0)
 		stats = {
 			'p_loss': stats[0], 'v_loss': stats[1], 'p_entropy': stats[2],
-			'approxkl': stats[3], 'clipfrac': stats[4], 'lr': stats[5]
+			'approxkl': stats[3], 'clip_frac': stats[4], 'lr': stats[5], 'clip_value': stats[6]
 		}
 		return stats
 
@@ -205,7 +213,7 @@ class PPOAgent(TFAgent):
 		self.session.run(restores)
 
 	def compile(
-			self, p_network, v_network=None, clip_value=.2, lr=0.01, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
+			self, p_network, v_network=None, lr=0.01, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
 			shared=False, decay_steps=50, decay_rate=.1):
 		with tf.name_scope("input"):
 			self.obs = tf.placeholder(tf.float32, shape=(None,) + self.input_shape, name='observations')
@@ -215,6 +223,7 @@ class PPOAgent(TFAgent):
 			self.global_step = tf.placeholder(tf.int32)
 
 			# PPO specific
+			self.clip_value = tf.placeholder(tf.float32)
 			self.old_neglogprob = old_neglogprob = tf.placeholder(tf.float32, shape=[None])
 			self.old_vpred = old_vpred = tf.placeholder(tf.float32, shape=[None])
 
@@ -248,7 +257,8 @@ class PPOAgent(TFAgent):
 		self.pred_value = tf.layers.dense(self.v_net, 1, name='value_logits')[:, 0]
 
 		# VALUE NETWORK LOSS
-		self.value_clipped = old_vpred + tf.clip_by_value(self.pred_value - old_vpred, -clip_value, clip_value)
+		self.value_clipped = old_vpred + tf.clip_by_value(self.pred_value - old_vpred, -self.clip_value,
+		                                                  self.clip_value)
 		self.v_loss1 = tf.square(self.pred_value - self.returns)
 		self.v_loss2 = tf.square(self.value_clipped - self.returns)
 		self.v_loss = tf.reduce_mean(tf.maximum(self.v_loss1, self.v_loss2))
@@ -257,7 +267,7 @@ class PPOAgent(TFAgent):
 		self.neglogpac = sparse_softmax_cross_entropy_with_logits(self.p_logits, self.actions)
 		self.ratio = tf.exp(old_neglogprob - self.neglogpac)
 		self.p_loss1 = -self.advs * self.ratio
-		self.p_loss2 = -self.advs * tf.clip_by_value(self.ratio, 1.0 - clip_value, 1.0 + clip_value)
+		self.p_loss2 = -self.advs * tf.clip_by_value(self.ratio, 1.0 - self.clip_value, 1.0 + self.clip_value)
 		self.p_loss = tf.reduce_mean(tf.maximum(self.p_loss1, self.p_loss2))
 
 		# ENTROPY
@@ -266,7 +276,7 @@ class PPOAgent(TFAgent):
 
 		# TRAIN
 		self.loss = self.p_loss - self.entropy * ent_coef + self.v_loss * vf_coef
-		self.learning_rate = tf.train.exponential_decay(lr, self.global_step, decay_steps, decay_rate)
+		self.learning_rate = tf.train.exponential_decay(lr, self.global_step, decay_steps, decay_rate, staircase=False)
 		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-5)
 
 		trainable_vars = tf.trainable_variables()
@@ -278,7 +288,7 @@ class PPOAgent(TFAgent):
 		self.train_op = optimizer.apply_gradients(grads_and_vars)
 
 		self.approxkl = .5 * tf.reduce_mean(tf.square(self.neglogpac - old_neglogprob))
-		self.clipfrac = tf.reduce_mean(tf.cast(tf.greater(tf.abs(self.ratio - 1.0), clip_value), dtype=tf.float32))
+		self.clipfrac = tf.reduce_mean(tf.cast(tf.greater(tf.abs(self.ratio - 1.0), self.clip_value), dtype=tf.float32))
 		self.session.run(tf.global_variables_initializer())
 		self._compiled = True
 
@@ -309,28 +319,32 @@ class PPOAgent(TFAgent):
 		return self._pred(self.sample_action, obs)
 
 	def fit(
-			self, timesteps, nsteps, batch_size=4, epochs=1, num_envs=1, log_interval=1,
-			summary=False, loggers=None, gamma=.98, lam=.95):
+			self, timesteps, nsteps, nb_batches=8, epochs=1, num_envs=1, log_interval=1,
+			summary=False, loggers=None, gamma=.98, lam=.95, clip_value=0.2):
 		assert self._compiled, "You should compile the model first."
 
 		n_batch = nsteps * num_envs
-		assert n_batch % batch_size == 0
+		assert n_batch % nb_batches == 0
 
 		# PREPARE
 		env = self._build_env(num_envs)
 		n_updates = int(timesteps // n_batch)
-		max_score = np.nan
-		nepisodes = 0
+		batch_size = n_batch // nb_batches
+		max_score, nepisodes = np.nan, 0
 		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
 		runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam)
+
+		clip_value = clip_value if callable(clip_value) else constfn(clip_value)
 
 		# START UPDATES
 		try:
 			for nupdate in range(1, n_updates + 1):
 				tstart = time.time()
+				frac = 1.0 - (nupdate - 1.0) / n_updates
 				obs, acts, returns, values, dones, neglogps, infos = runner.run()
 				stats = self._update(
 					nupdate=nupdate,
+					clip_value=clip_value(frac),
 					nbatch=n_batch,
 					epochs=epochs,
 					batch_size=batch_size,
@@ -351,6 +365,7 @@ class PPOAgent(TFAgent):
 				# self.save("../weights/best_ppo_shutdown")
 				if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
 					loggers.log('v_explained_variance', round(explained_variance(values, returns), 4))
+					loggers.log('frac', frac)
 					loggers.log('nupdates', nupdate)
 					loggers.log('elapsed_time', elapsed_time)
 					loggers.log('ntimesteps', nupdate * n_batch)
@@ -378,9 +393,9 @@ class PPOAgent(TFAgent):
 			if render:
 				# env.render('console')
 				env.render()
-			action = self.act(obs, True)
+			action = self.act(obs, False)
 			obs, reward, done, info = env.step(action)
-			#print("Obs: {} Action: {} Reward: {}".format('', action, reward))
+		# print("Obs: {} Action: {} Reward: {}".format('', action, reward))
 
 		ep = info[0].pop('episode')
 		if verbose:
