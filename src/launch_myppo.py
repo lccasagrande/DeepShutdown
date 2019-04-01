@@ -42,7 +42,7 @@ def run(args):
 		p_network=mlp([64, 64], tf.nn.leaky_relu),
 		# v_network=mlp([64, 64], tf.nn.leaky_relu),
 		lr=1e-3,
-		ent_coef=0.0,
+		ent_coef=0.01,
 		vf_coef=.25,
 		decay_steps=200,
 		max_grad_norm=None,
@@ -56,7 +56,7 @@ def run(args):
 			agent.load_value(args.v_weights)
 
 		history = agent.fit(
-			clip_value=.1,
+			clip_value=.3,
 			lam=.95,
 			timesteps=args.nb_timesteps,
 			nsteps=args.nsteps,
@@ -106,9 +106,9 @@ def parse_args():
 	parser.add_argument("--nsteps", default=256, action="store_true")
 	parser.add_argument("--nb_frames", default=15, type=int)
 	parser.add_argument("--num_envs", default=12, type=int)
-	parser.add_argument("--epochs", default=6, action="store_true")
+	parser.add_argument("--epochs", default=8, action="store_true")
 	parser.add_argument("--discount", default=.99, action="store_true")
-	parser.add_argument("--nb_batches", default=8, action="store_true")
+	parser.add_argument("--nb_batches", default=4, action="store_true")
 	parser.add_argument("--log_interval", default=1, action="store_true")
 	parser.add_argument("--verbose", default=True, action="store_true")
 	parser.add_argument("--render", default=0, action="store_true")
