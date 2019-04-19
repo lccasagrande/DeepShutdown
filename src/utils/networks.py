@@ -1,6 +1,35 @@
 import tensorflow as tf
 
 
+def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu, layer_norm=False):
+	def network(X):
+		h = tf.reshape(X, (-1,) + shape)
+		cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=units, activation=activation)
+		_, h = tf.nn.dynamic_rnn(cell, h, dtype=tf.float32)
+		h = h[1]
+
+		for u in layers:
+			h = tf.layers.dense(h, u, kernel_initializer=tf.initializers.glorot_uniform())
+			if layer_norm:
+				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
+			h = activation(h)
+
+		return h
+
+	return network
+
+
+def lstm(units, shape, activation=tf.nn.leaky_relu):
+	def network(X):
+		h = tf.reshape(X, (-1,) + shape)
+		cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=units, activation=activation)
+		_, h = tf.nn.dynamic_rnn(cell, h, dtype=tf.float32)
+		# h = tf.layers.dense(h[1], units*2)
+		return h[1]
+
+	return network
+
+
 def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):
 	def network(X):
 		h = tf.layers.flatten(X)
@@ -12,9 +41,6 @@ def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):
 		return h
 
 	return network
-
-
-
 
 # def cnn_small():
 #	def network_fn(X, nenv=1):
