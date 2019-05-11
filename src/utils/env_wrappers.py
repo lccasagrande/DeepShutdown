@@ -522,12 +522,12 @@ class VecNormalize(VecEnvWrapper):
 		return self._obfilt(obs)
 
 
-def make_vec_env(env_id, nenv, seed=None, monitor_dir=None):
+def make_vec_env(env_id, nenv, seed=None, monitor_dir=None, keywords=()):
 	def make_env(rank):
 		def _thunk():
 			env = gym.make(env_id)
-			env.seed(seed + rank + 100 if seed is not None else None)
-			env = Monitor(env) if monitor_dir is None else CSVMonitor(env, filename=monitor_dir + str(rank))
+			env.seed(seed + rank if seed is not None else None)
+			env = Monitor(env, keywords) if monitor_dir is None else CSVMonitor(env, monitor_dir + str(rank), keywords)
 			return env
 
 		return _thunk

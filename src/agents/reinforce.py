@@ -4,240 +4,244 @@ import time as tm
 from utils.agents import TFAgent
 from collections import defaultdict
 from utils.env_wrappers import SubprocVecEnv
-from utils.commons import discount, normalize, variable_summaries
+from utils.commons import discount, normalize
+from src.utils.commons import *
+from src.utils.runners import AbstractEnvRunner
+from src.utils.agents import TFAgent
+from src.utils.tf_utils import *
+from src.utils.env_wrappers import *
+
+
+class FixedRunner(AbstractEnvRunner):
+	def __init__(self, env, model, gamma=0.99):
+		super().__init__(env=env, model=model, nsteps=-1)
+		self.gamma = gamma
+
+	def run(self):
+		def discount(rewards):
+			discounted, r = [], 0
+			for reward in rewards[::-1]:
+				r = reward + self.gamma * r
+				discounted.append(r)
+			return discounted[::-1]
+
+		rollout_actions, rollout_obs, rollout_rew, epinfos, trajectories = [], [], [], [], []
+		self.dones = [False] * self.nenv
+		obs = self.env.reset()
+		while any(not done for done in self.dones):
+			actions = [0] * self.nenv
+			rollout_actions.append(actions)
+			rollout_obs.append(np.copy(obs))
+			obs, rewards, dones, infos = self.env.step(actions)
+			rollout_rew.append(rewards)
+
+			for i, done in enumerate(dones):
+				if done and not self.dones[i]:
+					acts = np.asarray(rollout_actions).swapaxes(0, 1)[i]
+					o = np.asarray(rollout_obs).swapaxes(0, 1)[i]
+					rets = discount(np.asarray(rollout_rew).swapaxes(0, 1)[i])
+					trajectories.append((o, acts, rets))
+					self.dones[i] = True
+
+		return trajectories
+
+class Runner(AbstractEnvRunner):
+	def __init__(self, env, model, gamma=0.99):
+		super().__init__(env=env, model=model, nsteps=-1)
+		self.gamma = gamma
+
+	def run(self):
+		def discount(rewards):
+			discounted, r = [], 0
+			for reward in rewards[::-1]:
+				r = reward + self.gamma * r
+				discounted.append(r)
+			return discounted[::-1]
+
+		rollout_actions, rollout_obs, rollout_rew, epinfos, trajectories = [], [], [], [], []
+		self.dones = [False] * self.nenv
+		obs = self.env.reset()
+		while any(not done for done in self.dones):
+			actions = self.model.act(obs)
+			rollout_actions.append(actions)
+			rollout_obs.append(np.copy(obs))
+			obs, rewards, dones, infos = self.env.step(actions)
+			rollout_rew.append(rewards)
+
+			for i, done in enumerate(dones):
+				if done and not self.dones[i]:
+					acts = np.asarray(rollout_actions).swapaxes(0, 1)[i]
+					o = np.asarray(rollout_obs).swapaxes(0, 1)[i]
+					rets = discount(np.asarray(rollout_rew).swapaxes(0, 1)[i])
+					trajectories.append((o, acts, rets))
+					self.dones[i] = True
+			for info in infos:
+				ep_info = info.get('episode')
+				if ep_info:
+					epinfos.append(ep_info)
+		return trajectories, epinfos
 
 
 class ReinforceAgent(TFAgent):
-	def __init__(self, network, gamma, **kwargs):
-		super(ReinforceAgent, self).__init__(**kwargs)
-		self.network = network
-		self.gamma = gamma
-		self.compiled = False
+	def __init__(self, env_id, seed=None, nbframes=1, monitor_dir=None, normalize_obs=True, clip_obs=10.):
+		super().__init__(env_id, seed)
+		self.nframes = nbframes
+		self._compiled = False
+		self.monitor_dir = monitor_dir
+		self.normalize_obs = normalize_obs
+		self.clip_obs = clip_obs
+		self.summary_episode_interval = 100
+		env = self._build_env(1)
+		self.input_shape, self.nb_actions = env.observation_space.shape, env.action_space.n
+		env.close()
 
-	def build_model(self, lr):
+	def _build_env(self, n):
+		env = make_vec_env(env_id=self.env_id, nenv=n, seed=self.seed, monitor_dir=self.monitor_dir)
+		if self.normalize_obs:
+			env = VecNormalize(env, ret=False, clipob=self.clip_obs)
+		if self.nframes > 1:
+			env = VecFrameStack(env, self.nframes, include_action=False)
+		return env
+
+	def _update(self, nupdate, trajectories):
+		stats = []
+		for o, a, r in trajectories:
+			baseline = self.session.run(self.value_estimate, {self.obs: o})
+			adv = r - baseline
+			adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+			feed_dict = {self.obs: o, self.actions: a, self.returns: r, self.advs: adv, self.global_step: nupdate}
+			ops = [self.train_policy, self.train_value, self.p_loss, self.v_loss, self.entropy, self.learning_rate]
+			stats.append(self.session.run(fetches=ops, feed_dict=feed_dict)[2:])
+
+		s = np.mean(stats, axis=0)
+		return {"p_loss": s[0], "v_loss": s[1], "entropy": s[2], "lr": s[3]}
+
+	def trainv(self, n, gamma):
+		env = self._build_env(1)
+		runner = FixedRunner(env=env, model=self, gamma=gamma)
+		trajectory = runner.run()
+
+		# START UPDATES
+		for update in range(1, n + 1):
+			loss = 0
+			for o, a, r in trajectory:
+				feed_dict = {self.obs: o, self.returns: r, self.global_step: 1}
+				ops = [self.train_value, self.v_loss]
+				loss = self.session.run(fetches=ops, feed_dict=feed_dict)[1:]
+
+			print("Loss: {}".format(loss))
+
+
+
+	def compile(
+			self, network, lr=0.01, ent_coef=0.01, max_grad_norm=0.5, decay_steps=50, decay_rate=.1):
+
 		with tf.name_scope("input"):
-			self.states = tf.placeholder(dtype=tf.float32, shape=(None,) + self.input_shape, name="state", )
-			self.actions = tf.placeholder(dtype=tf.int32, shape=(None,), name="action")
-			self.returns = tf.placeholder(dtype=tf.float32, shape=(None,), name="return")
-			dataset = tf.data.Dataset.from_tensor_slices((self.states, self.actions, self.returns)).batch(1)
-			self.iterator = dataset.make_initializable_iterator()
-			self.X, self.Y, self.R = self.iterator.get_next()
+			self.obs = tf.placeholder(tf.float32, shape=(None,) + self.input_shape, name='observations')
+			self.actions = tf.placeholder(tf.int32, shape=[None], name='actions')
+			self.advs = tf.placeholder(tf.float32, shape=[None], name='returns')
+			self.returns = tf.placeholder(tf.float32, shape=[None], name='returns')
+			self.global_step = tf.placeholder(tf.int32)
 
-		with tf.name_scope("policy"):
-			with tf.name_scope("output"):
-				self.logits = tf.layers.dense(self.network(self.X), self.nb_actions)
-				self.act_probs = tf.squeeze(tf.nn.softmax(self.logits))
+		with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
+			p_net = network(self.obs)
 
-			with tf.name_scope("KL"):
-				self.old_logits = tf.placeholder(dtype=tf.float32, shape=self.logits.shape)
-				a0 = self.logits - tf.reduce_max(self.logits, axis=-1, keepdims=True)
-				a1 = self.old_logits - tf.reduce_max(self.old_logits, axis=-1, keepdims=True)
-				ea0 = tf.exp(a0)
-				ea1 = tf.exp(a1)
-				z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)
-				z1 = tf.reduce_sum(ea1, axis=-1, keepdims=True)
-				p0 = ea0 / z0
-				self.kl = tf.reduce_sum(p0 * (a0 - tf.log(z0) - a1 + tf.log(z1)), axis=-1)
+		with tf.variable_scope("value_network", reuse=tf.AUTO_REUSE):
+			v_net = network(self.obs)
 
-			with tf.name_scope("entropy"):
-				a0 = self.logits - tf.reduce_max(self.logits, axis=-1, keepdims=True)
-				ea0 = tf.exp(a0)
-				z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)
-				p0 = ea0 / z0
-				self.entropy = tf.reduce_mean(tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=-1))
+		# POLICY
+		self.p_net = tf.layers.flatten(p_net)
+		self.p_logits = tf.layers.dense(self.p_net, self.nb_actions, name='policy_logits')
+		self.act_probs = tf.nn.softmax(self.p_logits)
+		self.x_entropy = sparse_softmax_cross_entropy_with_logits(logits=self.p_logits, labels=self.actions)
+		self.p_loss = tf.reduce_mean(self.x_entropy * self.advs)
 
-			with tf.name_scope("optimize"):
-				self.global_step = tf.train.get_or_create_global_step()
-				self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-				self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.Y)
-				self.loss = tf.reduce_mean(self.cross_entropy) - 0.01 * self.entropy
-				self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
-				self.grads, _ = zip(*self.grads_and_vars)
-				self.grads_holder, grads_and_vars_holder = [], []
-				for grad, variable in self.grads_and_vars:
-					grad_placeholder = tf.placeholder(tf.float32, shape=grad.get_shape())
-					self.grads_holder.append(grad_placeholder)
-					grads_and_vars_holder.append((grad_placeholder, variable))
+		# VALUE
+		self.v_net = tf.layers.flatten(v_net)
+		self.value_estimate = tf.layers.dense(self.v_net, 1, name='value_logits')[:, 0]
+		self.v_loss = tf.reduce_mean(tf.squared_difference(self.value_estimate, self.returns))
 
-				self.apply_grads = self.optimizer.apply_gradients(grads_and_vars_holder, global_step=self.global_step)
 
-			with tf.name_scope("summary"):
-				for grad, var in self.grads_and_vars:
-					tf.summary.histogram(var.name, var, family=var.name)
-					if grad is not None: variable_summaries(grad, var.name)
-				tf.summary.scalar("entropy", tf.reduce_mean(self.entropy))
-				tf.summary.scalar("loss", self.loss)
-				tf.summary.scalar("advantage", tf.reduce_mean(self.R))
-				self.summarize = tf.summary.merge_all()
+		# TRAIN
+		self.learning_rate = tf.train.exponential_decay(lr, self.global_step, decay_steps, decay_rate)
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-5)
 
-			self.session.run(tf.global_variables_initializer())
-			self.compiled = True
+		#self.p_grads = optimizer.compute_gradients(self.p_loss)
+		#for i, (grad, var) in enumerate(self.p_grads):
+		#	if grad is not None:
+		#		self.p_grads[i] = (grad * self.advs, var)
 
-	def act(self, state):
-		assert self.compiled
-		act_probs = self.session.run(self.act_probs, {self.X: state})
-		if act_probs.ndim == 1:
-			return [np.random.choice(np.arange(self.nb_actions), p=act_probs)]
-		else:
-			return [np.random.choice(np.arange(self.nb_actions), p=p) for p in act_probs]
+		self.train_policy = optimizer.minimize(self.p_loss)
+		self.train_value = optimizer.minimize(self.v_loss)
 
-	def evaluate(self, env, n_episodes, visualize=False):
-		results = defaultdict(float)
-		for _ in range(1, n_episodes + 1, 1):
-			ob = env.reset()
-			score, steps = 0, 0
-			while True:
-				if visualize: env.render()
-				action = self.act([ob])[0]
-				ob, r, done, info = env.step(action)
-				steps += 1
-				score += r
-				if done:
-					if isinstance(info, dict):
-						for k, v in info.items():
-							results[k] += v
-					results["score"] += score
-					results["steps"] += steps
-					break
+		self.entropy = tf.reduce_mean(entropy(self.p_logits))
+		self.session.run(tf.global_variables_initializer())
+		self._compiled = True
+
+	def act(self, obs):
+		assert self._compiled
+		probs = self.session.run(self.act_probs, {self.obs: obs})
+		return [np.random.choice(np.arange(self.nb_actions), p=p) for p in probs]
+
+	def fit(self, nb_updates, num_envs=1, log_interval=1, loggers=None, gamma=.98):
+		assert self._compiled, "You should compile the model first."
+
+		# PREPARE
+		env = self._build_env(num_envs)
+		max_score = np.nan
+		nepisodes = 0
+		history = deque(maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
+		runner = Runner(env=env, model=self, gamma=gamma)
+
+		# START UPDATES
+		try:
+			for update in range(1, nb_updates + 1):
+				tstart = time.time()
+				trajectories, infos = runner.run()
+				stats = self._update(nupdate=update, trajectories=trajectories)
+
+				elapsed_time = time.time() - tstart
+				history.extend(infos)
+				nepisodes += len(infos)
+				eprew_max = np.max([h['score'] for h in history]) if history else np.nan
+				if max_score is np.nan:
+					max_score = eprew_max
+				elif max_score < eprew_max:
+					max_score = eprew_max
+				# self.save("../weights/best_ppo_shutdown")
+				if loggers is not None and (update % log_interval == 0 or update == 1):
+					loggers.log('nbupdates', update)
+					loggers.log('elapsed_time', elapsed_time)
+					loggers.log('nepisodes', nepisodes)
+					loggers.log('eprew_avg', safemean([h['score'] for h in history]))
+					loggers.log('eplen_avg', safemean([h['nsteps'] for h in history]))
+					loggers.log('eprew_max', float(eprew_max))
+					loggers.log('eprew_max_score', float(max_score))
+					loggers.log('eprew_min', int(np.min([h['score'] for h in history])) if history else np.nan)
+					for key, value in stats.items():
+						loggers.log(key, float(value))
+					loggers.dump()
+		finally:
+			env.close()
+			if loggers is not None:
+				loggers.close()
+
+		return history
+
+	def play(self, render, verbose):
+		env = self._build_env(1)
+		obs, done = env.reset(), False
+		while not done:
+			if render:
+				# env.render('console')
+				env.render()
+			action = self.act(obs)
+			obs, reward, done, info = env.step(action)
+		# print("Obs: {} Action: {} Reward: {}".format('', action, reward))
+
+		ep = info[0].pop('episode')
+		if verbose:
+			print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'], ep['time']))
+		info[0]['reward'] = ep['score']
 		env.close()
-		print("[EVALUATE] Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(results["score"])))
-		return results
-
-	def fit(self, env, nb_iteration, nb_env, nb_max_steps, log_interval, save_interval, summarize=False):
-		def decode_trajectories(trajectories):
-			agents_dones = [np.where(traj == True)[0] + 1 for traj in np.swapaxes(trajectories['dones'], 1, 0)]
-			agents_obs = np.swapaxes(trajectories['obs'], 1, 0)
-			agents_acts = np.swapaxes(trajectories['acts'], 1, 0)
-			agents_rews = np.swapaxes(trajectories['rews'], 1, 0)
-			trajs_obs, trajs_acts, trajs_rews = [], [], []
-
-			for agent, agent_dones in enumerate(agents_dones):
-				if len(agent_dones) == 0:
-					trajs_obs.append(agents_obs[agent][:])
-					trajs_acts.append(agents_acts[agent][:])
-					trajs_rews.append(discount(agents_rews[agent][:], self.gamma))
-				else:
-					start = 0
-					for traj_done in agent_dones:
-						trajs_obs.append(agents_obs[agent][start:traj_done])
-						trajs_acts.append(agents_acts[agent][start:traj_done])
-						trajs_rews.append(discount(agents_rews[agent][start:traj_done], self.gamma))
-						start = traj_done
-			return trajs_obs, trajs_acts, trajs_rews
-
-		def get_trajectories():
-			trajectories = dict(obs=[], acts=[], rews=[], dones=[])
-			agent_dones = np.zeros(shape=(nb_env,))
-			obs = env.reset()
-			for step in range(1, nb_max_steps + 1):
-				acts = self.act(obs)
-				trajectories['obs'].append(obs)
-				trajectories['acts'].append(acts)
-				obs, rews, dones, _ = env.step(acts)
-				trajectories['rews'].append(rews)
-				trajectories["dones"].append(dones)
-				agent_dones += dones
-				if np.all(agent_dones > 0) and np.sum(agent_dones) >= nb_env:
-					break
-			return trajectories, step
-
-		def calc_advantages(trajs_rews):
-			max_trajectory = max(len(r) for r in trajs_rews)
-			padded_rwds = [np.pad(r, (0, max_trajectory - len(r)), "constant", constant_values=0) for r in trajs_rews]
-			baseline = np.mean(padded_rwds, axis=0)
-			advs = np.concatenate([r - baseline[: len(r)] for r in trajs_rews])
-			return advs  # normalize(advs)
-
-		def train(states, actions, rewards):
-			loss, entropy, steps, all_gradients = 0, 0, 0, []
-			feed_dict = {self.states: states, self.actions: actions, self.returns: rewards}
-			self.session.run(self.iterator.initializer, feed_dict=feed_dict)
-			try:
-				while True:
-					grads, l, entpy = self.session.run([self.grads, self.loss, self.entropy])
-					loss += l
-					entropy += entpy
-					steps += 1
-					all_gradients.append(grads)
-			# if summarize: self.writer.add_summary(summary, g_step)
-			except tf.errors.OutOfRangeError:
-				pass
-
-			loss /= steps
-			entropy /= steps
-			feed_dict = {}
-			for i, placeholder in enumerate(self.grads_holder):
-				gr = [r * all_gradients[step][i] for step, r in enumerate(rewards)]
-				mean_gradient = np.mean(gr, axis=0)
-				feed_dict[placeholder] = mean_gradient
-			self.session.run(self.apply_grads, feed_dict=feed_dict)
-
-			return loss, entropy
-
-		def get_log_msg():
-			log_msg = " ---------------------\
-                         \n [*] [Iteration]: \t{}\
-                         \n [*] [Total Steps]: \t{}\
-                         \n [*] [Total Episodes]: \t{}\
-                         \n [*] [Avg. Steps]: \t{}\
-                         \n [*] [Avg. Loss]: \t{:.4f}\
-                         \n [*] [Avg. Entropy]: \t{:.4f}\
-                         \n [*] [Avg. Reward]: \t{:.2f}\
-                         \n [*] [Max. Reward]: \t{:.2f}\
-                         \n [*] [Elapsed Time]: \t{:.1f} s\
-                         \n ---------------------".format(
-				self._log["iteration"][-1],
-				self._log["total_steps"][-1],
-				self._log["total_episodes"][-1],
-				self._log["avg_steps"][-1],
-				self._log["avg_loss"][-1],
-				self._log["avg_entropy"][-1],
-				self._log["avg_reward"][-1],
-				self._log["max_reward"][-1],
-				self._log["elapsed_time"][-1],
-			)
-			return log_msg
-
-		assert self.compiled
-		#assert isinstance(env, SubprocVecEnv)
-		total_steps = 0
-		fit_start_time = tm.time()
-		for iteration in range(1, nb_iteration + 1):
-			t_start = tm.time()
-			# GET TRAJECTORIES
-			trajectories, steps = get_trajectories()
-			total_steps += steps
-
-			t_obs, t_acts, t_rews = decode_trajectories(trajectories)
-
-			all_obs, all_acts, all_advs = (np.concatenate(t_obs), np.concatenate(t_acts), calc_advantages(t_rews))
-
-			# TRAIN
-			loss, entropy = train(all_obs, all_acts, all_advs)
-
-			# LOG
-			elapsed_time = round(tm.time() - t_start, 2)
-			episodes_rewards, episodes_steps = zip(*[(r[0], len(r)) for r in t_rews])
-			self._log["iteration"].append(iteration)
-			self._log["total_episodes"].append(iteration * len(episodes_steps))
-			self._log["total_steps"].append(total_steps)
-			self._log["avg_loss"].append(loss)
-			self._log["avg_entropy"].append(entropy)
-			self._log["avg_steps"].append(np.mean(episodes_steps))
-			self._log["avg_reward"].append(np.mean(episodes_rewards))
-			self._log["max_reward"].append(np.max(episodes_rewards))
-			self._log["min_reward"].append(np.min(episodes_rewards))
-			self._log["elapsed_time"].append(elapsed_time)
-
-			if iteration % log_interval == 0:
-				self.save_log()
-
-			if iteration % save_interval == 0:
-				self.save_model(step=iteration)
-
-			print(get_log_msg())
-
-		self.save_model(step=nb_iteration)
-		self.save_log()
-		env.close()
-		print("Done training in {:.2f} s".format(tm.time() - fit_start_time, 2))
+		return info[0]

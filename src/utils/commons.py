@@ -1,4 +1,40 @@
 import numpy as np
+from collections import defaultdict, deque
+
+
+class MulRunningMeanStd(object):
+	# https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+	def __init__(self, epsilon=1e-4):
+		self.history = defaultdict(lambda: deque(maxlen=10))
+		self.count = defaultdict(lambda: epsilon)
+		self.var = defaultdict(lambda: 1)
+		self.mean = defaultdict(lambda: 0)
+
+	def add(self, key, value):
+		self.history[key].append(value)
+
+	def update(self):
+		#while self.history:
+		#	k, values = self.history.popitem()
+		for k, values in self.history.items():
+			self.mean[k] = np.mean(values)
+			self.var[k] = np.var(values)
+			#self._update_from_moments(np.mean(values), np.var(values), len(values), k)
+
+	def _update_from_moments(self, batch_mean, batch_var, batch_count, k):
+		delta = batch_mean - self.mean[k]
+		tot_count = self.count[k] + batch_count
+
+		new_mean = self.mean[k] + delta * batch_count / tot_count
+		m_a = self.var[k] * self.count[k]
+		m_b = batch_var * batch_count
+		M2 = m_a + m_b + np.square(delta) * self.count[k] * batch_count / tot_count
+		new_var = M2 / tot_count
+		new_count = tot_count
+
+		self.mean[k] = new_mean
+		self.var[k] = new_var
+		self.count[k] = new_count
 
 
 def safemean(xs):
@@ -78,6 +114,4 @@ def tile_images(img_nhwc):
 
 
 def normalize(dt):
-	avg = dt.mean()
-	std = dt.std()
-	return (dt - avg) / std if std != 0 else dt
+	return (dt - dt.mean()) / (dt.std() + 1e-8)

@@ -2,6 +2,10 @@ import tensorflow as tf
 import numpy as np
 
 
+def explained_var(pred, label):
+	vary = tf.math.reduce_variance(label)
+	return 1 - tf.math.reduce_variance(label - pred) / vary
+
 def batch_to_seq(h, nbatch, nsteps, flat=False):
 	if flat:
 		h = tf.reshape(h, [nbatch, nsteps])
@@ -14,7 +18,7 @@ def mask_softmax(logits, mask):
 	return masked_e / tf.reduce_sum(masked_e, axis=-1, keepdims=True)
 
 def sparse_softmax_cross_entropy_with_logits(logits, labels):
-	encoded = tf.one_hot(labels, logits.get_shape()[-1])
+	encoded = tf.one_hot(labels, logits.get_shape().as_list()[-1])
 	return tf.nn.softmax_cross_entropy_with_logits_v2(labels=encoded, logits=logits)
 
 
@@ -54,17 +58,16 @@ def max_min_mean_summary(var, family, collections=None):
 	tf.summary.scalar('min', tf.reduce_min(var), family=family, collections=collections)
 
 
-def variable_summaries(var, family, plot_hist=False, collections=None):
+def variable_summaries(var, name, family=None, plot_hist=False, collections=None):
 	"""Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
 	mean = tf.reduce_mean(var)
-	tf.summary.scalar('mean', mean, family=family, collections=collections)
+	tf.summary.scalar(name +'_avg', mean, family=family, collections=collections)
 	with tf.name_scope('stddev'):
 		stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-	tf.summary.scalar('stddev', stddev, family=family, collections=collections)
-	tf.summary.scalar('max', tf.reduce_max(var), family=family, collections=collections)
-	tf.summary.scalar('min', tf.reduce_min(var), family=family, collections=collections)
+	tf.summary.scalar(name +'_max', tf.reduce_max(var), family=family, collections=collections)
+	tf.summary.scalar(name +'_min', tf.reduce_min(var), family=family, collections=collections)
 	if plot_hist:
-		tf.summary.histogram('histogram', var, family=family, collections=collections)
+		tf.summary.histogram(name, var, family=family, collections=collections)
 
 
 class TfRunningMeanStd(object):

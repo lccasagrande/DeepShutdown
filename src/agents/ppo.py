@@ -19,7 +19,7 @@ from src.baselines.baselines.common.retro_wrappers import RewardScaler
 
 
 class PPOAgent:
-	def __init__(self, network, env_id, num_env, seed, rew_scale, nb_frames, incl_action=True):
+	def __init__(self, network, env_id, num_env, seed, rew_scale, nb_frames, incl_action=False):
 		self.network = network
 		self.num_env = num_env
 		self.env_id = env_id
@@ -33,9 +33,9 @@ class PPOAgent:
 		self.nb_frames = nb_frames
 		self.model = None
 
-	def train(self, n_timesteps, env=None, nsteps=512, gamma=.99, noptepochs=4, nminibatches=6, ent_coef=0.01, lr=1e-4,
+	def train(self, n_timesteps, env=None, nsteps=360, gamma=.98, noptepochs=6, nminibatches=6, ent_coef=0.0, lr=1e-4,
 	          # lr=lambda f: 3e-4 * f,
-	          cliprange=0.1, weights=None, save_path=None, monitor_dir=None):
+	          cliprange=0.2, weights=None, save_path=None, monitor_dir=None):
 		if env is None:
 			env = VecFrameStack(make_vec_env(self.env_id, self.num_env, monitor_dir=monitor_dir), self.nb_frames,
 			                    self.incl_action)
@@ -43,11 +43,12 @@ class PPOAgent:
 		self.model = ppo2.learn(
 			env=env,
 			seed=self.seed,
-			network=mlp(),
+			network=lstm22(),
 			total_timesteps=n_timesteps,
 			nsteps=nsteps,
-			lam=.95,  # 0.95,
+			lam=.9,  # 0.95,
 			gamma=gamma,
+			vf_coef=1.,
 			#normalize_observations=True,
 			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
 			noptepochs=noptepochs,

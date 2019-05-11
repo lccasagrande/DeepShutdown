@@ -4,6 +4,8 @@
 results/*
 log/
 tests/
+models/
+weights/
 benchmark
 tmp
 src/test.py

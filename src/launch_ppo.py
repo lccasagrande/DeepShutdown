@@ -2,7 +2,7 @@ import gym
 import gridgym.envs.grid_env as g
 import argparse
 from collections import defaultdict
-from src.agents.ppo import PPOAgent
+from src.agents.ppo import PPOAgent, mlp
 
 METRICS = [
 	"energy_consumed",
@@ -17,7 +17,7 @@ METRICS = [
 
 
 def run(args):
-	agent = PPOAgent("lstm", args.env, args.num_env, args.seed, args.reward_scale, args.nb_frames)
+	agent = PPOAgent(mlp(), args.env, args.num_env, args.seed, args.reward_scale, args.nb_frames)
 
 	if args.test:
 		agent.evaluate(args.weights, args.test_episodes, args.output_fn, args.verbose, args.render)
@@ -30,9 +30,9 @@ def run(args):
 
 def parse_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--env", type=str, default="shutdown-v0")
+	parser.add_argument("--env", type=str, default="off_reservation-v0")
 	parser.add_argument("--num_env", default=12, type=int)
-	parser.add_argument("--nb_frames", default=5, type=int)
+	parser.add_argument("--nb_frames", default=15, type=int)
 	parser.add_argument("--seed", type=int, default=123)
 	parser.add_argument("--reward_scale", type=float, default=1.0)
 	parser.add_argument("--weights", default="../weights/ppo_nantes2", type=str)

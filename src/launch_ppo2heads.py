@@ -9,7 +9,7 @@ from collections import defaultdict
 from plotly.offline import plot
 from src.utils import loggers as log
 from src.utils.networks import mlp
-from src.agents.reinforce import ReinforceAgent
+from src.agents.myppo_2head import PPOAgent
 
 
 def plot_hist(dt, interval, title, with_error=False):
@@ -36,29 +36,39 @@ def run(args):
 	if args.verbose:
 		loggers.append(log.ConsoleLogger())
 
-	agent = ReinforceAgent(args.env_id, args.seed, args.nb_frames, args.log_dir, normalize_obs=False, clip_obs=None)
+	agent = PPOAgent(args.env_id, args.seed, args.nb_frames, args.log_dir, normalize_obs=False, clip_obs=None)
 
 	agent.compile(
-		network=mlp([64, 64], tf.nn.leaky_relu),
+		p_network=mlp([64, 64], tf.nn.leaky_relu),
+		# v_network=mlp([64, 64], tf.nn.leaky_relu),
 		lr=1e-3,
 		ent_coef=0.01,
-		decay_steps=500,
-		max_grad_norm=None)
-	#agent.trainv(10000, 1)
-	agent.load(args.weights)
+		vf_coef=.25,
+		decay_steps=200,  ## args.nb_timesteps / (args.nsteps * args.num_envs)
+		max_grad_norm=None,
+		shared=False)
+
 	if not args.test:
 		if args.weights is not None and args.continue_learning:
 			agent.load(args.weights)
 
+		if args.v_weights is not None:
+			agent.load_value(args.v_weights)
+
 		history = agent.fit(
-			nb_updates=args.nb_updates,
+			clip_value=.3,
+			lam=.95,
+			timesteps=args.nb_timesteps,
+			nsteps=args.nsteps,
 			num_envs=args.num_envs,
 			gamma=args.discount,
 			log_interval=args.log_interval,
-			loggers=loggers)
+			epochs=args.epochs,
+			loggers=loggers,
+			nb_batches=args.nb_batches)
 
-		#if args.weights is not None:
-			#agent.save(args.weights)
+		if args.weights is not None:
+			agent.save(args.weights)
 	else:
 		agent.load(args.weights)
 
@@ -83,15 +93,22 @@ def run(args):
 
 def parse_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--env_id", default="shutdown-v0", type=str)
-	parser.add_argument("--weights", default="../weights/reinforce", type=str)
-	parser.add_argument("--output_fn", default="../weights/reinforce.csv", type=str)
+	parser.add_argument("--env_id", default="sched_shut-v0", type=str)
+	# parser.add_argument("--weights", default="../results/5/myppo2", type=str)
+	# parser.add_argument("--output_fn", default="../results/5/ppo_results.csv", type=str)
+	# parser.add_argument("--log_dir", default="../results/5/", type=str)
+	parser.add_argument("--weights", default="../weights/myppo2", type=str)
+	parser.add_argument("--output_fn", default="../weights/ppo_results2.csv", type=str)
 	parser.add_argument("--log_dir", default="../weights/", type=str)
+	parser.add_argument("--v_weights", default=None, type=str)
 	parser.add_argument("--seed", default=123, type=int)
-	parser.add_argument("--nb_updates", default=1000, type=int)
-	parser.add_argument("--nb_frames", default=30, type=int)
+	parser.add_argument("--nb_timesteps", default=1e6, type=int)
+	parser.add_argument("--nsteps", default=360, action="store_true")
+	parser.add_argument("--nb_frames", default=15, type=int)
 	parser.add_argument("--num_envs", default=12, type=int)
-	parser.add_argument("--discount", default=1, action="store_true")
+	parser.add_argument("--epochs", default=8, action="store_true")
+	parser.add_argument("--discount", default=.99, action="store_true")
+	parser.add_argument("--nb_batches", default=5, action="store_true")
 	parser.add_argument("--log_interval", default=1, action="store_true")
 	parser.add_argument("--verbose", default=True, action="store_true")
 	parser.add_argument("--render", default=0, action="store_true")
