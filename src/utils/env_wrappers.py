@@ -260,44 +260,32 @@ class SubprocVecEnv(VecEnv):
 
 
 class VecFrameStack(VecEnvWrapper):
-	def __init__(self, venv, nstack, include_action=False):
+	def __init__(self, venv, nstack, is_episodic=True):
 		self.venv = venv
-		self.include_action = include_action
+		self.is_episodic = is_episodic
 		self.nstack = nstack
-		wos = venv.observation_space  # wrapped ob space
-		if self.include_action:
-			low = np.repeat(np.append(wos.low, [wos.low[0]], axis=-1), self.nstack, axis=-1)
-			high = np.repeat(np.append(wos.high, [wos.high[0]], axis=-1), self.nstack, axis=-1)
-		else:
-			low = np.repeat(wos.low, self.nstack, axis=-1)
-			high = np.repeat(wos.high, self.nstack, axis=-1)
-
+		low = np.repeat(venv.observation_space.low, self.nstack, axis=-1)
+		high = np.repeat(venv.observation_space.high, self.nstack, axis=-1)
 		self.stackedobs = np.zeros((venv.num_envs,) + low.shape, low.dtype)
-		observation_space = spaces.Box(low=low, high=high, dtype=venv.observation_space.dtype)
-		super().__init__(venv, observation_space=observation_space)
+		super().__init__(venv, observation_space=spaces.Box(low=low, high=high, dtype=venv.observation_space.dtype))
 
 	def step(self, action):
-		obs, rews, news, infos = self.venv.step(action)
-		shift = obs.shape[-1] + 1 if self.include_action else obs.shape[-1]
-		self.stackedobs = np.roll(self.stackedobs, shift=-shift, axis=-1)
-		for (i, new) in enumerate(news):
-			if new:
-				self.stackedobs[i] = 0
+		obs, rews, dones, infos = self.venv.step(action)
+		if self.is_episodic:
+			for (i, done) in enumerate(dones):
+				if done:
+					self.stackedobs[i] = 0
 
-		if self.include_action:
-			self.stackedobs[..., -(obs.shape[-1] + 1):-1] = obs
-			self.stackedobs[..., -1] = action
-		else:
-			self.stackedobs[..., -obs.shape[-1]:] = obs
-		return self.stackedobs, rews, news, infos
+		self._stack(obs)
+		return self.stackedobs, rews, dones, infos
+
+	def _stack(self, obs):
+		self.stackedobs = np.roll(self.stackedobs, shift=-obs.shape[-1], axis=-1)
+		self.stackedobs[..., -obs.shape[-1]:] = obs
 
 	def reset(self):
-		obs = self.venv.reset()
 		self.stackedobs[...] = 0
-		if self.include_action:
-			self.stackedobs[..., -(obs.shape[-1] + 1):-1] = obs
-		else:
-			self.stackedobs[..., -obs.shape[-1]:] = obs
+		self._stack(self.venv.reset())
 		return self.stackedobs
 
 
