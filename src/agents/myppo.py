@@ -24,7 +24,8 @@ class Runner(AbstractEnvRunner):
 	- Make a mini batch
 	"""
 
-	def __init__(self, *, env, model, nsteps, gamma, lam, heuristics=(), estimate_mean=False, include_best=False):
+	def __init__(self, *, env, model, nsteps, gamma, lam, heuristics=(), estimate_mean=False, include_best=False,
+	             is_episodic=True):
 		super().__init__(env=env, model=model, nsteps=nsteps)
 		self.lam = lam
 		self.best = defaultdict(lambda: [-np.inf, -1])
@@ -32,6 +33,7 @@ class Runner(AbstractEnvRunner):
 		self.estimate_mean = estimate_mean
 		self.include_best = include_best
 		self.nb_heuristics = len(heuristics)
+		self.is_episodic = int(is_episodic)
 		self.gamma = gamma
 		self.running_stats = MulRunningMeanStd()
 
@@ -84,10 +86,10 @@ class Runner(AbstractEnvRunner):
 		lastgaelam = 0
 		for t in reversed(range(self.nsteps)):
 			if t == self.nsteps - 1:
-				nextnonterminal = 1.0 - self.dones
+				nextnonterminal = (1.0 - self.dones) if self.is_episodic else 1
 				nextvalues = last_values
 			else:
-				nextnonterminal = 1.0 - mb_dones[t + 1]
+				nextnonterminal = (1.0 - mb_dones[t + 1]) if self.is_episodic else 1
 				nextvalues = mb_values[t + 1]
 			delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
 			mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
@@ -112,14 +114,16 @@ def sf01(arr):
 
 
 class PPOAgent(TFAgent):
-	def __init__(self, env_id, seed=None, nbframes=1, monitor_dir=None, normalize_obs=True, clip_obs=10.):
+	def __init__(self, env_id, seed=None, nbframes=1, monitor_dir=None, normalize_obs=True, clip_obs=10.,
+	             is_episodic=True):
 		super().__init__(env_id, seed)
 		self.nframes = nbframes
 		self._compiled = False
 		self.monitor_dir = monitor_dir
 		self.normalize_obs = normalize_obs
 		self.clip_obs = clip_obs
-		self.summary_episode_interval = 100
+		self.summary_episode_interval = 50
+		self.is_episodic = is_episodic
 		env = self._build_env(1)
 		self.input_shape, self.nb_actions = env.observation_space.shape, env.action_space.n
 		env.close()
@@ -326,10 +330,10 @@ class PPOAgent(TFAgent):
 	def _build_env(self, n):
 		kw = ('mean_waiting_time', 'mean_idle_time', 'max_idle_time', 'energy_consumed', 'nb_switches')
 		env = make_vec_env(env_id=self.env_id, nenv=n, seed=self.seed, monitor_dir=self.monitor_dir, keywords=kw)
-		if self.normalize_obs:
-			env = VecNormalize(env, ret=False, clipob=self.clip_obs)
+		# if self.normalize_obs:
+		#	env = VecNormalize(env, ret=False, clipob=self.clip_obs)
 		if self.nframes > 1:
-			env = VecFrameStack(env, self.nframes, include_action=False)
+			env = VecFrameStack(env, self.nframes, is_episodic=self.is_episodic)
 		return env
 
 	def fit(
@@ -349,7 +353,11 @@ class PPOAgent(TFAgent):
 		try:
 			env = self._build_env(num_envs)
 			heuristics = []  # [lambda o: 0]
-			runner = Runner(env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam, heuristics=heuristics)
+			runner = Runner(
+				env=env, model=self, nsteps=nsteps, gamma=gamma, lam=lam, heuristics=heuristics,
+				is_episodic=self.is_episodic
+			)
+
 			for nupdate in range(1, n_updates + 1):
 				tstart = time.time()
 				frac = 1.0 - (nupdate - 1.0) / n_updates
@@ -412,21 +420,26 @@ class PPOAgent(TFAgent):
 	def play(self, render, verbose, n=1):
 		env = self._build_env(1)
 		results = defaultdict(list)
+		obs = env.reset()
+		i = 0
 		for _ in range(n):
-			obs, done = env.reset(), False
+			done = False
 			while not done:
+				i += 1
 				if render:
 					# env.render('console')
 					env.render()
 				action = self.act(obs, True)
 				obs, reward, done, info = env.step(action)
+				#print("Time {} Action {}".format(i, action))
 			# print("Obs: {} Action: {} Reward: {}".format('', action, reward))
 
 			ep = info[0].pop('episode')
-			if verbose:
-				print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec".format(ep['score'], ep['nsteps'],
-				                                                                    ep['time']))
 			info[0]['reward'] = ep['score']
+			if verbose:
+				w = info[0]['workload']
+				print("[EVAL] Score {:.4f} - Steps {:.4f} - Time {:.4f} sec - Workload: {}".format(
+					ep['score'], ep['nsteps'], ep['time'], w))
 
 			env.close()
 			for k, v in info[0].items():
