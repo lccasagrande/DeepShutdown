@@ -9,25 +9,22 @@ import multiprocessing
 
 
 class Agent(ABC):
-	def __init__(self, *, env_id):
-		self.env_id = env_id
-
 	@abstractmethod
 	def act(self, obs):
 		raise NotImplementedError
 
 	@abstractmethod
-	def play(self, *args):
+	def play(self, **kargs):
 		raise NotImplementedError
 
 
 class LearningAgent(Agent):
 	@abstractmethod
-	def compile(self, *args):
+	def compile(self, **kargs):
 		raise NotImplementedError
 
 	@abstractmethod
-	def fit(self, *args):
+	def fit(self, env, **kargs):
 		raise NotImplementedError
 
 	@abstractmethod
@@ -40,8 +37,8 @@ class LearningAgent(Agent):
 
 
 class TFAgent(LearningAgent):
-	def __init__(self, env_id, seed=None):
-		super().__init__(env_id=env_id)
+	def __init__(self, seed=None):
+		super().__init__()
 		self._session = None
 		self.seed = seed
 		if seed is not None:
@@ -62,12 +59,16 @@ class TFAgent(LearningAgent):
 
 		return self._session
 
+	def save_model(self, export_dir):
+		tf.saved_model.simple_save(self.session, export_dir,)
+
 	def load(self, fn):
 		print(colorize(" [*] Loading variables...", "green"))
 		variables = tf.trainable_variables()
 		values = joblib.load(os.path.expanduser(fn))
 		restores = [v.assign(values[v.name]) for v in variables]
 		self.session.run(restores)
+		print(colorize(" [*] Variables loaded successfully", "green"))
 
 	def save(self, fn):
 		print(colorize(" [*] Saving variables...", "green"))
@@ -76,3 +77,4 @@ class TFAgent(LearningAgent):
 		model = {v.name: value for v, value in zip(variables, values)}
 		os.makedirs(os.path.dirname(fn), exist_ok=True)
 		joblib.dump(model, fn)
+		print(colorize(" [*] Variables saved successfully", "green"))

@@ -1,174 +1,411 @@
-import gym
-import gridgym.envs.grid_env
-import tensorflow as tf
-import os.path as osp
-import numpy as np
 import os
-import pandas as pd
-import random
-from utils.env_wrappers import VecFrameStack
-from collections import defaultdict
-from src.utils.env_wrappers import make_vec_env, VecFrameStack
-from src.baselines.baselines.ppo2 import ppo2
-from src.baselines.baselines.a2c.utils import conv, fc, conv_to_fc, lstm, batch_to_seq, seq_to_batch
-from src.baselines.baselines.common import misc_util
-from src.baselines.baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-from src.baselines.baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-from src.baselines.baselines.bench.monitor import Monitor
-from src.baselines.baselines.common.retro_wrappers import RewardScaler
+
+import joblib
+
+from src.utils.commons import *
+from src.utils.runners import AbstractEnvRunner
+from src.utils.agents import TFAgent
+from src.utils.tf_utils import *
+from src.utils.env_wrappers import *
 
 
-class PPOAgent:
-	def __init__(self, network, env_id, num_env, seed, rew_scale, nb_frames, incl_action=False):
-		self.network = network
-		self.num_env = num_env
-		self.env_id = env_id
-		self.seed = seed
-		self.incl_action = incl_action
+def constfn(val):
+    def f(_):
+        return val
 
-		tf.set_random_seed(self.seed)
-		np.random.seed(self.seed)
-		random.seed(self.seed)
-		self.rew_scale = rew_scale
-		self.nb_frames = nb_frames
-		self.model = None
-
-	def train(self, n_timesteps, env=None, nsteps=360, gamma=.98, noptepochs=6, nminibatches=6, ent_coef=0.0, lr=1e-4,
-	          # lr=lambda f: 3e-4 * f,
-	          cliprange=0.2, weights=None, save_path=None, monitor_dir=None):
-		if env is None:
-			env = VecFrameStack(make_vec_env(self.env_id, self.num_env, monitor_dir=monitor_dir), self.nb_frames,
-			                    self.incl_action)
-
-		self.model = ppo2.learn(
-			env=env,
-			seed=self.seed,
-			network=lstm22(),
-			total_timesteps=n_timesteps,
-			nsteps=nsteps,
-			lam=.9,  # 0.95,
-			gamma=gamma,
-			vf_coef=1.,
-			#normalize_observations=True,
-			lr=lr,  # 1.e-3,#1.e-3, # f * 2.5e-4,
-			noptepochs=noptepochs,
-			log_interval=1,
-			nminibatches=nminibatches,  # 8,  # 8
-			ent_coef=ent_coef,
-			# estimate_q=True,
-			cliprange=cliprange,  # 0.2 value_network='copy' normalize_observations=True estimate_q=True
-			#value_network="copy",
-			load_path=weights
-		)
-		env.close()
-
-		if save_path is not None:
-			save_path = osp.expanduser(save_path)
-			self.model.save(save_path)
-
-	def evaluate(self, weights, nb_episodes=1, output_fn=None, verbose=True, render=False):
-		def get_trajectory(env, render):
-			def initialize_placeholders(nlstm=64, **kwargs):
-				return np.zeros((1, 2 * nlstm)), np.zeros((1))
-
-			state, dones = initialize_placeholders()
-			score, steps, results, done, info, obs = 0, 0, defaultdict(float), False, [{}], env.reset()
-			while not done:
-				if render:
-					env.render()
-				actions, _, state, _ = self.model.step(obs, S=state, M=dones)
-				# print("State: {} - Action: {}".format(obs, actions))
-				obs, rew, done, info = env.step(actions)
-				print(" Action: {}".format(actions))
-				done = done.any() if isinstance(done, np.ndarray) else done
-				results["steps"] += 1
-				results["score"] += rew[0]
-
-			for k, v in info[0].items():
-				results[k] = v
-
-			return results
-
-		env = VecFrameStack(make_vec_env(self.env_id, 1), self.nb_frames, self.incl_action)
-		self.train(n_timesteps=0, env=env, weights=weights, nminibatches=1)
-		results = defaultdict(list)
-		rewards = list()
-
-		for i in range(1, nb_episodes + 1):
-			ep_results = get_trajectory(env, render)
-			ep_results['episode'] = i
-			rewards.append(ep_results["score"])
-			for k, v in ep_results.items():
-				results[k].append(v)
-
-			if verbose:
-				print("[EVALUATE][PPO] {}".format(
-					" ".join([" [{}: {}]".format(k, v) for k, v in sorted(results.items())])))
-
-		print("Avg reward: {}".format(np.mean(rewards)))
-		if output_fn is not None:
-			pd.DataFrame([results]).to_csv(output_fn, index=False)
+    return f
 
 
-def mlp(num_layers=2, num_hidden=64, activation=tf.nn.leaky_relu, layer_norm=False):
-	def network_fn(X):
-		h = tf.layers.flatten(X)
-		for i in range(num_layers):
-			h = fc(h, "mlp_fc{}".format(i), nh=num_hidden, init_scale=np.sqrt(2))
-			if layer_norm:
-				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
-			h = activation(h)
+class Runner(AbstractEnvRunner):
+    """
+    We use this object to make a mini batch of experiences
+    __init__:
+    - Initialize the runner
 
-		return h
+    run():
+    - Make a mini batch
+    """
 
-	return network_fn
+    def __init__(self, *, env, model, nsteps, gamma, lam):
+        super().__init__(env=env, model=model, nsteps=nsteps)
+        self.lam = lam
+        self.gamma = gamma
+
+    def run(self):
+        def sf01(arr):
+            """
+                    swap and then flatten axes 0 and 1
+                    """
+            s = arr.shape
+            return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
+
+        # Here, we init the lists that will contain the mb of experiences
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, epinfos = [
+        ], [], [], [], [], [], []
+        # For n in range number of steps
+        for _ in range(self.nsteps):
+            actions, values, neglogpacs, _ = self.model.step(self.obs)
+            mb_obs.append(self.obs.copy())
+            mb_actions.append(actions)
+            mb_values.append(values)
+            mb_neglogpacs.append(neglogpacs)
+            mb_dones.append(self.dones)
+
+            # Take actions in env and look the results
+            # Infos contains a ton of useful informations
+            self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+            for e, info in enumerate(infos):
+                maybeepinfo = info.get('episode')
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
+            mb_rewards.append(rewards)
+        # batch of steps to batch of rollouts
+        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
+        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
+        mb_actions = np.asarray(mb_actions)
+        mb_values = np.asarray(mb_values, dtype=np.float32)
+        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
+        mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        last_values = self.model.value(self.obs)
+
+        # discount/bootstrap off value fn
+        mb_advs = np.zeros_like(mb_rewards)
+        lastgaelam = 0
+        for t in reversed(range(self.nsteps)):
+            if t == self.nsteps - 1:
+                nextnonterminal = (1.0 - self.dones)
+                nextvalues = last_values
+            else:
+                nextnonterminal = 1.0 - mb_dones[t + 1]
+                nextvalues = mb_values[t + 1]
+            delta = mb_rewards[t] + self.gamma * \
+                nextvalues * nextnonterminal - mb_values[t]
+            mb_advs[t] = lastgaelam = delta + self.gamma * \
+                self.lam * nextnonterminal * lastgaelam
+
+        mb_returns = mb_advs + mb_values
+
+        return (*map(sf01, (mb_obs, mb_actions, mb_returns, mb_values, mb_dones, mb_neglogpacs)), epinfos)
 
 
-def lstm22(nlstm=64):
-	def network_fn(X, nenv=1):
-		nbatch = X.shape[0]
-		nsteps = nbatch // nenv
+class PPOAgent(TFAgent):
+    def __init__(self, seed=None):
+        super().__init__(seed)
+        self._compiled = False
+        self.summary_episode_interval = 50
 
-		h = tf.layers.flatten(X)
+    def load_value(self, fn):
+        network = tf.trainable_variables("value_network")
+        network.extend(tf.trainable_variables("value_logits"))
+        values = joblib.load(os.path.expanduser(fn))
+        restores = [v.assign(values[v.name]) for v in network]
+        self.session.run(restores)
 
-		M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
-		S = tf.placeholder(tf.float32, [nenv, 2 * nlstm])  # states
+    def compile(
+            self, input_shape, nb_actions, p_network, v_network=None, lr=0.01, end_lr=.0001, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
+            shared=False, decay_steps=50, decay_rate=.1, batch_size=32, epochs=1, summ_dir=None):
+        tf.reset_default_graph()
+        with tf.name_scope("input"):
+            self.obs = tf.placeholder(tf.float32, shape=(
+                None,) + input_shape, name='observations')
+            self.actions = tf.placeholder(
+                tf.int32, shape=[None], name='actions')
+            self.advs = tf.placeholder(
+                tf.float32, shape=[None], name='advantages')
+            self.returns = tf.placeholder(
+                tf.float32, shape=[None], name='returns')
+            self.old_neglogprob = tf.placeholder(
+                tf.float32, shape=[None], name='oldneglogprob')
+            self.old_vpred = tf.placeholder(
+                tf.float32, shape=[None], name='oldvalueprediction')
 
-		xs = batch_to_seq(h, nenv, nsteps)
-		ms = batch_to_seq(M, nenv, nsteps)
+            self.global_step = tf.placeholder(tf.int32)
+            self.clip_value = tf.placeholder(tf.float32)
 
-		h5, snew = lstm(xs, ms, S, scope='lstm', nh=nlstm)
+            dataset = tf.data.Dataset.from_tensor_slices(
+                (self.obs, self.actions, self.advs, self.returns, self.old_neglogprob, self.old_vpred))
+            dataset = dataset.shuffle(buffer_size=50000)
+            dataset = dataset.batch(batch_size)
+            dataset = dataset.repeat(epochs)
+            self.data_iterator = dataset.make_initializable_iterator()
 
-		h = seq_to_batch(h5)
-		initial_state = np.zeros(S.shape.as_list(), dtype=float)
+            self.X, self.ACT, ADV, RET, OLD_NEGLOGPAC, OLD_VPRED = self.data_iterator.get_next()
 
-		return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
+        with tf.variable_scope("policy_network", reuse=tf.AUTO_REUSE):
+            self.p_net = p_network(self.X)
 
-	return network_fn
+        if v_network is not None:
+            with tf.variable_scope("value_network", reuse=tf.AUTO_REUSE):
+                self.v_net = v_network(self.X)
+        elif shared:
+            self.v_net = self.p_net
+        else:  # is copy
+            with tf.variable_scope("value_network", reuse=tf.AUTO_REUSE):
+                self.v_net = p_network(self.X)
 
+        # POLICY NETWORK
+        p_logits = tf.keras.layers.Dense(
+            nb_actions, name='policy_logits')(self.p_net)
+        self.act_probs = tf.keras.layers.Softmax()(p_logits)
+        # u = tf.random_uniform(tf.shape(self.p_logits), dtype=self.p_logits.dtype)
+        # self.sample_action = tf.argmax(self.p_logits - tf.log(-tf.log(u)), axis=-1)
+        prob_dist = tf.distributions.Categorical(probs=self.act_probs)
+        self.sample_action = prob_dist.sample()
 
-def cnn_small(**conv_kwargs):
-	def network_fn(X, nenv=1):
-		nbatch = X.shape[0]
-		nsteps = nbatch // nenv
-		h = tf.cast(X, tf.float32)
+        self.best_action = tf.squeeze(tf.nn.top_k(self.act_probs).indices)
+        self.entropy = tf.reduce_mean(prob_dist.entropy())
+        self.neglogpac = sparse_softmax_cross_entropy_with_logits(
+            p_logits, self.ACT)
+        self.neglogprob = sparse_softmax_cross_entropy_with_logits(
+            p_logits, self.sample_action)
 
-		h = tf.nn.relu(conv(h, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
-		# h = tf.nn.relu(conv(h, 'c2', nf=16, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
-		h = conv_to_fc(h)
-		# h = activ(fc(h, 'fc1', nh=128, init_scale=np.sqrt(2)))
+        self.ratio = tf.exp(OLD_NEGLOGPAC - self.neglogpac)
+        self.ratio_clipped = tf.clip_by_value(
+            self.ratio, 1.0 - self.clip_value, 1.0 + self.clip_value)
+        self.p_loss1 = -ADV * self.ratio
+        self.p_loss2 = -ADV * self.ratio_clipped
+        self.p_loss_max = tf.maximum(self.p_loss1, self.p_loss2)
+        self.p_loss = tf.reduce_mean(self.p_loss_max)
 
-		M = tf.placeholder(tf.float32, [nbatch])  # mask (done t-1)
-		S = tf.placeholder(tf.float32, [nenv, 2 * 128])  # states
+        # VALUE NETWORK
+        self.v_logits = tf.keras.layers.Dense(
+            1, name='value_logits')(self.v_net)[:, 0]
+        self.v_clipped = OLD_VPRED + \
+            tf.clip_by_value(self.v_logits - OLD_VPRED, -
+                             self.clip_value, self.clip_value)
+        self.v_loss1 = tf.math.squared_difference(self.v_logits, RET)  #
+        self.v_loss2 = tf.math.squared_difference(self.v_clipped, RET)  #
+        self.v_loss = tf.reduce_mean(tf.maximum(self.v_loss1, self.v_loss2))
 
-		xs = batch_to_seq(h, nenv, nsteps)
-		ms = batch_to_seq(M, nenv, nsteps)
+        self.loss = self.p_loss - self.entropy * ent_coef + self.v_loss * vf_coef
 
-		h5, snew = lstm(xs, ms, S, scope='lstm', nh=128)
+        self.learning_rate = tf.train.exponential_decay(
+            lr, self.global_step, decay_steps, decay_rate, staircase=False)
+        self.learning_rate = tf.maximum(self.learning_rate, end_lr)
 
-		h = seq_to_batch(h5)
-		initial_state = np.zeros(S.shape.as_list(), dtype=float)
+        optimizer = tf.train.AdamOptimizer(
+            learning_rate=self.learning_rate, epsilon=1e-5)
 
-		return h, {'S': S, 'M': M, 'state': snew, 'initial_state': initial_state}
+        trainable_vars = tf.trainable_variables()
+        gradients, variables = zip(
+            *optimizer.compute_gradients(self.loss, trainable_vars))
+        if max_grad_norm is not None:  # Clip the gradients (normalize)
+            gradients, _ = tf.clip_by_global_norm(gradients, max_grad_norm)
 
-	return network_fn
+        grads_and_vars = list(zip(gradients, variables))
+        self.train_op = optimizer.apply_gradients(grads_and_vars)
+
+        self.approxkl = .5 * \
+            tf.reduce_mean(tf.square(self.neglogpac - OLD_NEGLOGPAC))
+        self.clipfrac = tf.reduce_mean(tf.cast(tf.greater(
+            tf.abs(self.ratio - 1.0), self.clip_value), dtype=tf.float32))
+
+        # Summary
+        #tf.summary.scalar("Learning Rate", self.learning_rate, family='Train Metrics', collections=['train'])
+        #tf.summary.scalar("Policy Clipping Fraction", self.clipfrac, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Probs", self.act_probs, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Ratio Unclipped", self.ratio, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Ratio Clipped", self.ratio_clipped, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Loss Unclipped", self.p_loss1, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Loss Clipped", self.p_loss2, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Loss", self.p_loss, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Policy Entropy", prob_dist.entropy(), family='Train Metrics', collections=['train'])
+        # tf.summary.scalar("Policy Loss Clipped", tf.reduce_mean(self.p_loss2), family='Train Metrics',
+        #                  collections=['train'])
+        #tf.summary.scalar("Policy Loss", self.p_loss, family='Train Metrics', collections=['train'])
+        #tf.summary.scalar("Policy Entropy", self.entropy, family='Train Metrics', collections=['train'])
+#
+        # tf.summary.scalar("Value Loss Unclipped", tf.reduce_mean(self.v_loss1), family='Train Metrics',
+        #                  collections=['train'])
+        #tf.summary.scalar("Value Loss", self.v_loss, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Value Logits", self.v_logits, family='Train Metrics', collections=['train'])
+        #tf.summary.histogram("Value Logits Clipped", self.v_clipped, family='Train Metrics', collections=['train'])
+
+        # Episodic
+        #self.scores = tf.placeholder(tf.float32, shape=[None])
+        #self.steps = tf.placeholder(tf.float32, shape=[None])
+        #self.waiting_time = tf.placeholder(tf.float32, shape=[None])
+        #self.idle_time = tf.placeholder(tf.float32, shape=[None])
+        #self.max_idle_time = tf.placeholder(tf.float32, shape=[None])
+        #self.energy = tf.placeholder(tf.float32, shape=[None])
+        #self.switches = tf.placeholder(tf.float32, shape=[None])
+#
+        # variable_summaries(self.scores, name='Score', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+        #variable_summaries(self.steps, name='Steps', family='Episode Metrics', collections=['episodic'], plot_hist=True)
+        # variable_summaries(self.waiting_time, name='Waittime', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+        # variable_summaries(self.idle_time, name='MeanIdleTime', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+        # variable_summaries(self.max_idle_time, name='MaxIdleTime', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+        # variable_summaries(self.energy, name='Energy', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+        # variable_summaries(self.switches, name='Switches', family='Episode Metrics', collections=['episodic'],
+        #                   plot_hist=True)
+
+        #self.summary_train = tf.summary.merge_all('train')
+        #self.summary_episodic = tf.summary.merge_all('episodic')
+        self.session.run(tf.global_variables_initializer())
+
+        self.summary_writer = None
+        # if summ_dir is not None:
+        #	os.makedirs(summ_dir, exist_ok=True)
+        #	self.summary_writer = tf.summary.FileWriter(summ_dir, self.session.graph)
+
+        self._compiled = True
+
+    def _pred(self, ops, obs):
+        assert self._compiled
+        return self.session.run(ops, {self.X: obs})
+
+    def step(self, obs):
+        return self._pred([self.sample_action, self.v_logits, self.neglogprob, self.act_probs], obs)
+
+    def value(self, obs):
+        return self._pred(self.v_logits, obs)
+
+    def act(self, obs, argmax=False):
+        op = self.sample_action if not argmax else self.best_action
+        return self._pred(op, obs)
+
+    def _update(self, n, clip_value, obs, returns, actions, values, neglogpacs, normalize=False):
+        results = []
+        advs = returns - values
+
+        advs = (advs - advs.mean()) / \
+            (advs.std() + 1e-8) if normalize else advs
+
+        self.session.run(self.data_iterator.initializer, feed_dict={
+            self.obs: obs, self.returns: returns, self.actions: actions, self.advs: advs,
+            self.old_neglogprob: neglogpacs, self.old_vpred: values
+        })
+
+        try:
+            ops = [
+                self.train_op, self.p_loss, self.v_loss, self.entropy, self.approxkl, self.clipfrac,
+                self.learning_rate, self.clip_value
+            ]
+            if self.summary_writer is not None:
+                ops.append(self.summary_train)
+
+            while True:
+                output = self.session.run(
+                    ops, feed_dict={self.clip_value: clip_value, self.global_step: n})[1:]
+                if self.summary_writer is not None:
+                    self.summary_writer.add_summary(output[-1], n)
+                    output = output[:-1]
+                results.append(output)
+        except tf.errors.OutOfRangeError:
+            pass
+
+        stats = np.mean(results, axis=0)
+        stats = {
+            'p_loss': stats[0], 'v_loss': stats[1], 'p_entropy': stats[2],
+            'approxkl': stats[3], 'clip_frac': stats[4], 'lr': stats[5], 'clip_value': stats[6]
+        }
+        return stats
+
+    def fit(
+            self, env, timesteps, nsteps, nb_batches=8, log_interval=1, loggers=None, gamma=.98, lam=.95,
+            clip_value=0.2, checkpoint=None):
+        assert self._compiled, "You should compile the model first."
+        n_batch = nsteps * env.num_envs
+        assert n_batch % nb_batches == 0
+
+        n_updates = int(timesteps // n_batch)
+        if checkpoint:
+            os.makedirs(checkpoint, exist_ok=True)
+
+        max_score, nepisodes = np.nan, 0
+        history = deque(
+            maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
+        clip_value = clip_value if callable(
+            clip_value) else constfn(clip_value)
+
+        # START UPDATES
+        try:
+            runner = Runner(env=env,
+                            model=self,
+                            nsteps=nsteps,
+                            gamma=gamma,
+                            lam=lam)
+
+            for nupdate in range(1, n_updates + 1):
+                tstart = time.time()
+                frac = 1.0 - (nupdate - 1.0) / n_updates
+                obs, acts, returns, values, dones, neglogps, infos = runner.run()
+                stats = self._update(
+                    n=nupdate,
+                    clip_value=clip_value(frac),
+                    obs=obs,
+                    returns=returns,
+                    actions=acts,
+                    values=values,
+                    neglogpacs=neglogps,
+                    normalize=True)
+
+                elapsed_time = time.time() - tstart
+                nepisodes += len(infos)
+                history.extend(infos)
+                eprew_max = np.max([h['score']
+                                    for h in history]) if history else np.nan
+                if max_score is np.nan:
+                    max_score = eprew_max
+                elif max_score < eprew_max:
+                    max_score = eprew_max
+
+                if checkpoint and nupdate % (n_updates // 10) == 0:
+                    self.save("{}{}".format(checkpoint, nupdate))
+
+                if self.summary_writer is not None and history and (nupdate % log_interval == 0 or nupdate == 1):
+                    feed_dict = {
+                        self.scores: [h['score'] for h in history],
+                        self.steps: [h['nsteps'] for h in history],
+                        self.waiting_time: [h['mean_waiting_time'] for h in history],
+                        self.idle_time: [h['nb_jobs_queue'] for h in history],
+                        self.max_idle_time: [h['nb_jobs_finished'] for h in history],
+                        self.energy: [h['consumed_joules'] for h in history],
+                        self.switches: [h['nb_switches'] for h in history],
+                    }
+                    self.summary_writer.add_summary(self.session.run(
+                        self.summary_episodic, feed_dict), nupdate)
+
+                if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
+                    loggers.log('v_explained_variance', round(
+                        explained_variance(values, returns), 4))
+                    loggers.log('frac', frac)
+                    loggers.log('nupdates', nupdate)
+                    loggers.log('elapsed_time', elapsed_time)
+                    loggers.log('ntimesteps', nupdate * n_batch)
+                    loggers.log('nepisodes', nepisodes)
+                    loggers.log('fps', int(n_batch / elapsed_time))
+                    loggers.log('eprew_avg', safemean(
+                        [h['score'] for h in history]))
+                    loggers.log('eplen_avg', safemean(
+                        [h['nsteps'] for h in history]))
+                    loggers.log('eprew_max', float(eprew_max))
+                    loggers.log('eprew_max_score', float(max_score))
+                    loggers.log('eprew_min', int(
+                        np.min([h['score'] for h in history])) if history else np.nan)
+                    for key, value in stats.items():
+                        loggers.log(key, float(value))
+                    loggers.dump()
+        finally:
+            env.close()
+            if loggers is not None:
+                loggers.close()
+
+        return history
+
+    def play(self, env, render=False, verbose=False):
+        obs, score, done = env.reset(), 0, False
+        while not done:
+            if render:
+                env.render()
+            obs, reward, done, info = env.step(self.act(obs, False))
+            score += reward
+        if verbose:
+            print("[TEST] Score {}".format(score))
+        env.close()
+        return score

@@ -1,45 +1,35 @@
 import tensorflow as tf
 
 
-def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu, layer_norm=False):
+def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu):
 	def network(X):
 		h = tf.reshape(X, (-1,) + shape)
-		cell = tf.nn.rnn_cell.GRUCell(num_units=units, activation=activation)
-		_, h = tf.nn.dynamic_rnn(cell, h, dtype=tf.float32)
-		#h = h[1]
-
+		h = tf.keras.Input(tensor=h)
+		h = tf.keras.layers.CuDNNGRU(units)(h)
 		for u in layers:
-			h = tf.layers.dense(h, u, kernel_initializer=tf.initializers.glorot_uniform())
-			if layer_norm:
-				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
-			h = activation(h)
+			h = tf.keras.layers.Dense(u, activation=activation)(h)
 
 		return h
 
 	return network
 
 
-def lstm(units, shape, activation=tf.nn.leaky_relu):#
+def lstm(layers, shape):
 	def network(X):
 		h = tf.reshape(X, (-1,) + shape)
-		cell = tf.keras.layers.GRUCell(units=units, activation=activation)
-		_, h = tf.nn.dynamic_rnn(cell, h, dtype=tf.float32)
-		# h = tf.layers.dense(h[1], units*2)
-		return h#[1]
+		h = tf.keras.Input(tensor=h)
+		h = tf.keras.layers.CuDNNGRU(layers[-1])(h)
+		return h
 
 	return network
 
 
-def mlp(layers, activation=tf.nn.leaky_relu, layer_norm=False):
+def mlp(layers, activation=tf.nn.leaky_relu):
 	def network(X):
-		h = tf.layers.flatten(X)
+		h = tf.keras.layers.Flatten()(X)
 		for units in layers:
-			h = tf.layers.dense(h, units, kernel_initializer=tf.initializers.glorot_uniform())
-			if layer_norm:
-				h = tf.contrib.layers.layer_norm(h, center=True, scale=True)
-			h = activation(h)
+			h = tf.keras.layers.Dense(units, activation=activation)(h)
 		return h
-
 	return network
 
 # def cnn_small():

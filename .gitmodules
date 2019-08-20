@@ -1,6 +1,3 @@
 [submodule "src/GridGym"]
 	path = src/GridGym
 	url = git@github.com:lccasagrande/GridGym.git
-[submodule "src/baselines"]
-	path = src/baselines
-	url = git@github.com:lccasagrande/baselines.git
