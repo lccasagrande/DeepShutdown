@@ -78,7 +78,7 @@ class Runner(AbstractEnvRunner):
                 nextnonterminal = (1.0 - self.dones)
                 nextvalues = last_values
             else:
-                nextnonterminal = (1.0 - mb_dones[t + 1])
+                nextnonterminal = 1.0 - mb_dones[t + 1]
                 nextvalues = mb_values[t + 1]
             delta = mb_rewards[t] + self.gamma * \
                 nextvalues * nextnonterminal - mb_values[t]
