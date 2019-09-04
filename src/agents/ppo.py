@@ -1,5 +1,6 @@
 import os
 
+import pandas as pd
 import joblib
 
 from src.utils.commons import *
@@ -7,6 +8,7 @@ from src.utils.runners import AbstractEnvRunner
 from src.utils.agents import TFAgent
 from src.utils.tf_utils import *
 from src.utils.env_wrappers import *
+from gridgym.envs.grid_env import GridEnv
 
 
 def constfn(val):
@@ -76,7 +78,7 @@ class Runner(AbstractEnvRunner):
                 nextnonterminal = (1.0 - self.dones)
                 nextvalues = last_values
             else:
-                nextnonterminal = 1.0 - mb_dones[t + 1]
+                nextnonterminal = (1.0 - mb_dones[t + 1])
                 nextvalues = mb_values[t + 1]
             delta = mb_rewards[t] + self.gamma * \
                 nextvalues * nextnonterminal - mb_values[t]
@@ -399,13 +401,23 @@ class PPOAgent(TFAgent):
         return history
 
     def play(self, env, render=False, verbose=False):
+        history = defaultdict(list)
         obs, score, done = env.reset(), 0, False
         while not done:
             if render:
                 env.render()
+            for i, o in enumerate(obs[-1][-348:]):
+                history[i].append(o)
             obs, reward, done, info = env.step(self.act(obs, False))
-            score += reward
+            history['reward'].append(reward[-1])
+            #score += reward
+
+        pd.DataFrame(history).to_csv("history.csv", index=False)
+        results = pd.read_csv(os.path.join(GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
+        results['score'] = info[0]['episode']['score']
         if verbose:
-            print("[TEST] Score {}".format(score))
+            #info[0]['score'] = score
+            m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
+            print("[RESULTS] {}".format(m))
         env.close()
-        return score
+        return results#info[0]

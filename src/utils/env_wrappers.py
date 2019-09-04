@@ -276,9 +276,8 @@ class SubprocVecEnv(VecEnv):
 
 
 class VecFrameStack(VecEnvWrapper):
-    def __init__(self, venv, nstack, is_episodic=True):
+    def __init__(self, venv, nstack):
         self.venv = venv
-        self.is_episodic = is_episodic
         self.nstack = nstack
         low = np.repeat(venv.observation_space.low, self.nstack, axis=-1)
         high = np.repeat(venv.observation_space.high, self.nstack, axis=-1)
@@ -288,10 +287,9 @@ class VecFrameStack(VecEnvWrapper):
 
     def step(self, action):
         obs, rews, dones, infos = self.venv.step(action)
-        if self.is_episodic:
-            for (i, done) in enumerate(dones):
-                if done:
-                    self.stackedobs[i] = 0
+        for (i, done) in enumerate(dones):
+            if done:
+                self.stackedobs[i] = 0
 
         self._stack(obs)
         return self.stackedobs, rews, dones, infos
