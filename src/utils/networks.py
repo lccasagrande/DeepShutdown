@@ -5,7 +5,7 @@ def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu):
 	def network(X):
 		h = tf.reshape(X, (-1,) + shape)
 		h = tf.keras.Input(tensor=h)
-		h = tf.keras.layers.CuDNNGRU(units)(h)
+		h = tf.keras.layers.CuDNNLSTM(units)(h)
 		for u in layers:
 			h = tf.keras.layers.Dense(u, activation=activation)(h)
 

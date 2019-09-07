@@ -419,5 +419,6 @@ class PPOAgent(TFAgent):
             #info[0]['score'] = score
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
             print("[RESULTS] {}".format(m))
+            print("[INFO] {}".format(info[0]['episode']))
         env.close()
         return results#info[0]
