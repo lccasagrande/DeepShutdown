@@ -319,7 +319,7 @@ class PPOAgent(TFAgent):
         if checkpoint:
             os.makedirs(checkpoint, exist_ok=True)
 
-        max_score, nepisodes = np.nan, 0
+        max_score, nepisodes, max_score_avg = np.nan, 0, np.nan
         history = deque(
             maxlen=self.summary_episode_interval) if self.summary_episode_interval > 0 else []
         clip_value = clip_value if callable(
@@ -352,10 +352,9 @@ class PPOAgent(TFAgent):
                 history.extend(infos)
                 eprew_max = np.max([h['score']
                                     for h in history]) if history else np.nan
-                if max_score is np.nan:
-                    max_score = eprew_max
-                elif max_score < eprew_max:
-                    max_score = eprew_max
+
+                max_score = eprew_max if max_score is np.nan else max(
+                    max_score, eprew_max)
 
                 if checkpoint and nupdate % (n_updates // 10) == 0:
                     self.save("{}{}".format(checkpoint, nupdate))
@@ -374,6 +373,11 @@ class PPOAgent(TFAgent):
                         self.summary_episodic, feed_dict), nupdate)
 
                 if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
+                    score_avg = safemean([h['score'] for h in history])
+                    len_avg = safemean([h['nsteps'] for h in history])
+                    max_score_avg = score_avg if max_score_avg is np.nan else max(
+                        max_score_avg, score_avg)
+
                     loggers.log('v_explained_variance', round(
                         explained_variance(values, returns), 4))
                     loggers.log('frac', frac)
@@ -382,12 +386,11 @@ class PPOAgent(TFAgent):
                     loggers.log('ntimesteps', nupdate * n_batch)
                     loggers.log('nepisodes', nepisodes)
                     loggers.log('fps', int(n_batch / elapsed_time))
-                    loggers.log('eprew_avg', safemean(
-                        [h['score'] for h in history]))
-                    loggers.log('eplen_avg', safemean(
-                        [h['nsteps'] for h in history]))
+                    loggers.log('eplen_avg', len_avg)
+                    loggers.log('eprew_avg_max', float(max_score_avg))
+                    loggers.log('eprew_avg', score_avg)
                     loggers.log('eprew_max', float(eprew_max))
-                    loggers.log('eprew_max_score', float(max_score))
+                    loggers.log('eprew_max_all', float(max_score))
                     loggers.log('eprew_min', int(
                         np.min([h['score'] for h in history])) if history else np.nan)
                     for key, value in stats.items():
@@ -413,7 +416,8 @@ class PPOAgent(TFAgent):
             #score += reward
 
         pd.DataFrame(history).to_csv("history.csv", index=False)
-        results = pd.read_csv(os.path.join(GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
+        results = pd.read_csv(os.path.join(
+            GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
         results['score'] = info[0]['episode']['score']
         if verbose:
             #info[0]['score'] = score
@@ -421,4 +425,4 @@ class PPOAgent(TFAgent):
             print("[RESULTS] {}".format(m))
             print("[INFO] {}".format(info[0]['episode']))
         env.close()
-        return results#info[0]
+        return results  # info[0]

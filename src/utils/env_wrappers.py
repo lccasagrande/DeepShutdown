@@ -318,7 +318,7 @@ class Monitor(Wrapper):
         self.episode_times = []
         self.total_steps = 0
         self.fieldnames = tuple(
-            ['score', 'nsteps', 'time'] + [str(i) for i in range(env.action_space.n)]) + info_kws
+            ['score', 'nsteps', 'time'] + [str(i) for i in range(env.action_space.n)]) + tuple(info_kws)
 
     def step(self, action):
         if self.needs_reset:

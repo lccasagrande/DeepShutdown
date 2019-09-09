@@ -99,7 +99,7 @@ class ObsWrapper(gym.ObservationWrapper):
         return np.asarray(time)
 
     def observation(self, observation):
-        obs= list(self.get_resources_state(observation))
+        obs = list(self.get_resources_state(observation))
         obs.append(observation['time'] / 1440)
         obs.append(self.get_queue_size(observation))
         obs.append(self.get_promise(observation))
@@ -149,7 +149,8 @@ def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, inf
 
 
 def run(args):
-    test_env = build_env(args.env_id, num_frames=args.nb_frames)
+    test_env = build_env(
+        args.env_id, num_frames=args.nb_frames, info_kws=['workload_name'])
 
     input_shape, nb_actions = test_env.observation_space.shape, test_env.action_space.n
     agent = get_agent(input_shape, nb_actions, args.seed, args.nb_frames,
@@ -160,7 +161,8 @@ def run(args):
             num_envs=args.num_envs,
             num_frames=args.nb_frames,
             seed=args.seed,
-            monitor_dir=args.log_dir)
+            monitor_dir=args.log_dir,
+            info_kws=['workload_name'])
 
         loggers = log.LoggerWrapper()
         if args.log_interval != 0:
@@ -199,7 +201,7 @@ def run(args):
 
     if args.output_fn is not None and results:
         pd.DataFrame([results]).to_csv(args.output_fn, index=False)
-        plot_simulation_graphics(GridEnv.OUTPUT, show=True)
+        #plot_simulation_graphics(GridEnv.OUTPUT, show=True)
 
 
 def parse_args():

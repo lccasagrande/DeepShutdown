@@ -30,7 +30,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_id", default="OffReservation-v0", type=str)
     parser.add_argument("--log_dir", default="../weights/", type=str)
-    parser.add_argument("--timeout", default=5, type=int)
+    parser.add_argument("--timeout", default=1, type=int)
     parser.add_argument("--plot_results", default=False, action="store_true")
     parser.add_argument("--verbose", default=True, action="store_true")
     parser.add_argument("--render", default=False, action="store_true")

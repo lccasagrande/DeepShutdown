@@ -43,8 +43,6 @@ class TFAgent(LearningAgent):
 		self.seed = seed
 		if seed is not None:
 			tf.set_random_seed(seed)
-			np.random.seed(seed)
-			random.seed(seed)
 
 	@property
 	def session(self):
