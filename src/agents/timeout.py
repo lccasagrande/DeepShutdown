@@ -98,7 +98,7 @@ class TimeoutAgent(Agent):
 
     def act(self, obs):
         nb_available = sum(1 if a == 0 else 0 for a in obs['agenda'])
-        queue = list(itertools.takewhile(lambda j: j[0] != -1, obs['queue']))
+        queue = obs['queue']
         if len(queue) > 0:
             _, res, _, pjob_expected_time_to_start = queue[0]
             if pjob_expected_time_to_start == 0 or res <= nb_available:
@@ -138,7 +138,5 @@ class TimeoutAgent(Agent):
         if verbose:
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
             print("[RESULTS] {}".format(m))
-
-       # plot_simulation_graphics(GridEnv.OUTPUT, show=True)
         env.close()
         return results

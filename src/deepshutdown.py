@@ -29,38 +29,33 @@ class ObsWrapper(gym.ObservationWrapper):
         self.queue_sz = queue_sz
         self.max_walltime = max_walltime
         self.max_nb_jobs = max_nb_jobs
-        obs = self.reset()
+        #obs = self.reset()
+        shape = (5 + (3*self.queue_sz) + 1 + 1 + 1,)
         self.observation_space = spaces.Box(
-            low=0, high=1., shape=obs.shape, dtype=np.float)
+            low=0, high=1., shape=shape, dtype=np.float)
+        # self.reset()
 
     def get_resources_state(self, observation):
-        state = []
-        for node in observation['platform']:
-            if node[0] == PowerStateType.sleep.value:
-                state.extend([1, 0, 0, 0])
-            elif node[0] == PowerStateType.switching_off.value:
-                state.extend([0, 1, 0, 0])
-            elif node[0] == PowerStateType.switching_on.value:
-                state.extend([0, 0, 1, 0])
-            else:
-                state.extend([0, 0, 0, 1])
-
-        free = observation['free'] / observation['agenda'].shape[0]
-        state.append(free)
-        return np.asarray(state)
+        state = np.zeros(5)
+        for n in observation['platform']:
+            for r in n:
+                state[int(r)] += 1
+        state /= observation['agenda'].shape[0]
+        return state
 
     def get_queue_state(self, observation):
         queue = observation['queue'][:self.queue_sz]
         nb_resources = observation['agenda'].shape[0]
         # [[j.subtime, j.res, j.walltime, j.expected_time_to_start] for j in self.rjms.jobs_queue])
 
-        queue_state = np.zeros(1 + 2 * self.queue_sz, dtype=np.float)
-        if len(queue) > 0:
-            queue_state[0] = np.log(1 + queue[0][3]) / np.log(1 + self.max_walltime)
-            for i, j in enumerate(queue):
-                idx = (2 * i) + 1
-                queue_state[idx] = j[1] / nb_resources
-                queue_state[idx+1] = np.log(1+j[2]) / np.log(1+self.max_walltime)
+        queue_state = np.zeros(3 * self.queue_sz, dtype=np.float)
+        for i, j in enumerate(queue):
+            idx = 3 * i
+            queue_state[idx] = j[1] / nb_resources
+            queue_state[idx+1] = np.log(1+j[2]) / np.log(1+self.max_walltime)
+            t_wait = min(1, (observation['time'] - j[0]) / (j[2] / 2.))
+            # np.log(1+j[2]) / np.log(1+self.max_walltime)
+            queue_state[idx+2] = t_wait
         return queue_state
 
     def get_queue_size(self, observation):
@@ -69,16 +64,17 @@ class ObsWrapper(gym.ObservationWrapper):
         return nb_jobs
 
     def get_queue_load(self, observation):
-        load = sum(job[1] for job in observation['queue'][:self.queue_sz])
-        load /= observation['agenda'].shape[0]
+        load = sum(job[1] for job in observation['queue'])
+        max_load = 3*observation['agenda'].shape[0]
+        load = min(max_load, load)
+        load /= max_load
         return load
 
-    def get_ready_jobs(self, observation):
-        nb_resources = observation['agenda'].shape[0]
-        ready = np.zeros(observation['ready'].shape[0])
-        for i, j in enumerate(observation['ready']):
-            ready[i] = j[1] / nb_resources
-        return ready
+    def get_promise(self, observation):
+        promise = -1
+        if len(observation['queue']) > 0:
+            promise = observation['queue'][0][3]
+        return np.log(2 + promise) / np.log(2+self.max_walltime)
 
     def get_agenda(self, observation):
         return observation['agenda']
@@ -103,17 +99,12 @@ class ObsWrapper(gym.ObservationWrapper):
         return np.asarray(time)
 
     def observation(self, observation):
-        obs = []
-        obs.append(self.get_reservation_size(observation))
+        obs= list(self.get_resources_state(observation))
+        obs.append(observation['time'] / 1440)
         obs.append(self.get_queue_size(observation))
-        obs.append(self.get_queue_load(observation))
-        obs.extend(self.get_resources_state(observation))
+        obs.append(self.get_promise(observation))
         obs.extend(self.get_queue_state(observation))
-        # obs.extend(self.get_ready_jobs(observation))
-        obs.extend(self.get_agenda(observation))
-        obs.extend(self.get_day_and_time(observation))
-        obs = np.asarray(obs, dtype=np.float32)
-        return obs
+        return np.asarray(obs)
 
 
 def get_agent(input_shape, nb_actions, seed, num_frames, nsteps, num_envs, nb_batches, epochs, summary_dir=None):
@@ -122,14 +113,14 @@ def get_agent(input_shape, nb_actions, seed, num_frames, nsteps, num_envs, nb_ba
     agent.compile(
         input_shape=input_shape,
         nb_actions=nb_actions,
-        p_network=lstm_mlp(64, lstm_shape, [64], activation=tf.nn.leaky_relu),
+        p_network=lstm_mlp(128, lstm_shape, [64], activation=tf.nn.leaky_relu),
         batch_size=(nsteps * num_envs) // nb_batches,
         epochs=epochs,
         lr=5e-4,
         end_lr=1e-6,
         ent_coef=0.005,
         vf_coef=.5,
-        decay_steps=1000,  # args.nb_timesteps / (args.nsteps * args.num_envs)
+        decay_steps=300,  # args.nb_timesteps / (args.nsteps * args.num_envs)
         max_grad_norm=None,
         shared=True,
         summ_dir=summary_dir)
@@ -144,7 +135,7 @@ def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, inf
         return _thunk
 
     wrappers = [create_wrapper(
-        ObsWrapper, queue_sz=10, max_walltime=43200.0, max_nb_jobs=500)]
+        ObsWrapper, queue_sz=10, max_walltime=1500, max_nb_jobs=1500)]
 
     env = make_vec_env(env_id=env_id,
                        nenv=num_envs,
@@ -193,7 +184,7 @@ def run(args):
             log_interval=args.log_interval,
             loggers=loggers,
             nb_batches=args.nb_batches,
-            checkpoint=args.log_dir+"checkpoints/")
+            checkpoint=None)  # args.log_dir+"checkpoints/"
 
         if args.weights is not None:
             agent.save(args.weights)
@@ -222,20 +213,20 @@ def parse_args():
     parser.add_argument("--log_dir", default="../weights/", type=str)
     parser.add_argument("--summary_dir", default=None, type=str)
     parser.add_argument("--seed", default=48238, type=int)
-    parser.add_argument("--nb_batches", default=32, type=int)
-    parser.add_argument("--nb_timesteps", default=.5e6, type=int)
-    parser.add_argument("--nb_frames", default=30, type=int)
-    parser.add_argument("--nsteps", default=180,  type=int)
+    parser.add_argument("--nb_batches", default=16, type=int)
+    parser.add_argument("--nb_timesteps", default=3e6, type=int)
+    parser.add_argument("--nb_frames", default=20, type=int)
+    parser.add_argument("--nsteps", default=1440,  type=int)
     parser.add_argument("--num_envs", default=16, type=int)
-    parser.add_argument("--epochs", default=6,  type=int)
-    parser.add_argument("--discount", default=1., type=float)
+    parser.add_argument("--epochs", default=4,  type=int)
+    parser.add_argument("--discount", default=.99, type=float)
     parser.add_argument("--lam", default=.95, type=float)
     parser.add_argument("--log_interval", default=1,  type=int)
     parser.add_argument("--verbose", default=True, action="store_true")
     parser.add_argument("--render", default=False, action="store_true")
     parser.add_argument("--cont_lr", default=False, action="store_true")
     parser.add_argument("--load_vf", default=False, action="store_true")
-    parser.add_argument("--test", default=0, action="store_true")
+    parser.add_argument("--test", default=False, action="store_true")
     return parser.parse_args()
 
 
