@@ -356,7 +356,7 @@ class PPOAgent(TFAgent):
                 max_score = eprew_max if max_score is np.nan else max(
                     max_score, eprew_max)
 
-                if checkpoint and nupdate % (n_updates // 10) == 0:
+                if checkpoint and nupdate % (min(n_updates, n_updates // 100)) == 0:
                     self.save("{}{}".format(checkpoint, nupdate))
 
                 if self.summary_writer is not None and history and (nupdate % log_interval == 0 or nupdate == 1):
