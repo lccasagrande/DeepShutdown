@@ -94,7 +94,7 @@ class PPOAgent(TFAgent):
     def __init__(self, seed=None):
         super().__init__(seed)
         self._compiled = False
-        self.summary_episode_interval = 50
+        self.summary_episode_interval = 100
 
     def load_value(self, fn):
         network = tf.trainable_variables("value_network")
@@ -356,7 +356,7 @@ class PPOAgent(TFAgent):
                 max_score = eprew_max if max_score is np.nan else max(
                     max_score, eprew_max)
 
-                if checkpoint and nupdate % (min(n_updates, n_updates // 100)) == 0:
+                if checkpoint and nupdate % (min(n_updates, n_updates // 10)) == 0:
                     self.save("{}{}".format(checkpoint, nupdate))
 
                 if self.summary_writer is not None and history and (nupdate % log_interval == 0 or nupdate == 1):

@@ -100,12 +100,12 @@ class TimeoutAgent(Agent):
         nb_available = sum(1 if a == 0 else 0 for a in obs['agenda'])
         queue = obs['queue']
         if len(queue) > 0:
-            _, res, _, pjob_expected_time_to_start = queue[0]
+            _, res, _, pjob_expected_time_to_start, _ = queue[0]
             if pjob_expected_time_to_start == 0 or res <= nb_available:
                 nb_available -= res
                 pjob_expected_time_to_start = -1
                 queue = queue[1:]
-            for (_, res, walltime, _) in queue:
+            for (_, res, walltime, _, _) in queue:
                 if pjob_expected_time_to_start == -1 and res <= nb_available:
                     nb_available -= res
                 elif res <= nb_available and walltime <= pjob_expected_time_to_start:

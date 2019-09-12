@@ -3,6 +3,7 @@ import math
 import multiprocessing
 import itertools
 import os
+from collections import defaultdict
 
 import gym
 import pandas as pd
@@ -24,16 +25,15 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 class ObsWrapper(gym.ObservationWrapper):
-    def __init__(self, env, queue_sz, max_walltime, max_nb_jobs):
+    def __init__(self, env, queue_sz, max_walltime, max_nb_jobs, max_job_user_count):
         super().__init__(env)
         self.queue_sz = queue_sz
+        self.max_job_user_count = max_job_user_count
         self.max_walltime = max_walltime
         self.max_nb_jobs = max_nb_jobs
-        #obs = self.reset()
-        shape = (5 + (3*self.queue_sz) + 1 + 1 + 1,)
+        shape = (5 + (4*self.queue_sz) + 1 + 1 + 1,)
         self.observation_space = spaces.Box(
             low=0, high=1., shape=shape, dtype=np.float)
-        # self.reset()
 
     def get_resources_state(self, observation):
         state = np.zeros(5)
@@ -43,19 +43,21 @@ class ObsWrapper(gym.ObservationWrapper):
         state /= observation['agenda'].shape[0]
         return state
 
-    def get_queue_state(self, observation):
-        queue = observation['queue'][:self.queue_sz]
-        nb_resources = observation['agenda'].shape[0]
-        # [[j.subtime, j.res, j.walltime, j.expected_time_to_start] for j in self.rjms.jobs_queue])
+    def get_queue_state(self, obs):
+        queue = obs['queue'][:self.queue_sz]
+        nb_resources = obs['agenda'].shape[0]
+        # [[j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user] for j in self.rjms.jobs_queue])
+        usr_count = defaultdict(int)
+        for j in itertools.chain(*[obs['jobs_running'], obs['queue']]):
+            usr_count[j[4]] += 1
 
-        queue_state = np.zeros(3 * self.queue_sz, dtype=np.float)
+        queue_state = np.zeros(4 * self.queue_sz, dtype=np.float)
         for i, j in enumerate(queue):
-            idx = 3 * i
-            queue_state[idx] = j[1] / nb_resources
+            idx = 4 * i
+            queue_state[idx+0] = j[1] / nb_resources
             queue_state[idx+1] = np.log(1+j[2]) / np.log(1+self.max_walltime)
-            t_wait = min(1, (observation['time'] - j[0]) / (j[2] / 2.))
-            # np.log(1+j[2]) / np.log(1+self.max_walltime)
-            queue_state[idx+2] = t_wait
+            queue_state[idx+2] = min(1, (obs['time'] - j[0]) / (j[2] / 2.))
+            queue_state[idx+3] = min(1, usr_count[j[4]] / self.max_job_user_count)
         return queue_state
 
     def get_queue_size(self, observation):
@@ -107,7 +109,7 @@ class ObsWrapper(gym.ObservationWrapper):
         return np.asarray(obs)
 
 
-def get_agent(input_shape, nb_actions, seed, num_frames, nsteps, num_envs, nb_batches, epochs, summary_dir=None):
+def get_agent(input_shape, nb_actions, nb_timesteps, seed, num_frames, nsteps, num_envs, nb_batches, epochs, summary_dir=None):
     agent = PPOAgent(seed)
     lstm_shape = (num_frames, input_shape[-1] // num_frames)
     agent.compile(
@@ -120,9 +122,9 @@ def get_agent(input_shape, nb_actions, seed, num_frames, nsteps, num_envs, nb_ba
         end_lr=1e-6,
         ent_coef=0.005,
         vf_coef=.5,
-        decay_steps=300,  # args.nb_timesteps / (args.nsteps * args.num_envs)
+        decay_steps=nb_timesteps / (nsteps * num_envs),  # 300
         max_grad_norm=None,
-        shared=True,
+        shared=False,
         summ_dir=summary_dir)
 
     return agent
@@ -135,7 +137,7 @@ def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, inf
         return _thunk
 
     wrappers = [create_wrapper(
-        ObsWrapper, queue_sz=10, max_walltime=1500, max_nb_jobs=1500)]
+        ObsWrapper, queue_sz=10, max_walltime=4400, max_nb_jobs=1500, max_job_user_count=50)]
 
     env = make_vec_env(env_id=env_id,
                        nenv=num_envs,
@@ -153,7 +155,7 @@ def run(args):
         args.env_id, num_frames=args.nb_frames, info_kws=['workload_name'])
 
     input_shape, nb_actions = test_env.observation_space.shape, test_env.action_space.n
-    agent = get_agent(input_shape, nb_actions, args.seed, args.nb_frames,
+    agent = get_agent(input_shape, nb_actions, args.nb_timesteps, args.seed, args.nb_frames,
                       args.nsteps, args.num_envs, args.nb_batches, args.epochs, args.summary_dir)
     if not args.test:
         training_env = build_env(
@@ -186,7 +188,7 @@ def run(args):
             log_interval=args.log_interval,
             loggers=loggers,
             nb_batches=args.nb_batches,
-            checkpoint=None)  # args.log_dir+"checkpoints/"
+            checkpoint=args.log_dir+"checkpoints/")
 
         if args.weights is not None:
             agent.save(args.weights)
@@ -216,7 +218,7 @@ def parse_args():
     parser.add_argument("--summary_dir", default=None, type=str)
     parser.add_argument("--seed", default=48238, type=int)
     parser.add_argument("--nb_batches", default=16, type=int)
-    parser.add_argument("--nb_timesteps", default=3e6, type=int)
+    parser.add_argument("--nb_timesteps", default=55e6, type=int)
     parser.add_argument("--nb_frames", default=20, type=int)
     parser.add_argument("--nsteps", default=1440,  type=int)
     parser.add_argument("--num_envs", default=16, type=int)
