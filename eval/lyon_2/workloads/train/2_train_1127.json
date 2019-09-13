@@ -1,0 +1,58 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:55.513203",
+    "nb_res": 156,
+    "nb_profiles": 3,
+    "nb_jobs": 4,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 24,
+            "subtime": 687,
+            "walltime": 40,
+            "profile": "41.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 156,
+            "subtime": 706,
+            "walltime": 40,
+            "profile": "41.0",
+            "user": 0
+        },
+        {
+            "id": "3",
+            "res": 24,
+            "subtime": 734,
+            "walltime": 360,
+            "profile": "360.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 24,
+            "subtime": 768,
+            "walltime": 60,
+            "profile": "13.0",
+            "user": 2
+        }
+    ],
+    "profiles": {
+        "41.0": {
+            "cpu": 41000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "360.0": {
+            "cpu": 360000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "13.0": {
+            "cpu": 13000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

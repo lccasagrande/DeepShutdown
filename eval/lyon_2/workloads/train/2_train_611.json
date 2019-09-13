@@ -1,0 +1,92 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:55.016880",
+    "nb_res": 168,
+    "nb_profiles": 5,
+    "nb_jobs": 7,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 168,
+            "subtime": 626,
+            "walltime": 60,
+            "profile": "42.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 48,
+            "subtime": 679,
+            "walltime": 120,
+            "profile": "121.0",
+            "user": 1
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 757,
+            "walltime": 60,
+            "profile": "1.0",
+            "user": 2
+        },
+        {
+            "id": "4",
+            "res": 12,
+            "subtime": 780,
+            "walltime": 60,
+            "profile": "1.0",
+            "user": 2
+        },
+        {
+            "id": "5",
+            "res": 12,
+            "subtime": 783,
+            "walltime": 60,
+            "profile": "1.0",
+            "user": 2
+        },
+        {
+            "id": "6",
+            "res": 12,
+            "subtime": 791,
+            "walltime": 60,
+            "profile": "20.0",
+            "user": 2
+        },
+        {
+            "id": "7",
+            "res": 12,
+            "subtime": 811,
+            "walltime": 60,
+            "profile": "61.0",
+            "user": 2
+        }
+    ],
+    "profiles": {
+        "42.0": {
+            "cpu": 42000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "121.0": {
+            "cpu": 121000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1.0": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "20.0": {
+            "cpu": 20000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "61.0": {
+            "cpu": 61000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

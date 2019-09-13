@@ -1,0 +1,89 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:58.704644",
+    "nb_res": 108,
+    "nb_profiles": 6,
+    "nb_jobs": 6,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 108,
+            "subtime": 850,
+            "walltime": 60,
+            "profile": "13.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 12,
+            "subtime": 875,
+            "walltime": 60,
+            "profile": "2.0",
+            "user": 1
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 933,
+            "walltime": 240,
+            "profile": "33.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 12,
+            "subtime": 968,
+            "walltime": 60,
+            "profile": "11.0",
+            "user": 1
+        },
+        {
+            "id": "5",
+            "res": 12,
+            "subtime": 989,
+            "walltime": 60,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "6",
+            "res": 61,
+            "subtime": 1059,
+            "walltime": 350,
+            "profile": "63.0",
+            "user": 0
+        }
+    ],
+    "profiles": {
+        "13.0": {
+            "cpu": 13000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "2.0": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "33.0": {
+            "cpu": 33000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "11.0": {
+            "cpu": 11000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "21.0": {
+            "cpu": 21000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "63.0": {
+            "cpu": 63000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

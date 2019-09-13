@@ -3,7 +3,7 @@
 .idea/*
 results/*
 log/
-eval/
+#eval/
 tests/
 models/
 weights/

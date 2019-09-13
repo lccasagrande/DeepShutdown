@@ -1,0 +1,259 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:54.323198",
+    "nb_res": 168,
+    "nb_profiles": 16,
+    "nb_jobs": 21,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 12,
+            "subtime": 235,
+            "walltime": 360,
+            "profile": "361.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 12,
+            "subtime": 251,
+            "walltime": 360,
+            "profile": "361.0",
+            "user": 0
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 529,
+            "walltime": 20,
+            "profile": "1.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 12,
+            "subtime": 530,
+            "walltime": 20,
+            "profile": "1.0",
+            "user": 1
+        },
+        {
+            "id": "5",
+            "res": 12,
+            "subtime": 602,
+            "walltime": 600,
+            "profile": "49.0",
+            "user": 2
+        },
+        {
+            "id": "6",
+            "res": 12,
+            "subtime": 609,
+            "walltime": 360,
+            "profile": "58.0",
+            "user": 0
+        },
+        {
+            "id": "7",
+            "res": 12,
+            "subtime": 726,
+            "walltime": 360,
+            "profile": "5.0",
+            "user": 0
+        },
+        {
+            "id": "8",
+            "res": 12,
+            "subtime": 736,
+            "walltime": 105,
+            "profile": "13.0",
+            "user": 3
+        },
+        {
+            "id": "9",
+            "res": 12,
+            "subtime": 855,
+            "walltime": 360,
+            "profile": "104.0",
+            "user": 0
+        },
+        {
+            "id": "10",
+            "res": 12,
+            "subtime": 867,
+            "walltime": 360,
+            "profile": "109.0",
+            "user": 0
+        },
+        {
+            "id": "11",
+            "res": 12,
+            "subtime": 938,
+            "walltime": 87,
+            "profile": "4.0",
+            "user": 3
+        },
+        {
+            "id": "12",
+            "res": 12,
+            "subtime": 951,
+            "walltime": 360,
+            "profile": "9.0",
+            "user": 0
+        },
+        {
+            "id": "13",
+            "res": 25,
+            "subtime": 976,
+            "walltime": 60,
+            "profile": "11.0",
+            "user": 4
+        },
+        {
+            "id": "14",
+            "res": 12,
+            "subtime": 979,
+            "walltime": 360,
+            "profile": "65.0",
+            "user": 0
+        },
+        {
+            "id": "15",
+            "res": 25,
+            "subtime": 983,
+            "walltime": 360,
+            "profile": "61.0",
+            "user": 0
+        },
+        {
+            "id": "16",
+            "res": 26,
+            "subtime": 1004,
+            "walltime": 60,
+            "profile": "2.0",
+            "user": 4
+        },
+        {
+            "id": "17",
+            "res": 12,
+            "subtime": 1024,
+            "walltime": 360,
+            "profile": "21.0",
+            "user": 0
+        },
+        {
+            "id": "18",
+            "res": 12,
+            "subtime": 1028,
+            "walltime": 360,
+            "profile": "17.0",
+            "user": 0
+        },
+        {
+            "id": "19",
+            "res": 168,
+            "subtime": 1140,
+            "walltime": 360,
+            "profile": "361.0",
+            "user": 0
+        },
+        {
+            "id": "20",
+            "res": 12,
+            "subtime": 1144,
+            "walltime": 360,
+            "profile": "361.0",
+            "user": 0
+        },
+        {
+            "id": "21",
+            "res": 12,
+            "subtime": 1148,
+            "walltime": 360,
+            "profile": "361.0",
+            "user": 0
+        }
+    ],
+    "profiles": {
+        "361.0": {
+            "cpu": 361000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1.0": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "49.0": {
+            "cpu": 49000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "58.0": {
+            "cpu": 58000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "5.0": {
+            "cpu": 5000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "13.0": {
+            "cpu": 13000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "104.0": {
+            "cpu": 104000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "109.0": {
+            "cpu": 109000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "4.0": {
+            "cpu": 4000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "9.0": {
+            "cpu": 9000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "11.0": {
+            "cpu": 11000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "65.0": {
+            "cpu": 65000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "61.0": {
+            "cpu": 61000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "2.0": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "21.0": {
+            "cpu": 21000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "17.0": {
+            "cpu": 17000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

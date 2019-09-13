@@ -1,0 +1,285 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:55.147372",
+    "nb_res": 84,
+    "nb_profiles": 18,
+    "nb_jobs": 23,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 12,
+            "subtime": 489,
+            "walltime": 60,
+            "profile": "26.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 25,
+            "subtime": 511,
+            "walltime": 20,
+            "profile": "4.0",
+            "user": 1
+        },
+        {
+            "id": "3",
+            "res": 24,
+            "subtime": 511,
+            "walltime": 20,
+            "profile": "4.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 24,
+            "subtime": 549,
+            "walltime": 60,
+            "profile": "31.0",
+            "user": 0
+        },
+        {
+            "id": "5",
+            "res": 12,
+            "subtime": 801,
+            "walltime": 240,
+            "profile": "241.0",
+            "user": 2
+        },
+        {
+            "id": "6",
+            "res": 12,
+            "subtime": 801,
+            "walltime": 240,
+            "profile": "241.0",
+            "user": 2
+        },
+        {
+            "id": "7",
+            "res": 12,
+            "subtime": 801,
+            "walltime": 240,
+            "profile": "241.0",
+            "user": 2
+        },
+        {
+            "id": "8",
+            "res": 48,
+            "subtime": 851,
+            "walltime": 240,
+            "profile": "58.0",
+            "user": 2
+        },
+        {
+            "id": "9",
+            "res": 12,
+            "subtime": 851,
+            "walltime": 240,
+            "profile": "57.0",
+            "user": 2
+        },
+        {
+            "id": "10",
+            "res": 25,
+            "subtime": 1152,
+            "walltime": 240,
+            "profile": "4.0",
+            "user": 2
+        },
+        {
+            "id": "11",
+            "res": 12,
+            "subtime": 1152,
+            "walltime": 240,
+            "profile": "50.0",
+            "user": 2
+        },
+        {
+            "id": "12",
+            "res": 24,
+            "subtime": 1195,
+            "walltime": 1440,
+            "profile": "10.0",
+            "user": 3
+        },
+        {
+            "id": "13",
+            "res": 24,
+            "subtime": 1195,
+            "walltime": 1440,
+            "profile": "8.0",
+            "user": 3
+        },
+        {
+            "id": "14",
+            "res": 12,
+            "subtime": 1216,
+            "walltime": 240,
+            "profile": "14.0",
+            "user": 2
+        },
+        {
+            "id": "15",
+            "res": 12,
+            "subtime": 1216,
+            "walltime": 240,
+            "profile": "158.0",
+            "user": 2
+        },
+        {
+            "id": "16",
+            "res": 12,
+            "subtime": 1216,
+            "walltime": 240,
+            "profile": "14.0",
+            "user": 2
+        },
+        {
+            "id": "17",
+            "res": 12,
+            "subtime": 1216,
+            "walltime": 240,
+            "profile": "157.0",
+            "user": 2
+        },
+        {
+            "id": "18",
+            "res": 12,
+            "subtime": 1216,
+            "walltime": 240,
+            "profile": "19.0",
+            "user": 2
+        },
+        {
+            "id": "19",
+            "res": 12,
+            "subtime": 1252,
+            "walltime": 240,
+            "profile": "200.0",
+            "user": 4
+        },
+        {
+            "id": "20",
+            "res": 12,
+            "subtime": 1257,
+            "walltime": 240,
+            "profile": "13.0",
+            "user": 2
+        },
+        {
+            "id": "21",
+            "res": 12,
+            "subtime": 1257,
+            "walltime": 240,
+            "profile": "154.0",
+            "user": 2
+        },
+        {
+            "id": "22",
+            "res": 24,
+            "subtime": 1257,
+            "walltime": 240,
+            "profile": "16.0",
+            "user": 2
+        },
+        {
+            "id": "23",
+            "res": 84,
+            "subtime": 1268,
+            "walltime": 240,
+            "profile": "141.0",
+            "user": 2
+        }
+    ],
+    "profiles": {
+        "26.0": {
+            "cpu": 26000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "4.0": {
+            "cpu": 4000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "31.0": {
+            "cpu": 31000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "241.0": {
+            "cpu": 241000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "58.0": {
+            "cpu": 58000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "57.0": {
+            "cpu": 57000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "50.0": {
+            "cpu": 50000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "10.0": {
+            "cpu": 10000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "8.0": {
+            "cpu": 8000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "14.0": {
+            "cpu": 14000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "158.0": {
+            "cpu": 158000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "157.0": {
+            "cpu": 157000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "19.0": {
+            "cpu": 19000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "200.0": {
+            "cpu": 200000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "13.0": {
+            "cpu": 13000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "154.0": {
+            "cpu": 154000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "16.0": {
+            "cpu": 16000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "141.0": {
+            "cpu": 141000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

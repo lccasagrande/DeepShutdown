@@ -1,0 +1,668 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:51.985012",
+    "nb_res": 156,
+    "nb_profiles": 21,
+    "nb_jobs": 69,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 28,
+            "subtime": 6,
+            "walltime": 1440,
+            "profile": "71.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 24,
+            "subtime": 10,
+            "walltime": 480,
+            "profile": "466.0",
+            "user": 0
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 51,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 24,
+            "subtime": 51,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "5",
+            "res": 12,
+            "subtime": 57,
+            "walltime": 20,
+            "profile": "4.0",
+            "user": 1
+        },
+        {
+            "id": "6",
+            "res": 24,
+            "subtime": 58,
+            "walltime": 1440,
+            "profile": "419.0",
+            "user": 0
+        },
+        {
+            "id": "7",
+            "res": 24,
+            "subtime": 66,
+            "walltime": 1440,
+            "profile": "108.0",
+            "user": 0
+        },
+        {
+            "id": "8",
+            "res": 12,
+            "subtime": 69,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "9",
+            "res": 12,
+            "subtime": 70,
+            "walltime": 1440,
+            "profile": "104.0",
+            "user": 0
+        },
+        {
+            "id": "10",
+            "res": 12,
+            "subtime": 75,
+            "walltime": 20,
+            "profile": "7.0",
+            "user": 1
+        },
+        {
+            "id": "11",
+            "res": 24,
+            "subtime": 75,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 1
+        },
+        {
+            "id": "12",
+            "res": 24,
+            "subtime": 76,
+            "walltime": 20,
+            "profile": "7.0",
+            "user": 1
+        },
+        {
+            "id": "13",
+            "res": 28,
+            "subtime": 91,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 1
+        },
+        {
+            "id": "14",
+            "res": 12,
+            "subtime": 245,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "15",
+            "res": 12,
+            "subtime": 245,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "16",
+            "res": 12,
+            "subtime": 306,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "17",
+            "res": 12,
+            "subtime": 306,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "18",
+            "res": 24,
+            "subtime": 310,
+            "walltime": 20,
+            "profile": "5.0",
+            "user": 1
+        },
+        {
+            "id": "19",
+            "res": 12,
+            "subtime": 371,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "20",
+            "res": 12,
+            "subtime": 692,
+            "walltime": 454,
+            "profile": "454.0",
+            "user": 2
+        },
+        {
+            "id": "21",
+            "res": 12,
+            "subtime": 692,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "22",
+            "res": 12,
+            "subtime": 724,
+            "walltime": 1440,
+            "profile": "8.0",
+            "user": 0
+        },
+        {
+            "id": "23",
+            "res": 12,
+            "subtime": 725,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "24",
+            "res": 24,
+            "subtime": 731,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "25",
+            "res": 24,
+            "subtime": 732,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "26",
+            "res": 12,
+            "subtime": 733,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "27",
+            "res": 12,
+            "subtime": 735,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "28",
+            "res": 12,
+            "subtime": 747,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "29",
+            "res": 12,
+            "subtime": 757,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "30",
+            "res": 12,
+            "subtime": 758,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "31",
+            "res": 12,
+            "subtime": 769,
+            "walltime": 20,
+            "profile": "7.0",
+            "user": 1
+        },
+        {
+            "id": "32",
+            "res": 12,
+            "subtime": 770,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "33",
+            "res": 24,
+            "subtime": 770,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 1
+        },
+        {
+            "id": "34",
+            "res": 156,
+            "subtime": 780,
+            "walltime": 10,
+            "profile": "2.0",
+            "user": 1
+        },
+        {
+            "id": "35",
+            "res": 24,
+            "subtime": 785,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "36",
+            "res": 12,
+            "subtime": 791,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "37",
+            "res": 12,
+            "subtime": 794,
+            "walltime": 20,
+            "profile": "5.0",
+            "user": 1
+        },
+        {
+            "id": "38",
+            "res": 24,
+            "subtime": 803,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "39",
+            "res": 24,
+            "subtime": 804,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "40",
+            "res": 156,
+            "subtime": 826,
+            "walltime": 30,
+            "profile": "1.0",
+            "user": 3
+        },
+        {
+            "id": "41",
+            "res": 24,
+            "subtime": 847,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 1
+        },
+        {
+            "id": "42",
+            "res": 24,
+            "subtime": 847,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "43",
+            "res": 12,
+            "subtime": 848,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "44",
+            "res": 12,
+            "subtime": 853,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "45",
+            "res": 24,
+            "subtime": 894,
+            "walltime": 60,
+            "profile": "1.0",
+            "user": 4
+        },
+        {
+            "id": "46",
+            "res": 24,
+            "subtime": 913,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "47",
+            "res": 24,
+            "subtime": 918,
+            "walltime": 30,
+            "profile": "24.0",
+            "user": 3
+        },
+        {
+            "id": "48",
+            "res": 24,
+            "subtime": 923,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "49",
+            "res": 156,
+            "subtime": 939,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "50",
+            "res": 24,
+            "subtime": 943,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "51",
+            "res": 24,
+            "subtime": 956,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 1
+        },
+        {
+            "id": "52",
+            "res": 24,
+            "subtime": 974,
+            "walltime": 20,
+            "profile": "7.0",
+            "user": 1
+        },
+        {
+            "id": "53",
+            "res": 24,
+            "subtime": 974,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "54",
+            "res": 12,
+            "subtime": 1003,
+            "walltime": 1440,
+            "profile": "1161.0",
+            "user": 0
+        },
+        {
+            "id": "55",
+            "res": 12,
+            "subtime": 1011,
+            "walltime": 1440,
+            "profile": "1116.0",
+            "user": 0
+        },
+        {
+            "id": "56",
+            "res": 24,
+            "subtime": 1041,
+            "walltime": 1440,
+            "profile": "1.0",
+            "user": 0
+        },
+        {
+            "id": "57",
+            "res": 12,
+            "subtime": 1138,
+            "walltime": 1440,
+            "profile": "1026.0",
+            "user": 0
+        },
+        {
+            "id": "58",
+            "res": 12,
+            "subtime": 1162,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "59",
+            "res": 12,
+            "subtime": 1176,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "60",
+            "res": 12,
+            "subtime": 1186,
+            "walltime": 60,
+            "profile": "7.0",
+            "user": 5
+        },
+        {
+            "id": "61",
+            "res": 12,
+            "subtime": 1205,
+            "walltime": 1440,
+            "profile": "47.0",
+            "user": 0
+        },
+        {
+            "id": "62",
+            "res": 12,
+            "subtime": 1223,
+            "walltime": 20,
+            "profile": "8.0",
+            "user": 1
+        },
+        {
+            "id": "63",
+            "res": 12,
+            "subtime": 1260,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "64",
+            "res": 12,
+            "subtime": 1281,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "65",
+            "res": 24,
+            "subtime": 1321,
+            "walltime": 1440,
+            "profile": "8.0",
+            "user": 0
+        },
+        {
+            "id": "66",
+            "res": 12,
+            "subtime": 1325,
+            "walltime": 1440,
+            "profile": "114.0",
+            "user": 0
+        },
+        {
+            "id": "67",
+            "res": 24,
+            "subtime": 1359,
+            "walltime": 20,
+            "profile": "21.0",
+            "user": 1
+        },
+        {
+            "id": "68",
+            "res": 12,
+            "subtime": 1394,
+            "walltime": 1440,
+            "profile": "104.0",
+            "user": 0
+        },
+        {
+            "id": "69",
+            "res": 12,
+            "subtime": 1411,
+            "walltime": 1440,
+            "profile": "87.0",
+            "user": 0
+        }
+    ],
+    "profiles": {
+        "71.0": {
+            "cpu": 71000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "466.0": {
+            "cpu": 466000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "21.0": {
+            "cpu": 21000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "4.0": {
+            "cpu": 4000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "419.0": {
+            "cpu": 419000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "108.0": {
+            "cpu": 108000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "8.0": {
+            "cpu": 8000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "104.0": {
+            "cpu": 104000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "7.0": {
+            "cpu": 7000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "6.0": {
+            "cpu": 6000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "5.0": {
+            "cpu": 5000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "454.0": {
+            "cpu": 454000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "2.0": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1.0": {
+            "cpu": 1000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "24.0": {
+            "cpu": 24000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1161.0": {
+            "cpu": 1161000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1116.0": {
+            "cpu": 1116000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "1026.0": {
+            "cpu": 1026000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "47.0": {
+            "cpu": 47000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "114.0": {
+            "cpu": 114000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "87.0": {
+            "cpu": 87000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

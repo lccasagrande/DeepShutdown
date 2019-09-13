@@ -1,0 +1,89 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:11:01.403967",
+    "nb_res": 120,
+    "nb_profiles": 6,
+    "nb_jobs": 6,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 12,
+            "subtime": 586,
+            "walltime": 10,
+            "profile": "2.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 12,
+            "subtime": 587,
+            "walltime": 360,
+            "profile": "226.0",
+            "user": 0
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 637,
+            "walltime": 60,
+            "profile": "3.0",
+            "user": 1
+        },
+        {
+            "id": "4",
+            "res": 12,
+            "subtime": 670,
+            "walltime": 60,
+            "profile": "39.0",
+            "user": 2
+        },
+        {
+            "id": "5",
+            "res": 120,
+            "subtime": 812,
+            "walltime": 60,
+            "profile": "30.0",
+            "user": 3
+        },
+        {
+            "id": "6",
+            "res": 120,
+            "subtime": 855,
+            "walltime": 60,
+            "profile": "61.0",
+            "user": 1
+        }
+    ],
+    "profiles": {
+        "2.0": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "226.0": {
+            "cpu": 226000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "3.0": {
+            "cpu": 3000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "39.0": {
+            "cpu": 39000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "30.0": {
+            "cpu": 30000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "61.0": {
+            "cpu": 61000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}

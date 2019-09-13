@@ -1,0 +1,89 @@
+{
+    "simulation_time": 1440,
+    "date": "2019-09-12 22:10:51.861571",
+    "nb_res": 120,
+    "nb_profiles": 6,
+    "nb_jobs": 6,
+    "jobs": [
+        {
+            "id": "1",
+            "res": 12,
+            "subtime": 61,
+            "walltime": 10,
+            "profile": "2.0",
+            "user": 0
+        },
+        {
+            "id": "2",
+            "res": 12,
+            "subtime": 61,
+            "walltime": 20,
+            "profile": "6.0",
+            "user": 0
+        },
+        {
+            "id": "3",
+            "res": 12,
+            "subtime": 574,
+            "walltime": 40,
+            "profile": "10.0",
+            "user": 0
+        },
+        {
+            "id": "4",
+            "res": 12,
+            "subtime": 574,
+            "walltime": 40,
+            "profile": "19.0",
+            "user": 0
+        },
+        {
+            "id": "5",
+            "res": 13,
+            "subtime": 715,
+            "walltime": 480,
+            "profile": "481.0",
+            "user": 1
+        },
+        {
+            "id": "6",
+            "res": 120,
+            "subtime": 1320,
+            "walltime": 120,
+            "profile": "8.0",
+            "user": 0
+        }
+    ],
+    "profiles": {
+        "2.0": {
+            "cpu": 2000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "6.0": {
+            "cpu": 6000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "10.0": {
+            "cpu": 10000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "19.0": {
+            "cpu": 19000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "481.0": {
+            "cpu": 481000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        },
+        "8.0": {
+            "cpu": 8000000,
+            "com": 0,
+            "type": "parallel_homogeneous"
+        }
+    }
+}
