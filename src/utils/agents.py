@@ -1,11 +1,12 @@
-import tensorflow as tf
 import os
-import joblib
-import numpy as np
 import random
-from gym.utils import colorize
-from abc import ABC, abstractmethod
 import multiprocessing
+from abc import ABC, abstractmethod
+
+import joblib
+import tensorflow as tf
+import numpy as np
+from gym.utils import colorize
 
 
 class Agent(ABC):

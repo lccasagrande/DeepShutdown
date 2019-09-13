@@ -5,7 +5,6 @@ import itertools
 import os
 
 import gym
-import argparse
 from gym import spaces
 
 from gridgym.envs.grid_env import GridEnv

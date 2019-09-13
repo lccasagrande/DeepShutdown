@@ -122,7 +122,7 @@ def get_agent(input_shape, nb_actions, nb_timesteps, seed, num_frames, nsteps, n
         end_lr=1e-6,
         ent_coef=0.005,
         vf_coef=.5,
-        decay_steps=nb_timesteps / (nsteps * num_envs),  # 300
+        decay_steps=40e6 / (nsteps * num_envs),  # 300
         max_grad_norm=None,
         shared=False,
         summ_dir=summary_dir)
@@ -218,7 +218,7 @@ def parse_args():
     parser.add_argument("--summary_dir", default=None, type=str)
     parser.add_argument("--seed", default=48238, type=int)
     parser.add_argument("--nb_batches", default=16, type=int)
-    parser.add_argument("--nb_timesteps", default=55e6, type=int)
+    parser.add_argument("--nb_timesteps", default=50e6, type=int)
     parser.add_argument("--nb_frames", default=20, type=int)
     parser.add_argument("--nsteps", default=1440,  type=int)
     parser.add_argument("--num_envs", default=16, type=int)

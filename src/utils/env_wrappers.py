@@ -1,14 +1,16 @@
-import numpy as np
+
 import time
-import gym
 import json
 import csv
 import os.path as osp
 from abc import ABC, abstractmethod
 from collections import deque, defaultdict
 from multiprocessing import Process, Pipe
+
+import numpy as np
+import gym
 from gym import Wrapper, spaces
-from gym.envs.classic_control import rendering
+
 from src.utils.commons import tile_images
 
 
@@ -134,9 +136,9 @@ class VecEnv(ABC):
             return self
 
     def get_viewer(self):
-        if self.viewer is None:
-            from gym.envs.classic_control import rendering
-            self.viewer = rendering.SimpleImageViewer()
+        #if self.viewer is None:
+        #    from gym.envs.classic_control import rendering
+        #    self.viewer = rendering.SimpleImageViewer()
         return self.viewer
 
 

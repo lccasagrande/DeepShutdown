@@ -1,5 +1,6 @@
-import numpy as np
+
 from collections import defaultdict, deque
+import numpy as np
 
 
 class MulRunningMeanStd(object):
