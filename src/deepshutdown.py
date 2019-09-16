@@ -13,9 +13,6 @@ from gym import spaces
 
 from gridgym.envs.grid_env import GridEnv
 from gridgym.envs.simulator.utils.graphics import plot_simulation_graphics
-from gridgym.envs.simulator.resource import PowerStateType
-from src.agents.scheduling import FirstComeFirstServed
-from src.agents.timeout import TimeoutAgent, TimeoutWithOracleAgent
 from src.agents.ppo import PPOAgent
 from src.utils.env_wrappers import make_vec_env, VecFrameStack
 from src.utils.networks import *
@@ -49,7 +46,7 @@ class ObsWrapper(gym.ObservationWrapper):
         # [[j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user] for j in self.rjms.jobs_queue])
         usr_count = defaultdict(int)
         for j in itertools.chain(*[obs['jobs_running'], obs['queue']]):
-            usr_count[j[4]] += 1
+            usr_count[j[-2]] += 1
 
         queue_state = np.zeros(4 * self.queue_sz, dtype=np.float)
         for i, j in enumerate(queue):
@@ -122,7 +119,7 @@ def get_agent(input_shape, nb_actions, nb_timesteps, seed, num_frames, nsteps, n
         end_lr=1e-6,
         ent_coef=0.005,
         vf_coef=.5,
-        decay_steps=40e6 / (nsteps * num_envs),  # 300
+        decay_steps=nb_timesteps / (nsteps * num_envs),  # 300
         max_grad_norm=None,
         shared=False,
         summ_dir=summary_dir)
@@ -230,7 +227,7 @@ def parse_args():
     parser.add_argument("--render", default=False, action="store_true")
     parser.add_argument("--cont_lr", default=False, action="store_true")
     parser.add_argument("--load_vf", default=False, action="store_true")
-    parser.add_argument("--test", default=False, action="store_true")
+    parser.add_argument("--test", default=1, action="store_true")
     return parser.parse_args()
 
 
