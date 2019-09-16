@@ -201,59 +201,7 @@ class PPOAgent(TFAgent):
             tf.reduce_mean(tf.square(self.neglogpac - OLD_NEGLOGPAC))
         self.clipfrac = tf.reduce_mean(tf.cast(tf.greater(
             tf.abs(self.ratio - 1.0), self.clip_value), dtype=tf.float32))
-
-        # Summary
-        #tf.summary.scalar("Learning Rate", self.learning_rate, family='Train Metrics', collections=['train'])
-        #tf.summary.scalar("Policy Clipping Fraction", self.clipfrac, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Probs", self.act_probs, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Ratio Unclipped", self.ratio, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Ratio Clipped", self.ratio_clipped, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Loss Unclipped", self.p_loss1, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Loss Clipped", self.p_loss2, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Loss", self.p_loss, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Policy Entropy", prob_dist.entropy(), family='Train Metrics', collections=['train'])
-        # tf.summary.scalar("Policy Loss Clipped", tf.reduce_mean(self.p_loss2), family='Train Metrics',
-        #                  collections=['train'])
-        #tf.summary.scalar("Policy Loss", self.p_loss, family='Train Metrics', collections=['train'])
-        #tf.summary.scalar("Policy Entropy", self.entropy, family='Train Metrics', collections=['train'])
-#
-        # tf.summary.scalar("Value Loss Unclipped", tf.reduce_mean(self.v_loss1), family='Train Metrics',
-        #                  collections=['train'])
-        #tf.summary.scalar("Value Loss", self.v_loss, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Value Logits", self.v_logits, family='Train Metrics', collections=['train'])
-        #tf.summary.histogram("Value Logits Clipped", self.v_clipped, family='Train Metrics', collections=['train'])
-
-        # Episodic
-        #self.scores = tf.placeholder(tf.float32, shape=[None])
-        #self.steps = tf.placeholder(tf.float32, shape=[None])
-        #self.waiting_time = tf.placeholder(tf.float32, shape=[None])
-        #self.idle_time = tf.placeholder(tf.float32, shape=[None])
-        #self.max_idle_time = tf.placeholder(tf.float32, shape=[None])
-        #self.energy = tf.placeholder(tf.float32, shape=[None])
-        #self.switches = tf.placeholder(tf.float32, shape=[None])
-#
-        # variable_summaries(self.scores, name='Score', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-        #variable_summaries(self.steps, name='Steps', family='Episode Metrics', collections=['episodic'], plot_hist=True)
-        # variable_summaries(self.waiting_time, name='Waittime', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-        # variable_summaries(self.idle_time, name='MeanIdleTime', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-        # variable_summaries(self.max_idle_time, name='MaxIdleTime', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-        # variable_summaries(self.energy, name='Energy', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-        # variable_summaries(self.switches, name='Switches', family='Episode Metrics', collections=['episodic'],
-        #                   plot_hist=True)
-
-        #self.summary_train = tf.summary.merge_all('train')
-        #self.summary_episodic = tf.summary.merge_all('episodic')
         self.session.run(tf.global_variables_initializer())
-
-        self.summary_writer = None
-        # if summ_dir is not None:
-        #	os.makedirs(summ_dir, exist_ok=True)
-        #	self.summary_writer = tf.summary.FileWriter(summ_dir, self.session.graph)
 
         self._compiled = True
 
@@ -288,15 +236,10 @@ class PPOAgent(TFAgent):
                 self.train_op, self.p_loss, self.v_loss, self.entropy, self.approxkl, self.clipfrac,
                 self.learning_rate, self.clip_value
             ]
-            if self.summary_writer is not None:
-                ops.append(self.summary_train)
 
             while True:
                 output = self.session.run(
                     ops, feed_dict={self.clip_value: clip_value, self.global_step: n})[1:]
-                if self.summary_writer is not None:
-                    self.summary_writer.add_summary(output[-1], n)
-                    output = output[:-1]
                 results.append(output)
         except tf.errors.OutOfRangeError:
             pass
@@ -359,19 +302,6 @@ class PPOAgent(TFAgent):
                 if checkpoint and nupdate % (min(n_updates, n_updates // 10)) == 0:
                     self.save("{}{}".format(checkpoint, nupdate))
 
-                if self.summary_writer is not None and history and (nupdate % log_interval == 0 or nupdate == 1):
-                    feed_dict = {
-                        self.scores: [h['score'] for h in history],
-                        self.steps: [h['nsteps'] for h in history],
-                        self.waiting_time: [h['mean_waiting_time'] for h in history],
-                        self.idle_time: [h['nb_jobs_queue'] for h in history],
-                        self.max_idle_time: [h['nb_jobs_finished'] for h in history],
-                        self.energy: [h['consumed_joules'] for h in history],
-                        self.switches: [h['nb_switches'] for h in history],
-                    }
-                    self.summary_writer.add_summary(self.session.run(
-                        self.summary_episodic, feed_dict), nupdate)
-
                 if loggers is not None and (nupdate % log_interval == 0 or nupdate == 1):
                     score_avg = safemean([h['score'] for h in history])
                     len_avg = safemean([h['nsteps'] for h in history])
@@ -404,25 +334,18 @@ class PPOAgent(TFAgent):
         return history
 
     def play(self, env, render=False, verbose=False):
-        history = defaultdict(list)
         obs, score, done = env.reset(), 0, False
         while not done:
             if render:
                 env.render()
-            for i, o in enumerate(obs[-1][-348:]):
-                history[i].append(o)
             obs, reward, done, info = env.step(self.act(obs, False))
-            history['reward'].append(reward[-1])
-            #score += reward
 
-        pd.DataFrame(history).to_csv("history.csv", index=False)
         results = pd.read_csv(os.path.join(
             GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
         results['score'] = info[0]['episode']['score']
         if verbose:
-            #info[0]['score'] = score
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
             print("[RESULTS] {}".format(m))
             print("[INFO] {}".format(info[0]['episode']))
         env.close()
-        return results  # info[0]
+        return results
