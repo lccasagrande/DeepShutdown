@@ -1,17 +1,7 @@
 # VS Code
 .vscode
-.idea/*
-results/*
-log/
-#eval/
-tests/
-models/
 weights/
-benchmark
-tmp
-src/test.py
-src/tmp.py
-img
+eval/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

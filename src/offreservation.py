@@ -16,7 +16,6 @@ def run(args):
     env = gym.make(args.env_id)
     nb_resources = env.observation_space.spaces['agenda'].shape[0]
     nb_nodes = env.observation_space.spaces['platform'].shape[0]
-    #agent = TimeoutWithOracleAgent(nb_resources, nb_nodes, t_turnoff=3, t_turnon=1, min_idle_time=60*5)
     agent = OffReservationAgent(args.max_strecth, nb_resources, nb_nodes, args.queue_sz, args.timeout)
     results = agent.play(env, verbose=args.verbose, render=args.render)
 
