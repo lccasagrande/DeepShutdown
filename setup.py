@@ -6,6 +6,7 @@ setup(name='DRLGrid',
       python_requires='>=3.6',
       install_requires=[
           'gym',
+          'tqdm',
           'numpy',
           'pandas',
           'joblib',

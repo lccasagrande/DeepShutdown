@@ -136,7 +136,7 @@ def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, inf
         return _thunk
 
     wrappers = [create_wrapper(
-        ObsWrapper, queue_sz=10, max_walltime=1440, max_nb_jobs=1500, max_job_user_count=50)]
+        ObsWrapper, queue_sz=10, max_walltime=1440, max_nb_jobs=4500, max_job_user_count=50)]
 
     env = make_vec_env(env_id=env_id,
                        nenv=num_envs,
