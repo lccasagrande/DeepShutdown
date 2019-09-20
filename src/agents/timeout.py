@@ -66,6 +66,7 @@ class TimeoutAgent(Agent):
         results = pd.read_csv(os.path.join(
             GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
         results['score'] = score
+        results['workload'] = info['workload_name']
         if verbose:
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
             print("[RESULTS] {}".format(m))

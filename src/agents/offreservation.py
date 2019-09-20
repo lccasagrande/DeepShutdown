@@ -110,6 +110,7 @@ class OffReservationAgent(Agent):
             score += reward
         results = pd.read_csv(os.path.join(
             GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
+        results['workload'] = info['workload_name']
         results['score'] = score
         if verbose:
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())

@@ -343,6 +343,7 @@ class PPOAgent(TFAgent):
         results = pd.read_csv(os.path.join(
             GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
         results['score'] = info[0]['episode']['score']
+        results['workload'] = info[0]['episode']['workload_name']
         if verbose:
             m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
             print("[RESULTS] {}".format(m))

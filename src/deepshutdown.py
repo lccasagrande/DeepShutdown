@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 from gym import spaces
+from gridgym.envs.off_reservation_env import OffReservationEnv
 
 from gridgym.envs.grid_env import GridEnv
 from gridgym.envs.simulator.utils.graphics import plot_simulation_graphics
@@ -43,6 +44,7 @@ class ObsWrapper(gym.ObservationWrapper):
     def get_queue_state(self, obs):
         queue = obs['queue'][:self.queue_sz]
         nb_resources = obs['agenda'].shape[0]
+        #[j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user, j.profile] for j in self._get_queue()
         # [[j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user] for j in self.rjms.jobs_queue])
         usr_count = defaultdict(int)
         for j in itertools.chain(*[obs['jobs_running'], obs['queue']]):
@@ -134,7 +136,7 @@ def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, inf
         return _thunk
 
     wrappers = [create_wrapper(
-        ObsWrapper, queue_sz=10, max_walltime=4400, max_nb_jobs=1500, max_job_user_count=50)]
+        ObsWrapper, queue_sz=10, max_walltime=1440, max_nb_jobs=1500, max_job_user_count=50)]
 
     env = make_vec_env(env_id=env_id,
                        nenv=num_envs,
@@ -185,19 +187,21 @@ def run(args):
             log_interval=args.log_interval,
             loggers=loggers,
             nb_batches=args.nb_batches,
-            checkpoint=args.log_dir+"checkpoints/")
+            checkpoint=None)
 
         if args.weights is not None:
             agent.save(args.weights)
     else:
         agent.load(args.weights)
 
-    for _ in range(1):
-        results = agent.play(
+    OffReservationEnv.TRACE = True
+    test_env = build_env(args.env_id, num_frames=args.nb_frames, info_kws=['workload_name'])
+    results = agent.play(
             env=test_env,
             render=args.render,
             verbose=args.verbose)
 
+    results['policy'] = 'DeepShutdown'
     if args.output_fn is not None and results:
         pd.DataFrame([results]).to_csv(args.output_fn, index=False)
         #plot_simulation_graphics(GridEnv.OUTPUT, show=True)
@@ -207,15 +211,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_id", default="OffReservation-v0", type=str)
     #parser.add_argument("--env_id", default="Scheduling-v0", type=str)
-    parser.add_argument(
-        "--weights", default="../weights/checkpoints/taurus", type=str)
-    parser.add_argument(
-        "--output_fn", default="../weights/taurus.csv", type=str)
+    parser.add_argument("--weights", default="../weights/weights", type=str)
     parser.add_argument("--log_dir", default="../weights/", type=str)
+    parser.add_argument("--output_fn", default=None, type=str)
     parser.add_argument("--summary_dir", default=None, type=str)
     parser.add_argument("--seed", default=48238, type=int)
     parser.add_argument("--nb_batches", default=16, type=int)
-    parser.add_argument("--nb_timesteps", default=50e6, type=int)
+    parser.add_argument("--nb_timesteps", default=40e6, type=int)
     parser.add_argument("--nb_frames", default=20, type=int)
     parser.add_argument("--nsteps", default=1440,  type=int)
     parser.add_argument("--num_envs", default=16, type=int)
@@ -227,7 +229,7 @@ def parse_args():
     parser.add_argument("--render", default=False, action="store_true")
     parser.add_argument("--cont_lr", default=False, action="store_true")
     parser.add_argument("--load_vf", default=False, action="store_true")
-    parser.add_argument("--test", default=1, action="store_true")
+    parser.add_argument("--test", default=False, action="store_true")
     return parser.parse_args()
 
 
