@@ -1,7 +1,19 @@
 import tensorflow as tf
 
 
-def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu):
+def LSTM_MLP(units, shape, layers, activation=tf.nn.leaky_relu):
+	def network(X):
+		h = tf.reshape(X, (-1,) + shape)
+		h = tf.keras.Input(tensor=h)
+		h = tf.keras.layers.LSTM(units)(h)
+		for u in layers:
+			h = tf.keras.layers.Dense(u, activation=activation)(h)
+
+		return h
+
+	return network
+
+def CuDNNLSTM_MLP(units, shape, layers, activation=tf.nn.leaky_relu):
 	def network(X):
 		h = tf.reshape(X, (-1,) + shape)
 		h = tf.keras.Input(tensor=h)
@@ -12,7 +24,6 @@ def lstm_mlp(units, shape, layers, activation=tf.nn.leaky_relu):
 		return h
 
 	return network
-
 
 def lstm(layers, shape):
 	def network(X):

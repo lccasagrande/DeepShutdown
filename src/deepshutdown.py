@@ -111,10 +111,11 @@ class ObsWrapper(gym.ObservationWrapper):
 def get_agent(input_shape, nb_actions, nb_timesteps, seed, num_frames, nsteps, num_envs, nb_batches, epochs, summary_dir=None):
     agent = PPOAgent(seed)
     lstm_shape = (num_frames, input_shape[-1] // num_frames)
+    network = CuDNNLSTM_MLP if tf.test.is_gpu_available() else LSTM_MLP
     agent.compile(
         input_shape=input_shape,
         nb_actions=nb_actions,
-        p_network=lstm_mlp(128, lstm_shape, [64], activation=tf.nn.leaky_relu),
+        p_network=network(128, lstm_shape, [64], activation=tf.nn.leaky_relu),
         batch_size=(nsteps * num_envs) // nb_batches,
         epochs=epochs,
         lr=5e-4,

@@ -13,8 +13,6 @@ RUN apt-get update && \
 
 RUN ${PIP} install --upgrade pip setuptools
 
-#RUN git clone https://github.com/lccasagrande/baselines.git && cd baselines && pip install -e .
-
 RUN apt install -y libsm6 libxrender1 libfontconfig1
 
 WORKDIR /app/eval
@@ -22,7 +20,7 @@ WORKDIR /app/eval
 COPY . /app
 
 RUN cd /app && \
-    pip install -e . && \
+    pip install -e .[tf_gpu] && \
     cd src/GridGym && \
     pip install -e .
 
