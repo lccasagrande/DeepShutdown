@@ -21,7 +21,7 @@ class OffReservationAgent(Agent):
         self.max_stretch = max_stretch
         self.queue_sz = queue_sz
 
-        self.nodes_state = np.zeros(shape=nb_nodes)
+        self.nodes_state = np.full(shape=nb_nodes, fill_value=-1, dtype=np.int)
         self.current_time = 0
 
     def _get_next_releases(self, obs):
@@ -100,7 +100,7 @@ class OffReservationAgent(Agent):
         return reservation_size
 
     def play(self, env, render=False, verbose=False):
-        self.nodes_state = np.zeros(shape=self.nodes_state.shape)
+        self.nodes_state = np.full(shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
         self.current_time = 0
         obs, done, score = env.reset(), False, 0
         while not done:

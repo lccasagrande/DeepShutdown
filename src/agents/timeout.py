@@ -14,10 +14,9 @@ from gridgym.envs.simulator.resource import PowerStateType
 
 class TimeoutAgent(Agent):
     def __init__(self, timeout, nb_resources, nb_nodes, queue_sz):
-        assert timeout >= 0
         self.timeout = timeout
         self.nb_resources = nb_resources
-        self.nodes_state = np.zeros(shape=nb_nodes)
+        self.nodes_state = np.full(shape=nb_nodes, fill_value=-1, dtype=np.int)
         self.current_time = 0
         self.queue_sz = queue_sz
 
@@ -38,6 +37,7 @@ class TimeoutAgent(Agent):
         return nb_available
 
     def act(self, obs):
+        if self.timeout == -1: return 0
         reservation_size, sim_time, platform = 0, obs['time'], obs['platform']
         nb_available = self._get_available_resources(obs)
 
@@ -55,7 +55,7 @@ class TimeoutAgent(Agent):
         return reservation_size
 
     def play(self, env, render=False, verbose=False):
-        self.nodes_state = np.zeros(shape=self.nodes_state.shape)
+        self.nodes_state = np.full(shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
         self.current_time = 0
         obs, done, score = env.reset(), False, 0
         while not done:
