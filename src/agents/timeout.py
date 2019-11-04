@@ -7,9 +7,6 @@ import pandas as pd
 
 
 from src.utils.agents import Agent
-from gridgym.envs.simulator.utils.graphics import plot_simulation_graphics
-from gridgym.envs.grid_env import GridEnv
-from gridgym.envs.simulator.resource import PowerStateType
 
 
 class TimeoutAgent(Agent):
@@ -37,7 +34,8 @@ class TimeoutAgent(Agent):
         return nb_available
 
     def act(self, obs):
-        if self.timeout == -1: return 0
+        if self.timeout == -1:
+            return 0
         reservation_size, sim_time, platform = 0, obs['time'], obs['platform']
         nb_available = self._get_available_resources(obs)
 
@@ -55,7 +53,8 @@ class TimeoutAgent(Agent):
         return reservation_size
 
     def play(self, env, render=False, verbose=False):
-        self.nodes_state = np.full(shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
+        self.nodes_state = np.full(
+            shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
         self.current_time = 0
         obs, done, score = env.reset(), False, 0
         while not done:
@@ -63,12 +62,5 @@ class TimeoutAgent(Agent):
                 env.render()
             obs, reward, done, info = env.step(self.act(obs))
             score += reward
-        results = pd.read_csv(os.path.join(
-            GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
-        results['score'] = score
-        results['workload'] = info['workload_name']
-        if verbose:
-            m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
-            print("[RESULTS] {}".format(m))
         env.close()
-        return results
+        return score, info

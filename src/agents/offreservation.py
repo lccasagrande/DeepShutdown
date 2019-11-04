@@ -6,11 +6,7 @@ import numpy as np
 import pandas as pd
 from sortedcontainers import SortedList
 
-
 from src.utils.agents import Agent
-from gridgym.envs.simulator.utils.graphics import plot_simulation_graphics
-from gridgym.envs.grid_env import GridEnv
-from gridgym.envs.simulator.resource import PowerStateType
 
 
 class OffReservationAgent(Agent):
@@ -99,8 +95,9 @@ class OffReservationAgent(Agent):
         self.current_time = sim_time
         return reservation_size
 
-    def play(self, env, render=False, verbose=False):
-        self.nodes_state = np.full(shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
+    def play(self, env, render=False):
+        self.nodes_state = np.full(
+            shape=self.nodes_state.shape, fill_value=-1, dtype=np.int)
         self.current_time = 0
         obs, done, score = env.reset(), False, 0
         while not done:
@@ -108,12 +105,6 @@ class OffReservationAgent(Agent):
                 env.render()
             obs, reward, done, info = env.step(self.act(obs))
             score += reward
-        results = pd.read_csv(os.path.join(
-            GridEnv.OUTPUT, '_schedule.csv')).to_dict('records')[0]
-        results['workload'] = info['workload_name']
-        results['score'] = score
-        if verbose:
-            m = " - ".join("[{}: {}]".format(k, v) for k, v in results.items())
-            print("[RESULTS] {}".format(m))
+
         env.close()
-        return results
+        return score, info

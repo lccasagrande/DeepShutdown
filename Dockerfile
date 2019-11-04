@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:latest-gpu-py3
+FROM tensorflow/tensorflow:1.14.0-gpu-py3
 
 ARG USE_PYTHON_3_NOT_2=True
 ARG _PY_SUFFIX=${USE_PYTHON_3_NOT_2:+3}
@@ -20,8 +20,10 @@ WORKDIR /app/eval
 COPY . /app
 
 RUN cd /app && \
-    pip install -e .[tf_gpu] && \
+    ${PIP} install -e .[tf_gpu] && \
     cd src/GridGym && \
-    pip install -e .
+    ${PIP} install -e . && \
+    cd gridgym/envs/batsim-py && \
+    ${PIP} install -e . 
 
-ENTRYPOINT ["python", "run_experiments.py"]
+#ENTRYPOINT ["python3", "run_experiments.py"]

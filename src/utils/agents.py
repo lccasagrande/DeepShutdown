@@ -58,9 +58,6 @@ class TFAgent(LearningAgent):
 
 		return self._session
 
-	def save_model(self, export_dir):
-		tf.saved_model.simple_save(self.session, export_dir,)
-
 	def load(self, fn):
 		print(colorize(" [*] Loading variables...", "green"))
 		variables = tf.trainable_variables()

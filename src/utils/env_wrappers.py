@@ -136,7 +136,7 @@ class VecEnv(ABC):
             return self
 
     def get_viewer(self):
-        #if self.viewer is None:
+        # if self.viewer is None:
         #    from gym.envs.classic_control import rendering
         #    self.viewer = rendering.SimpleImageViewer()
         return self.viewer
@@ -184,7 +184,7 @@ class DummyVecEnv(VecEnv):
     def __init__(self, env_fns):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
-        super().__init__(len(env_fns), env.observation_space, env.action_space)
+        super().__init__(len(self.envs), env.observation_space, env.action_space)
 
     def step(self, actions):
         acts = actions if isinstance(
@@ -206,6 +206,10 @@ class DummyVecEnv(VecEnv):
     def get_images(self):
         return [env.render(mode='rgb_array') for env in self.envs]
 
+    def close_extras(self):
+        for env in self.envs:
+            env.close()
+
     def render(self, mode='human'):
         if self.num_envs == 1:
             return self.envs[0].render(mode=mode)
@@ -218,7 +222,8 @@ class SingleVecEnv(DummyVecEnv):
         super().__init__([env_fn])
 
     def step(self, actions):
-        acts = actions if isinstance(actions, (list, np.ndarray)) else [actions]
+        acts = actions if isinstance(
+            actions, (list, np.ndarray)) else [actions]
         results = [self.envs[e].step(acts[e]) for e in range(self.num_envs)]
         obs, rews, dones, infos = map(list, zip(*results))
         return np.stack(obs), np.stack(rews), np.stack(dones), infos
@@ -263,7 +268,6 @@ class SubprocVecEnv(VecEnv):
         return np.stack([remote.recv() for remote in self.remotes])
 
     def close_extras(self):
-        self.closed = True
         for remote in self.remotes:
             remote.send(('close', None))
         for p in self.ps:
@@ -540,10 +544,10 @@ class VecNormalize(VecEnvWrapper):
         return self._obfilt(obs)
 
 
-def make_vec_env(env_id, nenv, seed=None, monitor_dir=None, info_kws=(), wrappers=(), sequential=False):
+def make_vec_env(env_id, nenv, seed=None, monitor_dir=None, info_kws=(), wrappers=(), sequential=False, **env_args):
     def make_env(rank):
         def _thunk():
-            env = gym.make(env_id)
+            env = gym.make(env_id, **env_args)
             env.seed(seed + rank if seed is not None else None)
             for wrapper in wrappers:
                 env = wrapper(env)
