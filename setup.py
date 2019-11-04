@@ -1,12 +1,12 @@
 from setuptools import setup
 
-setup(name='DRLGrid',
+setup(name='DeepShutdown',
       author='lccasagrande',
-      version='0.0.1',
+      version='0.1',
       python_requires='>=3.6',
       extras_require={
-          'tf': ['tensorflow'],
-          'tf_gpu': ['tensorflow-gpu'],
+          'tf': ['tensorflow==1.14'],
+          'tf_gpu': ['tensorflow-gpu==1.14'],
       },
       install_requires=[
           'gym',
@@ -15,6 +15,7 @@ setup(name='DRLGrid',
           'pandas',
           'joblib',
           'seaborn',
+          'tqdm',
           'matplotlib',
           'cloudpickle'
       ])
