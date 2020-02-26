@@ -2,34 +2,34 @@ import argparse
 import math
 import multiprocessing
 import itertools
-import os
 from collections import defaultdict
+import joblib
+import os
 
 import gym
-import pandas as pd
 import numpy as np
 import tensorflow as tf
 from gym import spaces
+from gym import ObservationWrapper
 
+import simple_rl.utils.loggers as log
+from simple_rl.PolicyGradient.ppo import ProximalPolicyOptimization
+from simple_rl.utils.wrappers import make_vec_env, VecFrameStack
 from gridgym.envs.off_reservation_env import OffReservationEnv
 from gridgym.envs.grid_env import GridEnv
-from batsim_py.utils.graphics import  plot_simulation_graphics
+from batsim_py.utils.graphics import plot_simulation_graphics
 
-from deepshut.agents.ppo import PPOAgent
-from deepshut.utils.env_wrappers import make_vec_env, VecFrameStack
-from deepshut.utils.networks import *
-from deepshut.utils import loggers as log
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# multiprocessing.set_start_method('spawn', True)
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-#multiprocessing.set_start_method('spawn', True)
 
-class ObsWrapper(gym.ObservationWrapper):
-    def __init__(self, env, queue_sz, max_walltime, max_nb_jobs, max_job_user_count):
-        super().__init__(env)
-        self.queue_sz = queue_sz
-        self.max_job_user_count = max_job_user_count
-        self.max_walltime = max_walltime
-        self.max_nb_jobs = max_nb_jobs
+class ObsWrapper(ObservationWrapper):
+    def __init__(self, env):
+        super(ObsWrapper, self).__init__(env)
+        self.queue_sz = 10
+        self.max_job_user_count = 50
+        self.max_walltime = 1440
+        self.max_nb_jobs = 4500
         shape = (5 + (4*self.queue_sz) + 1 + 1 + 1,)
         self.observation_space = spaces.Box(
             low=0, high=1., shape=shape, dtype=np.float)
@@ -93,12 +93,6 @@ class ObsWrapper(gym.ObservationWrapper):
         curr_time = (2 * np.pi * curr_time) / (60*24)
         time.append((np.cos(curr_time) + 1) / 2.)
         time.append((np.sin(curr_time) + 1) / 2.)
-
-        #weeks = math.floor(days / 7)
-        #curr_day = days - (weeks * 7)
-        #curr_day = (2 * np.pi * curr_day) / 7
-        #time.append((np.cos(curr_day) + 1) / 2.)
-        #time.append((np.sin(curr_day) + 1) / 2.)
         return np.asarray(time)
 
     def observation(self, observation):
@@ -110,118 +104,173 @@ class ObsWrapper(gym.ObservationWrapper):
         return np.asarray(obs)
 
 
-def get_agent(input_shape, nb_actions, nb_timesteps, seed, num_frames, nsteps, num_envs, nb_batches, epochs, summary_dir=None):
-    agent = PPOAgent(seed)
-    lstm_shape = (num_frames, input_shape[-1] // num_frames)
-    print("Using GPU {}".format(tf.test.is_gpu_available()))
-    network = CuDNNLSTM_MLP if tf.test.is_gpu_available() else LSTM_MLP
-    agent.compile(
-        input_shape=input_shape,
-        nb_actions=nb_actions,
-        p_network=network(128, lstm_shape, [64], activation=tf.nn.leaky_relu),
-        batch_size=(nsteps * num_envs) // nb_batches,
-        epochs=epochs,
-        lr=5e-4,
-        end_lr=1e-6,
-        ent_coef=0.005,
-        vf_coef=.5,
-        decay_steps=nb_timesteps / (nsteps * num_envs),  # 300
-        max_grad_norm=None,
-        shared=False)
+class DeepShutdown(ProximalPolicyOptimization):
+    def __init__(self, env, learning_rate, discount_factor, gae, steps_per_update, refresh_rate=50):
+        if not isinstance(env, VecFrameStack):
+            raise ValueError(
+                "Expected an environment wrapped by a VecFrameStack")
 
-    return agent
+        lstm_shape = (
+            env.nstack, env.observation_space.shape[-1] // env.nstack)
+        network = DeepShutdown.build_network(lstm_shape)
+
+        super().__init__(env=env,
+                         p_network=network,
+                         learning_rate=learning_rate,
+                         discount_factor=discount_factor,
+                         gae=gae,
+                         steps_per_update=steps_per_update,
+                         vf_network=network,
+                         refresh_rate=refresh_rate)
+
+    @staticmethod
+    def build_network(input_shape):
+        def _build(X):
+            h = tf.reshape(X, (-1,) + input_shape)
+            h = tf.compat.v1.keras.layers.CuDNNLSTM(128)(h)
+            h = tf.keras.layers.Dense(64, activation=tf.nn.leaky_relu)(h)
+            return h
+        return _build
+
+    def tf1_load_model(self, fn):
+        variables = self.model.trainable_variables
+        values = joblib.load(os.path.expanduser(fn))
+        for v in variables:
+            var_name = v.name
+            spl = var_name.split("/")
+            if spl[0] == "cu_dnnlstm":
+                var_name = "policy_network/cu_dnnlstm/" + spl[1]
+            elif spl[0] == "cu_dnnlstm_1":
+                var_name = "value_network/cu_dnnlstm_1/" + spl[1]
+            elif spl[0] == 'dense':
+                var_name = "policy_network/dense/" + spl[1]
+            elif spl[0] == 'dense_1':
+                var_name = "value_network/dense_1/" + spl[1]
+            elif spl[0] == 'vf':
+                var_name = "value_logits/" + spl[1]
+            elif spl[0] == 'policy':
+                var_name = "policy_logits/" + spl[1]
+            vl = values[var_name]
+            v.assign(vl)
+
+    def play(self, render=False):
+        states, scores = self.env.reset(), np.zeros(self.env.num_envs)
+        epscore = np.zeros_like(scores)
+        infos = []
+        while True:
+            if render:
+                self.env.render()
+            states, rewards, dones, info = self.env.step(self.act(states))
+            epscore += rewards
+            if dones.any():
+                for i in np.nonzero(dones)[0]:
+                    scores[i] = epscore[i]
+                    infos.append(info[i])
+                    epscore[i] = 0
+
+            if scores.all():
+                return scores, infos
 
 
-def build_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, info_kws=(), **env_args):
-    def create_wrapper(wrapper, **kwargs):
-        def _thunk(env):
-            return wrapper(env=env, **kwargs)
-        return _thunk
-
-    wrappers = [create_wrapper(
-        ObsWrapper, queue_sz=10, max_walltime=1440, max_nb_jobs=4500, max_job_user_count=50)]
-
+def make_env(env_id, num_envs=1, num_frames=1, seed=None, monitor_dir=None, sequential=True, info_kws=(), **env_args):
     env = make_vec_env(env_id=env_id,
-                       nenv=num_envs,
+                       num_envs=num_envs,
+                       sequential=sequential,
                        seed=seed,
                        monitor_dir=monitor_dir,
                        info_kws=info_kws,
-                       wrappers=wrappers,
+                       env_wrappers=[ObsWrapper],
                        **env_args)
-    if num_frames > 1:
-        env = VecFrameStack(env, num_frames)
+
+    env = VecFrameStack(env, num_frames)
     return env
 
 
 def run(args):
-    test_env = build_env(
-        args.env_id,
-        num_frames=args.nb_frames,
-        info_kws=['workload_name'],
-        max_queue_sz=args.max_queue_sz,
-        act_interval=args.act_interval,
-        simulation_time=args.simulation_time,
-        qos_stretch=args.qos_stretch,
-        export=True,
-        use_batsim=args.use_batsim)
+    if not args.test_only:
+        training_env = make_env(env_id=args.env_id,
+                                num_envs=args.num_envs,
+                                num_frames=args.nb_frames,
+                                seed=args.seed,
+                                monitor_dir=args.log_dir,
+                                sequential=True,
+                                info_kws=['workload_name'],
+                                max_queue_sz=args.max_queue_sz,
+                                act_interval=args.act_interval,
+                                simulation_time=args.simulation_time,
+                                qos_stretch=args.qos_stretch,
+                                export=False,
+                                use_batsim=args.use_batsim)
 
-    input_shape, nb_actions = test_env.observation_space.shape, test_env.action_space.n
-    agent = get_agent(input_shape, nb_actions, args.nb_timesteps, args.seed, args.nb_frames,
-                      args.nsteps, args.num_envs, args.nb_batches, args.epochs, args.summary_dir)
-    if not args.test:
-        training_env = build_env(
-            args.env_id,
-            num_envs=args.num_envs,
-            num_frames=args.nb_frames,
-            seed=args.seed,
-            monitor_dir=args.log_dir,
-            info_kws=['workload_name'],
-            max_queue_sz=args.max_queue_sz,
-            act_interval=args.act_interval,
-            simulation_time=args.simulation_time,
-            qos_stretch=args.qos_stretch,
-            export=False,
-            use_batsim=args.use_batsim)
+        ds_agent = DeepShutdown(env=training_env,
+                                learning_rate=5e-4,
+                                discount_factor=args.discount,
+                                gae=args.lam,
+                                steps_per_update=args.nsteps,
+                                refresh_rate=100)
 
-        loggers = log.LoggerWrapper()
-        if args.log_interval != 0:
-            loggers.append(log.CSVLogger(args.log_dir + "ppo_log.csv"))
+        logger = log.LoggersWrapper()
+        if args.log_dir != "":
+            logger.append(log.CSVLogger(args.log_dir + "ppo_log.csv"))
         if args.verbose:
-            loggers.append(log.ConsoleLogger())
+            logger.append(log.ConsoleLogger())
 
-        if args.weights is not None and args.cont_lr:
-            agent.load(args.weights)
+        if args.continue_learning:
+            ds_agent.load(args.weights)
 
-        history = agent.fit(
-            env=training_env,
-            clip_vl=.2,
-            lam=args.lam,
-            timesteps=args.nb_timesteps,
-            nsteps=args.nsteps,
-            gamma=args.discount,
-            log_interval=args.log_interval,
-            loggers=loggers,
-            nb_batches=args.nb_batches)
+        ds_agent.train(timesteps=int(args.nb_timesteps),
+                       batch_size=int(
+                           (args.nsteps * args.num_envs) / args.nb_batches),
+                       clip_vl=0.2,
+                       entropy_coef=0.005,
+                       vf_coef=.5,
+                       epochs=args.epochs,
+                       logger=logger)
 
-        if args.weights is not None:
-            agent.save(args.weights)
-    else:
-        agent.load(args.weights)
+        ds_agent.save(args.weights)
 
-    score, info = agent.play(env=test_env)
+    # TEST
+    test_env = make_env(env_id=args.env_id,
+                        num_envs=1,
+                        num_frames=args.nb_frames,
+                        seed=args.seed,
+                        sequential=False,
+                        info_kws=['workload_name'],
+                        max_queue_sz=args.max_queue_sz,
+                        act_interval=args.act_interval,
+                        simulation_time=args.simulation_time,
+                        qos_stretch=args.qos_stretch,
+                        export=True,
+                        use_batsim=args.use_batsim)
+
+    ds_agent = DeepShutdown(env=test_env,
+                            learning_rate=5e-4,
+                            discount_factor=args.discount,
+                            gae=args.lam,
+                            steps_per_update=args.nsteps,
+                            refresh_rate=100)
+
+    ds_agent.load2(args.weights)
+
+    scores, infos = ds_agent.play()
+
+    if args.verbose:
+        scores = [info['episode']['score'] for info in infos]
+        print("[SCORE] \tAvg: {}\tMax: {}\tMin: {}".format(
+            np.mean(scores), np.max(scores), np.min(scores)))
 
     if args.plot_results:
-        plot_simulation_graphics("/tmp/GridGym/{}".format(info[0]['workload_name']), show=True)
+        results_dir = "/tmp/GridGym/{}".format(infos[-1]['workload_name'])
+        plot_simulation_graphics(results_dir, show=True)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    # Agent options
     agent_group = parser.add_argument_group(title="Agent options")
-    agent_group.add_argument("--env_id", default="OffReservation-v0", type=str)
-    agent_group.add_argument("--weights", default="../weights/checkpoints/weights", type=str)
+    agent_group.add_argument(
+        "--weights", default="../weights/checkpoints/weights", type=str)
     agent_group.add_argument("--log_dir", default="../weights/", type=str)
-    agent_group.add_argument("--output_fn", default=None, type=str)
-    agent_group.add_argument("--summary_dir", default=None, type=str)
     agent_group.add_argument("--seed", default=48238, type=int)
     agent_group.add_argument("--nb_batches", default=16, type=int)
     agent_group.add_argument("--nb_timesteps", default=50e6, type=int)
@@ -230,12 +279,15 @@ def parse_args():
     agent_group.add_argument("--epochs", default=4,  type=int)
     agent_group.add_argument("--discount", default=.99, type=float)
     agent_group.add_argument("--lam", default=.95, type=float)
-    agent_group.add_argument("--log_interval", default=1,  type=int)
-    agent_group.add_argument("--cont_lr", default=False, action="store_true")
-    agent_group.add_argument("--test", default=False, action="store_true")
+    agent_group.add_argument("--continue_learning",
+                             default=False, action="store_true")
+    agent_group.add_argument(
+        "--test_only", default=True, action="store_true")
 
-    # ENV:
+    # Environment options
     env_group = parser.add_argument_group(title="Environment options")
+    env_group.add_argument(
+        "--env_id", default="OffReservation-v0", type=str)
     env_group.add_argument("--max_queue_sz", default=10, type=int)
     env_group.add_argument("--act_interval", default=1, type=int)
     env_group.add_argument("--simulation_time", default=1440, type=int)
@@ -243,8 +295,10 @@ def parse_args():
     env_group.add_argument("--use_batsim", action="store_true")
     env_group.add_argument("--nb_frames", default=20, type=int)
 
-    parser.add_argument("--plot_results", default=False, action="store_true")
-    parser.add_argument("--verbose", default=False, action="store_true")
+    #
+    parser.add_argument("--plot_results", default=True,
+                        action="store_true")
+    parser.add_argument("--verbose", default=True, action="store_true")
     return parser.parse_args()
 
 
