@@ -1,4 +1,4 @@
 [submodule "GridGym"]
-	path = src/GridGym
+	path = deepshut/GridGym
 	url = git@github.com:lccasagrande/GridGym.git
 	branch = master
