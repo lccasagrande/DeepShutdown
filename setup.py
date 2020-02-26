@@ -2,11 +2,11 @@ from setuptools import setup
 
 setup(name='DeepShutdown',
       author='lccasagrande',
-      version='0.1',
-      python_requires='>=3.6',
+      version='0.2',
+      python_requires='>=3.7',
       extras_require={
-          'tf': ['tensorflow==1.14'],
-          'tf_gpu': ['tensorflow-gpu==1.14'],
+          'tf': ['tensorflow>=2.0.0'],
+          'tf_gpu': ['tensorflow-gpu>=2.0.0'],
       },
       install_requires=[
           'gym',
@@ -15,7 +15,6 @@ setup(name='DeepShutdown',
           'pandas',
           'joblib',
           'seaborn',
-          'tqdm',
           'matplotlib',
           'cloudpickle'
       ])

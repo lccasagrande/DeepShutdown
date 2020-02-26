@@ -10,14 +10,15 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 from gym import spaces
-from gridgym.envs.off_reservation_env import OffReservationEnv
 
+from gridgym.envs.off_reservation_env import OffReservationEnv
 from gridgym.envs.grid_env import GridEnv
 from batsim_py.utils.graphics import  plot_simulation_graphics
-from src.agents.ppo import PPOAgent
-from src.utils.env_wrappers import make_vec_env, VecFrameStack
-from src.utils.networks import *
-from src.utils import loggers as log
+
+from deepshut.agents.ppo import PPOAgent
+from deepshut.utils.env_wrappers import make_vec_env, VecFrameStack
+from deepshut.utils.networks import *
+from deepshut.utils import loggers as log
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 #multiprocessing.set_start_method('spawn', True)

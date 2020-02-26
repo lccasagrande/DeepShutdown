@@ -195,7 +195,6 @@ class PPOAgent(TFAgent):
         op = self.sample_action if not argmax else self.best_action
         return self.session.run(op, {self.X: obs})
 
-
     def fit(self, env, timesteps, nsteps, nb_batches=8, log_interval=1, loggers=None, gamma=.98, lam=.95, clip_vl=0.2):
         assert self._is_compiled, "You should compile the model first."
         n_batch = nsteps * env.num_envs
