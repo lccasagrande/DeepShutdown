@@ -1,6 +1,0 @@
-[submodule "deepshut/GridGym"]
-	path = deepshut/GridGym
-	url = git@github.com:lccasagrande/GridGym.git
-[submodule "deepshut/SimpleRL"]
-	path = deepshut/SimpleRL
-	url = git@github.com:lccasagrande/SimpleRL.git

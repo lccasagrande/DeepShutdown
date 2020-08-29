@@ -1,23 +1,23 @@
 import argparse
-import math
-import multiprocessing
-import itertools
 from collections import defaultdict
-import joblib
+import itertools
+import math
 import os
+import numpy as np
+from typing import Sequence
+from typing import List
 
 import gym
-import numpy as np
-import tensorflow as tf
 from gym import spaces
 from gym import ObservationWrapper
-
-import simple_rl.utils.loggers as log
-from simple_rl.PolicyGradient.ppo import ProximalPolicyOptimization
-from simple_rl.utils.wrappers import make_vec_env, VecFrameStack
 from gridgym.envs.off_reservation_env import OffReservationEnv
-from gridgym.envs.grid_env import GridEnv
-from batsim_py.utils.graphics import plot_simulation_graphics
+import joblib
+import numpy as np
+import tensorflow as tf
+
+from simple_rl.PolicyGradient.ppo import ProximalPolicyOptimization
+import simple_rl.utils.loggers as log
+from simple_rl.utils.wrappers import VecFrameStack, make_vec_env
 
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # multiprocessing.set_start_method('spawn', True)
@@ -29,77 +29,63 @@ class ObsWrapper(ObservationWrapper):
         self.queue_sz = 10
         self.max_job_user_count = 50
         self.max_walltime = 1440
+        self.max_sim_t = 1440
         self.max_nb_jobs = 4500
-        shape = (5 + (4*self.queue_sz) + 1 + 1 + 1,)
+        self.qos_tresh = 0.5
+        shape = (5 + 1 + 1 + 1 + (4*self.queue_sz),)
         self.observation_space = spaces.Box(
             low=0, high=1., shape=shape, dtype=np.float)
 
-    def get_resources_state(self, observation):
+    def get_resources_state(self, obs) -> Sequence[float]:
         state = np.zeros(5)
-        for n in observation['platform']:
-            for r in n:
-                state[int(r)] += 1
-        state /= observation['agenda'].shape[0]
+        for server in obs['platform']['status']:
+            for h_status in server:
+                state[int(h_status) - 1] += 1
+        state /= obs['platform']['agenda'].shape[0]
         return state
 
-    def get_queue_state(self, obs):
-        queue = obs['queue'][:self.queue_sz]
-        nb_resources = obs['agenda'].shape[0]
-        # [j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user, j.profile] for j in self._get_queue()
-        # [[j.subtime, j.res, j.walltime, j.expected_time_to_start, j.user] for j in self.rjms.jobs_queue])
-        usr_count = defaultdict(int)
-        for j in itertools.chain(*[obs['jobs_running'], obs['queue']]):
-            usr_count[j[-2]] += 1
+    def get_queue_state(self, obs) -> Sequence[float]:
+        queue = [j for j in obs['queue']['jobs'] if j[1] != 0]
+        nb_resources = obs['platform']['agenda'].shape[0]
 
+        # Count the number of jobs per user
+        usr_count: dict = defaultdict(int)
+        for sub, res, wall, user in queue:
+            if user != -1:
+                usr_count[user] += 1
+
+        jobs_running = [j for j in obs['platform']['agenda'] if j[1] > 0]
+        for stat_t, wall_t, user in jobs_running:
+            if user != -1:
+                usr_count[user] += 1
+
+        # Get jobs in queue
         queue_state = np.zeros(4 * self.queue_sz, dtype=np.float)
-        for i, j in enumerate(queue):
+        for i, (sub, res, wall, user) in enumerate(queue):
             idx = 4 * i
-            queue_state[idx+0] = j[1] / nb_resources
-            queue_state[idx+1] = np.log(1+j[2]) / np.log(1+self.max_walltime)
-            queue_state[idx+2] = min(1, (obs['time'] - j[0]) / (j[2] / 2.))
-            queue_state[idx+3] = min(1, usr_count[j[4]] /
-                                     self.max_job_user_count)
+            queue_state[idx+0] = res / nb_resources
+            queue_state[idx+1] = wall / self.max_walltime
+            queue_state[idx+2] = min(1,
+                                     (obs['current_time'] - sub) / (wall * self.qos_tresh))
+            if user != -1:
+                queue_state[idx+3] = min(1, usr_count[user] /
+                                         self.max_job_user_count)
         return queue_state
 
-    def get_queue_size(self, observation):
-        nb_jobs = min(len(observation['queue']), self.max_nb_jobs)
-        nb_jobs = np.log(1+nb_jobs) / np.log(1+self.max_nb_jobs)
-        return nb_jobs
+    def get_queue_size(self, obs) -> float:
+        return obs['queue']['size'] / self.max_nb_jobs
 
-    def get_queue_load(self, observation):
-        load = sum(job[1] for job in observation['queue'])
-        max_load = 3*observation['agenda'].shape[0]
-        load = min(max_load, load)
-        load /= max_load
-        return load
+    def get_promise(self, obs) -> float:
+        return min(0, obs['queue']['promise'] / self.max_walltime)
 
-    def get_promise(self, observation):
-        promise = -1
-        if len(observation['queue']) > 0:
-            promise = observation['queue'][0][3]
-        return np.log(2 + promise) / np.log(2+self.max_walltime)
+    def get_current_time(self, obs) -> float:
+        return obs['current_time'] / self.max_sim_t
 
-    def get_agenda(self, observation):
-        return observation['agenda']
-
-    def get_reservation_size(self, observation):
-        r = observation['reservation_size'] / observation['platform'].shape[0]
-        return r
-
-    def get_day_and_time(self, observation):
-        time = []
-        days = math.floor(observation['time'] / float(60*24))
-        curr_time = observation['time'] - (days * 60*24)
-        curr_time = (2 * np.pi * curr_time) / (60*24)
-        time.append((np.cos(curr_time) + 1) / 2.)
-        time.append((np.sin(curr_time) + 1) / 2.)
-        return np.asarray(time)
-
-    def observation(self, observation):
+    def observation(self, observation) -> Sequence[float]:
         obs = list(self.get_resources_state(observation))
-        obs.append(observation['time'] / 1440)
         obs.append(self.get_queue_size(observation))
         obs.append(self.get_promise(observation))
+        obs.append(self.get_current_time(observation))
         obs.extend(self.get_queue_state(observation))
         return np.asarray(obs)
 
@@ -194,13 +180,14 @@ def run(args):
                                 seed=args.seed,
                                 monitor_dir=args.log_dir,
                                 sequential=True,
-                                info_kws=['workload_name'],
-                                max_queue_sz=args.max_queue_sz,
-                                act_interval=args.act_interval,
-                                simulation_time=args.simulation_time,
-                                qos_stretch=args.qos_stretch,
-                                export=False,
-                                use_batsim=args.use_batsim)
+                                info_kws=['workload'],
+                                platform_fn=args.platform,
+                                workloads_dir=args.workloads_dir,
+                                t_action=args.act_interval,
+                                queue_max_len=args.max_queue_sz,
+                                qos_treshold=args.qos_stretch,
+                                hosts_per_server=args.hosts_per_server,
+                                simulation_time=args.simulation_time)
 
         ds_agent = DeepShutdown(env=training_env,
                                 learning_rate=5e-4,
@@ -235,13 +222,14 @@ def run(args):
                         num_frames=args.nb_frames,
                         seed=args.seed,
                         sequential=False,
-                        info_kws=['workload_name'],
-                        max_queue_sz=args.max_queue_sz,
-                        act_interval=args.act_interval,
+                        info_kws=['workload'],
+                        platform_fn=args.platform,
+                        workloads_dir=args.workloads_dir,
+                        t_action=args.act_interval,
+                        queue_max_len=args.max_queue_sz,
+                        hosts_per_server=args.hosts_per_server,
                         simulation_time=args.simulation_time,
-                        qos_stretch=args.qos_stretch,
-                        export=True,
-                        use_batsim=args.use_batsim)
+                        qos_treshold=args.qos_stretch)
 
     ds_agent = DeepShutdown(env=test_env,
                             learning_rate=5e-4,
@@ -250,7 +238,7 @@ def run(args):
                             steps_per_update=args.nsteps,
                             refresh_rate=100)
 
-    ds_agent.load2(args.weights)
+    ds_agent.load(args.weights)
 
     scores, infos = ds_agent.play()
 
@@ -259,21 +247,17 @@ def run(args):
         print("[SCORE] \tAvg: {}\tMax: {}\tMin: {}".format(
             np.mean(scores), np.max(scores), np.min(scores)))
 
-    if args.plot_results:
-        results_dir = "/tmp/GridGym/{}".format(infos[-1]['workload_name'])
-        plot_simulation_graphics(results_dir, show=True)
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # Agent options
     agent_group = parser.add_argument_group(title="Agent options")
     agent_group.add_argument(
-        "--weights", default="../weights/checkpoints/weights", type=str)
-    agent_group.add_argument("--log_dir", default="../weights/", type=str)
+        "--weights", default="../misc/weights/checkpoints/weights", type=str)
+    agent_group.add_argument("--log_dir", default="../misc/weights/", type=str)
     agent_group.add_argument("--seed", default=48238, type=int)
     agent_group.add_argument("--nb_batches", default=16, type=int)
-    agent_group.add_argument("--nb_timesteps", default=50e6, type=int)
+    agent_group.add_argument("--nb_timesteps", default=1e5, type=int)
     agent_group.add_argument("--nsteps", default=1440,  type=int)
     agent_group.add_argument("--num_envs", default=16, type=int)
     agent_group.add_argument("--epochs", default=4,  type=int)
@@ -281,23 +265,25 @@ def parse_args():
     agent_group.add_argument("--lam", default=.95, type=float)
     agent_group.add_argument("--continue_learning",
                              default=False, action="store_true")
-    agent_group.add_argument(
-        "--test_only", default=True, action="store_true")
+    agent_group.add_argument("--test_only", default=False, action="store_true")
 
     # Environment options
     env_group = parser.add_argument_group(title="Environment options")
-    env_group.add_argument(
-        "--env_id", default="OffReservation-v0", type=str)
+    env_group.add_argument("--env_id", default="OffReservation-v0", type=str)
     env_group.add_argument("--max_queue_sz", default=10, type=int)
     env_group.add_argument("--act_interval", default=1, type=int)
     env_group.add_argument("--simulation_time", default=1440, type=int)
     env_group.add_argument("--qos_stretch", default=0.5, type=float)
     env_group.add_argument("--use_batsim", action="store_true")
     env_group.add_argument("--nb_frames", default=20, type=int)
+    env_group.add_argument("--hosts_per_server", default=12, type=int)
+
+    env_group.add_argument(
+        "--platform", default="../misc/platforms/platform.xml", type=str)
+    env_group.add_argument(
+        "--workloads_dir", default="../misc/workloads/", type=str)
 
     #
-    parser.add_argument("--plot_results", default=True,
-                        action="store_true")
     parser.add_argument("--verbose", default=True, action="store_true")
     return parser.parse_args()
 

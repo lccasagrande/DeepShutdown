@@ -1,7 +1,6 @@
 # VS Code
 .vscode
-weights/
-eval/
+misc/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
