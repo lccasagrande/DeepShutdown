@@ -1,29 +1,27 @@
 import argparse
 from collections import defaultdict
-import itertools
-import math
 import os
-import numpy as np
 from typing import Sequence
-from typing import List
 
+from gridgym.envs.off_reservation_env import OffReservationEnv
 import gym
 from gym import spaces
-from gym import ObservationWrapper
-from gridgym.envs.off_reservation_env import OffReservationEnv
 import joblib
+import numpy as np
 import numpy as np
 import tensorflow as tf
 
 from simple_rl.PolicyGradient.ppo import ProximalPolicyOptimization
 import simple_rl.utils.loggers as log
-from simple_rl.utils.wrappers import VecFrameStack, make_vec_env
+from simple_rl.utils.wrappers import VecFrameStack
+from simple_rl.utils.wrappers import make_vec_env
+from simple_rl.utils.wrappers import ObservationDynamicWrapper
 
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # multiprocessing.set_start_method('spawn', True)
 
 
-class ObsWrapper(ObservationWrapper):
+class ObsWrapper(ObservationDynamicWrapper):
     def __init__(self, env):
         super(ObsWrapper, self).__init__(env)
         self.queue_sz = 10
@@ -33,8 +31,7 @@ class ObsWrapper(ObservationWrapper):
         self.max_nb_jobs = 4500
         self.qos_tresh = 0.5
         shape = (5 + 1 + 1 + 1 + (4*self.queue_sz),)
-        self.observation_space = spaces.Box(
-            low=0, high=1., shape=shape, dtype=np.float)
+        self._observation_space = spaces.Box(low=0, high=1., shape=shape, dtype=np.float)
 
     def get_resources_state(self, obs) -> Sequence[float]:
         state = np.zeros(5)
@@ -188,7 +185,7 @@ def run(args):
                                 qos_treshold=args.qos_stretch,
                                 hosts_per_server=args.hosts_per_server,
                                 simulation_time=args.simulation_time)
-
+        training_env.reset()
         ds_agent = DeepShutdown(env=training_env,
                                 learning_rate=5e-4,
                                 discount_factor=args.discount,
@@ -230,7 +227,7 @@ def run(args):
                         hosts_per_server=args.hosts_per_server,
                         simulation_time=args.simulation_time,
                         qos_treshold=args.qos_stretch)
-
+    test_env.reset()
     ds_agent = DeepShutdown(env=test_env,
                             learning_rate=5e-4,
                             discount_factor=args.discount,

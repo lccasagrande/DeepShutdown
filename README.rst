@@ -14,15 +14,7 @@ Install
 
     batsim --version
 
-2. Install GridGym:
-
-.. code-block:: bash
-
-    git clone https://github.com/lccasagrande/GridGym.git
-    cd GridGym
-    pip install -e .
-
-3. Install SimpleRL:
+2. Install SimpleRL:
 
 .. code-block:: bash
 
@@ -30,7 +22,7 @@ Install
     cd SimpleRL
     pip install -e .[tf]
 
-4. Install DeepShutdown:
+3. Install DeepShutdown:
 
 .. code-block:: bash
 
